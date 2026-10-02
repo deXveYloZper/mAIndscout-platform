@@ -29,6 +29,7 @@ from maindscout.db.models import (
     ExtractionArtifact,
     IntelligenceRun,
     Job,
+    PairEvent,
 )
 from maindscout.domain import stints
 from maindscout.intelligence import extract, triage
@@ -272,22 +273,49 @@ def _contradictions(session: Session, org_id, candidate_id, decisions: list[uuid
                                        [("left", a.id), ("right", b.id)]).id)
 
 
-def _ensure_pair(session: Session, org_id, candidate_id, job: Job) -> CandidateJob:
+def _triage_now(session: Session, org_id, candidate_id, job: Job) -> triage.Triage:
+    requirements = [c.payload for c in _live_claims(session, org_id, "job", job.id, "JobRequirementClaim")]
+    skills = [c.payload["normalized_skill"] for c in _live_claims(session, org_id, "candidate", candidate_id, "SkillClaim")]
+    titles = [c.payload["title_raw"] for c in _live_claims(session, org_id, "candidate", candidate_id, "CareerStepClaim")]
+    return triage.triage(requirements, skills, titles)
+
+
+def retriage_pair(session: Session, pair: CandidateJob, cause: dict, actor: str = "system") -> PairEvent | None:
+    """Recompute the band from live facts. Records a history event when it changes. A band set by hand stays."""
+    if pair.band_overridden_by:
+        return None
+    job = session.get(Job, pair.job_id)
+    result = _triage_now(session, pair.org_id, pair.candidate_id, job)
+    if (pair.triage_band, pair.triage_reason) == (result.band, result.reason):
+        return None
+    old = pair.triage_band
+    if old != "unassigned":
+        pair.version = (pair.version or 1) + 1
+    pair.triage_band, pair.triage_reason = result.band, result.reason
+    event = PairEvent(org_id=pair.org_id, pair_id=pair.id, kind="band", from_value=old, to_value=result.band,
+                      reason=result.reason, cause=cause, actor=actor)
+    session.add(event)
+    session.flush()
+    return event
+
+
+def retriage_candidate(session: Session, org_id, candidate_id, cause: dict, actor: str) -> list[PairEvent]:
+    pairs = session.scalars(select(CandidateJob).where(CandidateJob.org_id == org_id, CandidateJob.candidate_id == candidate_id))
+    return [e for e in (retriage_pair(session, p, cause, actor) for p in pairs) if e]
+
+
+def retriage_job(session: Session, org_id, job_id, cause: dict, actor: str) -> list[PairEvent]:
+    pairs = session.scalars(select(CandidateJob).where(CandidateJob.org_id == org_id, CandidateJob.job_id == job_id))
+    return [e for e in (retriage_pair(session, p, cause, actor) for p in pairs) if e]
+
+
+def _ensure_pair(session: Session, org_id, candidate_id, job: Job, cause: dict | None = None) -> CandidateJob:
     pair = session.scalar(select(CandidateJob).where(CandidateJob.candidate_id == candidate_id, CandidateJob.job_id == job.id))
     if pair is None:
         pair = CandidateJob(org_id=org_id, candidate_id=candidate_id, job_id=job.id)
         session.add(pair)
-    if pair.band_overridden_by:
-        return pair
-    requirements = [c.payload for c in _live_claims(session, org_id, "job", job.id, "JobRequirementClaim")]
-    skills = [c.payload["normalized_skill"] for c in _live_claims(session, org_id, "candidate", candidate_id, "SkillClaim")]
-    titles = [c.payload["title_raw"] for c in _live_claims(session, org_id, "candidate", candidate_id, "CareerStepClaim")]
-    result = triage.triage(requirements, skills, titles)
-    if (pair.triage_band, pair.triage_reason) != (result.band, result.reason):
-        if pair.triage_band != "unassigned" and pair.id is not None:
-            pair.version = (pair.version or 1) + 1
-        pair.triage_band, pair.triage_reason = result.band, result.reason
-    session.flush()
+        session.flush()
+    retriage_pair(session, pair, cause or {"act": "document_processed"}, "system")
     return pair
 
 

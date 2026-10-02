@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { overrideBand } from "@/app/actions";
+import { addSkill, overrideBand } from "@/app/actions";
 import { apiOr404, type Band } from "@/lib/api";
 import { BAND_LABEL, reasonWords } from "@/lib/format";
 
@@ -14,7 +14,18 @@ type GapRow = {
   status: "evidence" | "missing" | "conflict" | "question";
   detail: string;
   official: boolean;
+  token: string | null;
   facts: { id: string; claim_type: string; status: string; snippet: string | null }[];
+};
+
+type HistoryEvent = { kind: string; from: string | null; to: string; reason: string | null; cause: Record<string, string>; actor: string; at: string };
+
+const CAUSE_LABEL: Record<string, string> = {
+  document_processed: "CV read",
+  typed: "fact typed",
+  approve: "fact approved",
+  reject: "fact rejected",
+  override: "set by hand",
 };
 
 type GapPage = {
@@ -24,6 +35,7 @@ type GapPage = {
   reason: string | null;
   overridden_by: string | null;
   counts: Record<GapRow["status"], number>;
+  history: HistoryEvent[];
   rows: GapRow[];
 };
 
@@ -38,6 +50,7 @@ export default async function PersonOnJob({ params }: { params: Promise<{ id: st
   const { id, cid } = await params;
   const page = await apiOr404<GapPage>(`/v1/jobs/${id}/people/${cid}/gaps`);
   const questions = page.rows.filter((r) => r.status === "question");
+  const path = `/jobs/${page.job.id}/people/${page.person.id}`;
 
   return (
     <>
@@ -71,7 +84,18 @@ export default async function PersonOnJob({ params }: { params: Promise<{ id: st
                   </div>
                 </td>
                 <td><span className={`gapstatus ${r.status}`}>{STATUS_LABEL[r.status]}</span></td>
-                <td>{r.detail}</td>
+                <td>
+                  {r.detail}
+                  {r.status === "missing" && r.token && (
+                    <div className="row" style={{ marginTop: 6 }}>
+                      {r.token.split("/").filter(Boolean).map((t) => (
+                        <form key={t} action={addSkill.bind(null, page.person.id, t, path)}>
+                          <button className="btn small" title="Record this skill as an approved fact; the band is recomputed">They have {t}</button>
+                        </form>
+                      ))}
+                    </div>
+                  )}
+                </td>
                 <td>
                   {r.facts.length === 0 ? <span className="sub">nothing</span> : (
                     <>
@@ -93,6 +117,21 @@ export default async function PersonOnJob({ params }: { params: Promise<{ id: st
           <h3>To ask on the call ({questions.length})</h3>
           <ul className="questions">
             {questions.map((q) => <li key={q.requirement_id}><strong>{q.requirement}:</strong> {q.detail}</li>)}
+          </ul>
+        </section>
+      )}
+
+      {page.history.length > 0 && (
+        <section>
+          <h2>History</h2>
+          <ul className="history">
+            {page.history.map((e, i) => (
+              <li key={i}>
+                <span className="sub">{e.at.slice(0, 16).replace("T", " ")}</span>{" "}
+                {e.from && e.from !== "unassigned" ? `${BAND_LABEL[e.from as Band] ?? e.from} → ` : ""}<strong>{BAND_LABEL[e.to as Band] ?? e.to}</strong>
+                {" "}· {CAUSE_LABEL[e.cause.act] ?? e.cause.act}{e.cause.claim_type ? ` (${e.cause.claim_type.replace("Claim", "").toLowerCase()})` : ""} · {reasonWords(e.reason)} · <span className="sub">{e.actor}</span>
+              </li>
+            ))}
           </ul>
         </section>
       )}

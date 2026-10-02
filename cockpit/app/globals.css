@@ -146,3 +146,4 @@ table.gaps tr.conflict td:first-child { border-left: 2px solid var(--red); }
   table.gaps tr { display: block; border-bottom: 1px solid var(--line); padding: 8px 0; }
   table.gaps td { display: block; border: none; padding: 2px 0; }
 }
+.history li { padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 13px; }

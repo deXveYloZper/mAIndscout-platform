@@ -19,6 +19,7 @@ Slice 1: "On a job, each person has a gap table: every requirement → evidence 
 - **Vague requirements** (qualities, broad areas): **ask**.
 - Process dates and plain work locations are job information, not rows.
 - **No score:** the API returns rows and per-status counts; counts are never added up or weighted. The page says so.
+- **"They have …"** on a missing skill row records that skill as an approved fact typed by the recruiter; the band is recomputed at once and the **History** section shows the change and its cause.
 - The "To ask on the call" list gathers every ask row (the seed of Slice 3's Brief).
 
 ## Depends on

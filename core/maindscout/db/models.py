@@ -9,11 +9,13 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
+    Identity,
     Index,
     Numeric,
     String,
@@ -365,4 +367,27 @@ class SuppressionEntry(Base):
     erasure_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("erasure.id"))
     encounters: Mapped[int] = mapped_column(nullable=False, default=0)  # later uploads blocked by this entry
     last_encounter_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created()
+
+
+# --- pair history -------------------------------------------------------------------------------
+
+
+class PairEvent(Base):
+    """Append-only history of a person-job pair: every band change (and, from Slice 1 step 4, every state change),
+    with what caused it and who. Never updated, never deleted except by erasure of the person."""
+
+    __tablename__ = "pair_event"
+    __table_args__ = (Index("ix_pair_event_pair", "pair_id", "created_at"),)
+    id: Mapped[uuid.UUID] = _pk()
+    # Order of events: timestamps tie inside one transaction, a sequence never does.
+    seq: Mapped[int] = mapped_column(BigInteger, Identity(), nullable=False, unique=True)
+    org_id: Mapped[uuid.UUID] = _org()
+    pair_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate_job.id"), nullable=False)
+    kind: Mapped[str] = mapped_column(String, nullable=False)  # band | state
+    from_value: Mapped[str | None] = mapped_column(String)
+    to_value: Mapped[str] = mapped_column(String, nullable=False)
+    reason: Mapped[str | None] = mapped_column(String)
+    cause: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)  # e.g. {"act": "approve", "claim_id": ...}
+    actor: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = _created()

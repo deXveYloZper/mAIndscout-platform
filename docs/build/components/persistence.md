@@ -5,7 +5,7 @@
 **Code:** `core/maindscout/db/models.py`, `core/migrations/`, `docker-compose.yml`
 
 ## What
-The Slice 0 Postgres tables, created by one Alembic migration (`0001`). Tables: `org`, `document`, `extraction_artifact`, `document_subject`, `candidate`, `job`, `candidate_job`, `not_same`, `intelligence_run`, `claim`, `evidence`, `claim_observation`, `decision`, `decision_item`, plus two seeded registries (`claim_type_registry`, `flag_type_registry`). Migration `0002` adds `erasure` and `suppression_registry` ([erasure.md](erasure.md)).
+The Slice 0 Postgres tables, created by one Alembic migration (`0001`). Tables: `org`, `document`, `extraction_artifact`, `document_subject`, `candidate`, `job`, `candidate_job`, `not_same`, `intelligence_run`, `claim`, `evidence`, `claim_observation`, `decision`, `decision_item`, plus two seeded registries (`claim_type_registry`, `flag_type_registry`). Migration `0002` adds `erasure` and `suppression_registry` ([erasure.md](erasure.md)). Migrations `0003`/`0004` add `pair_event`, the append-only history of each pair, ordered by a sequence (timestamps tie inside one transaction).
 
 ## Why
 Every later piece reads and writes these. The shape follows [01-system-blueprint.md](../../../01-system-blueprint.md) section D, trimmed to what Slice 0 needs, so later slices add to it rather than reshape it.

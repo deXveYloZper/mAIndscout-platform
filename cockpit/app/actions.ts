@@ -163,3 +163,16 @@ export async function eraseCandidate(candidateId: string, _: FormState, form: Fo
   revalidatePath("/");
   redirect("/?erased=1");
 }
+
+
+/** The recruiter knows the person has a skill the file did not show: record it as an approved fact.
+ *  Bands that depend on it are recomputed by the platform, and the change appears in the pair history. */
+export async function addSkill(candidateId: string, token: string, path: string): Promise<void> {
+  await apiJson("/v1/claims", {
+    subject_type: "candidate",
+    subject_id: candidateId,
+    claim_type: "SkillClaim",
+    payload: { raw_label: token, normalized_skill: token.toLowerCase() },
+  });
+  revalidatePath(path);
+}

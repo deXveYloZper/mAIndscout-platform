@@ -36,6 +36,7 @@ from maindscout.db.models import (
     IntelligenceRun,
     Job,
     NotSame,
+    PairEvent,
     SuppressionEntry,
 )
 from maindscout.settings import env
@@ -128,6 +129,8 @@ def erase_candidate(session: Session, blobs: BlobStore, org_id: uuid.UUID, candi
     run("evidence", delete(Evidence).where(or_(Evidence.claim_id.in_(claim_ids), Evidence.document_id.in_(doc_ids))))
     session.execute(update(Claim).where(Claim.superseded_by.in_(claim_ids)).values(superseded_by=None))
     run("claims", delete(Claim).where(Claim.id.in_(claim_ids)))
+    pair_ids = select(CandidateJob.id).where(CandidateJob.candidate_id == candidate_id)
+    run("pair_history", delete(PairEvent).where(PairEvent.pair_id.in_(pair_ids)))
     run("pairs", delete(CandidateJob).where(CandidateJob.candidate_id == candidate_id))
     run("not_same", delete(NotSame).where(or_(NotSame.candidate_a == candidate_id, NotSame.candidate_b == candidate_id)))
     run("document_links", delete(DocumentSubject).where(or_(DocumentSubject.subject_id == candidate_id, DocumentSubject.document_id.in_(doc_ids))))

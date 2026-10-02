@@ -299,3 +299,64 @@ def test_gap_table_for_someone_not_on_the_job_is_not_found(client):
     job_id = make_job(client)
     r = client.post("/v1/candidates", files=pdf_file(CV_LINES, "pool.pdf")).json()
     assert client.get(f"/v1/jobs/{job_id}/people/{r['subject_id']}/gaps").status_code == 404
+
+
+
+def _skill_payload(token):
+    return {"raw_label": token.upper(), "normalized_skill": token}
+
+
+def test_typing_a_missing_must_have_moves_the_band_and_records_why(client):
+    job_id = make_job(client)
+    cid = drop_cv(client, job_id)["subject_id"]
+    before = client.get(f"/v1/jobs/{job_id}/people/{cid}/gaps").json()
+    assert before["band"] == "do_not_submit"
+    r = client.post("/v1/claims", json={"subject_type": "candidate", "subject_id": cid, "claim_type": "SkillClaim",
+                                        "payload": _skill_payload("insar")})
+    assert r.status_code == 201
+    after = client.get(f"/v1/jobs/{job_id}/people/{cid}/gaps").json()
+    assert after["band"] == "priority" and after["reason"] == "supported:insar"
+    insar = next(row for row in after["rows"] if row["token"] == "insar")
+    assert insar["status"] == "evidence" and insar["official"] is True
+    last = after["history"][-1]
+    assert (last["from"], last["to"], last["cause"]["act"], last["actor"]) == ("do_not_submit", "priority", "typed", "operator")
+    assert after["history"][0]["cause"]["act"] == "document_processed"
+
+
+def test_rejecting_the_only_supporting_skill_moves_the_band_back(client):
+    job_id = make_job(client)
+    cid = drop_cv(client, job_id)["subject_id"]
+    typed = client.post("/v1/claims", json={"subject_type": "candidate", "subject_id": cid, "claim_type": "SkillClaim",
+                                            "payload": _skill_payload("insar")}).json()
+    client.post(f"/v1/claims/{typed['id']}/reject", json={"code": "wrong"})
+    page = client.get(f"/v1/jobs/{job_id}/people/{cid}/gaps").json()
+    assert page["band"] == "do_not_submit" and page["history"][-1]["cause"]["act"] == "reject"
+
+
+def test_a_band_set_by_hand_is_never_changed_by_new_facts(client):
+    job_id = make_job(client)
+    cid = drop_cv(client, job_id)["subject_id"]
+    client.post(f"/v1/jobs/{job_id}/people/{cid}/triage", json={"band": "review_later", "reason": "talk first"})
+    client.post("/v1/claims", json={"subject_type": "candidate", "subject_id": cid, "claim_type": "SkillClaim",
+                                    "payload": _skill_payload("insar")})
+    page = client.get(f"/v1/jobs/{job_id}/people/{cid}/gaps").json()
+    assert page["band"] == "review_later"
+    assert page["history"][-1]["cause"]["act"] == "override"
+
+
+def test_rejecting_a_jobs_distinctive_requirement_re_triages_everyone_on_it(client):
+    job_id = make_job(client)
+    cid = drop_cv(client, job_id)["subject_id"]
+    req = next(r for r in client.get(f"/v1/jobs/{job_id}").json()["requirements"] if r["payload"].get("distinctive"))
+    client.post(f"/v1/claims/{req['id']}/reject", json={"code": "wrong"})
+    page = client.get(f"/v1/jobs/{job_id}/people/{cid}/gaps").json()
+    assert page["band"] == "review_later" and page["reason"] == "no_distinctive_requirements"
+    assert page["history"][-1]["cause"]["claim_type"] == "JobRequirementClaim"
+
+
+def test_erasure_takes_the_pair_history_with_it(client, monkeypatch):
+    monkeypatch.setenv("SUPPRESSION_KEY", "k")
+    job_id = make_job(client)
+    cid = drop_cv(client, job_id)["subject_id"]
+    r = client.post(f"/v1/subjects/candidate/{cid}/erase", json={}).json()
+    assert r["clean"] and r["counts"]["pair_history"] >= 1

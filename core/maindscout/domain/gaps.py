@@ -45,6 +45,7 @@ class Row:
     detail: str
     distinctive: bool = False
     facts: list[Fact] = field(default_factory=list)
+    token: str | None = None  # the skill token, for skill rows
 
     @property
     def official(self) -> bool:
@@ -189,7 +190,7 @@ def gap_table(requirements: list[dict[str, Any]], facts: list[Fact], today: date
         else:
             status, detail, used = "question", "check on the call", []
         rows.append(Row(r["id"], p["text_raw"], "mobility" if p.get("mobility") else cat, p["strength"], status, detail,
-                        bool(p.get("distinctive")), used))
+                        bool(p.get("distinctive")), used, p.get("normalized_token") if cat == "skill" else None))
     rows.sort(key=lambda row: row.kind == "mobility")
     return rows
 

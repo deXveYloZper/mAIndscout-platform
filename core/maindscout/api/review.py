@@ -16,8 +16,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from maindscout.api import writer
-from maindscout.api.process import natural_key
-from maindscout.db.models import Candidate, CandidateJob, Claim, ClaimObservation, Decision, DecisionItem, Evidence, Job
+from maindscout.api.process import natural_key, retriage_candidate, retriage_job
+from maindscout.db.models import Candidate, CandidateJob, Claim, ClaimObservation, Decision, DecisionItem, Evidence, Job, PairEvent
 from maindscout.domain import stints
 
 REJECT_CODES = ("low_confidence", "wrong", "not_about_subject", "duplicate", "outdated", "other")
@@ -54,6 +54,15 @@ def _seal(decision: Decision, resolution: dict[str, Any], actor: str) -> None:
     decision.resolution = {**resolution, "by": actor, "at": _now().isoformat()}
 
 
+def retriage_after(session: Session, claim: Claim, act: str, actor: str) -> None:
+    """A human changed a fact: bands that may depend on it are recomputed, and each change is recorded."""
+    cause = {"act": act, "claim_id": str(claim.id), "claim_type": claim.claim_type}
+    if claim.subject_type == "candidate":
+        retriage_candidate(session, claim.org_id, claim.subject_id, cause, actor)
+    elif claim.subject_type == "job":
+        retriage_job(session, claim.org_id, claim.subject_id, cause, actor)
+
+
 def _open_decisions_for(session: Session, claim: Claim, type_: str) -> list[Decision]:
     return list(session.scalars(
         select(Decision).join(DecisionItem, DecisionItem.decision_id == Decision.id).where(
@@ -77,6 +86,7 @@ def approve_claim(session: Session, org_id: uuid.UUID, claim_id: uuid.UUID, acto
                     peer.status, peer.rejection_reason = "rejected", {"code": "outdated", "note": "lost a contradiction"}
         _seal(decision, {"action": "approved", "claim_id": str(claim.id)}, actor)
     session.flush()
+    retriage_after(session, claim, "approve", actor)
     return claim
 
 
@@ -89,6 +99,7 @@ def reject_claim(session: Session, org_id: uuid.UUID, claim_id: uuid.UUID, actor
         raise ReviewError(f"A {claim.status} claim cannot be rejected")
     claim.status, claim.rejection_reason = "rejected", {"code": code, "note": note, "by": actor}
     session.flush()
+    retriage_after(session, claim, "reject", actor)
     return claim
 
 
@@ -131,6 +142,7 @@ def assert_claim(session: Session, org_id: uuid.UUID, actor: str, *, subject_typ
         if old.status in ("proposed", "approved"):
             old.status, old.superseded_by = "superseded", claim.id
     session.flush()
+    retriage_after(session, claim, "typed", actor)
     return claim
 
 
@@ -183,6 +195,11 @@ def resolve_decision(session: Session, org_id: uuid.UUID, decision_id: uuid.UUID
 
     _seal(decision, {"action": action}, actor)
     session.flush()
+    for item in items:
+        claim = session.get(Claim, item.claim_id)
+        if claim is not None:
+            retriage_after(session, claim, f"resolve:{decision.type}", actor)
+            break
     return decision
 
 
@@ -194,7 +211,10 @@ def override_band(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, candid
                                                      CandidateJob.org_id == org_id))
     if pair is None:
         raise LookupError("No such pair")
+    old = pair.triage_band
     pair.triage_band, pair.triage_reason = band, f"human_override:{reason or 'no reason given'}"
     pair.band_overridden_by, pair.version = actor, pair.version + 1
+    session.add(PairEvent(org_id=org_id, pair_id=pair.id, kind="band", from_value=old, to_value=band,
+                          reason=pair.triage_reason, cause={"act": "override"}, actor=actor))
     session.flush()
     return pair

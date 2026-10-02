@@ -17,6 +17,7 @@
 - **Careers:** each listed job is its own claim. Different companies overlapping get `concurrency.overlap_with` on both. Same company overlapping across two documents is kept as two claims, both flagged `possible_duplicate_stint`, with a `duplicate_stint` decision.
 - **A job ad** (`doc_type=jd`): creates a job (title, hiring company) and `JobRequirementClaim`s; process dates already passed (against the file's date) get `job_process_stale`. Contact details in the ad are never filed as a person.
 - **Rerun:** a processed document is not read again; passing a different job just (re)triages the pair. `force=True` reads it again: a job ad updates the job it created (never a second job), and the machine's earlier *proposed* facts that rest only on this document and were not found again are marked `superseded`. Approved facts, and facts also supported by another source, are never touched.
+- **Bands with history:** `retriage_pair` / `retriage_candidate` / `retriage_job` recompute bands from live facts and append a `pair_event` only when the band or reason changes (the first banding is recorded as cause `document_processed`).
 - **Contradictions:** two current locations in different countries from the same date open a `contradiction` card.
 - Why a flag was raised (e.g. which link disagreed) is kept on the evidence row, not in the payload.
 - A document that is neither cv nor jd ends as `needs_human`. Span failures, cost and the model/prompt versions are kept on the run.

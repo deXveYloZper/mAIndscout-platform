@@ -71,6 +71,23 @@ test("a person on a job opens as a gap table, with no overall score", async ({ p
   await expect(page.locator(".counts")).toContainText("Evidence:");
 });
 
+test("recording a missing must-have as a fact moves the band, and the history says why", async ({ page }) => {
+  await page.goto(catalystUrl);
+  await page.locator("summary", { hasText: /Do not submit \(\d+\)/ }).click();
+  await page.getByRole("link", { name: /Jure Domajnko/ }).click();
+  await expect(page.locator(".bandtag").first()).toHaveText("Do not submit");
+  await page.getByRole("button", { name: "They have insar" }).click();
+  await expect(page.locator(".bandtag").first()).toHaveText("Priority");
+  const history = page.locator(".history li").last();
+  await expect(history).toContainText("Do not submit → Priority");
+  await expect(history).toContainText("fact typed");
+  // Put back for the rest of the day: a band set by hand stays.
+  await page.getByLabel("Band", { exact: true }).selectOption("do_not_submit");
+  await page.getByLabel("Reason for changing the band").fill("e2e reset");
+  await page.getByRole("button", { name: "Set" }).click();
+  await expect(page.locator(".bandtag").first()).toHaveText("Do not submit");
+});
+
 test("a stale advertisement warns before anyone is submitted", async ({ page }) => {
   await page.goto("/");
   await page.locator('input[type="file"]').setInputFiles(PROCURE);

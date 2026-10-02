@@ -252,9 +252,19 @@ def gap_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, candidate_i
         "person": {"id": str(person.id), "name": names(session, [person.id])[person.id]},
         "band": pair.triage_band, "reason": pair.triage_reason, "overridden_by": pair.band_overridden_by,
         "counts": gaps.counts(rows),
+        "history": pair_history(session, pair.id),
         "rows": [{
             "requirement_id": r.requirement_id, "requirement": r.requirement, "kind": r.kind, "strength": r.strength,
-            "distinctive": r.distinctive, "status": r.status, "detail": r.detail, "official": r.official,
+            "distinctive": r.distinctive, "status": r.status, "detail": r.detail, "official": r.official, "token": r.token,
             "facts": [{"id": f.id, "claim_type": f.claim_type, "status": f.status, "snippet": f.snippet} for f in r.facts[:4]],
         } for r in rows],
     }
+
+
+def pair_history(session: Session, pair_id: uuid.UUID) -> list[dict[str, Any]]:
+    """Every change to a pair, oldest first: what changed, why, what caused it, who."""
+    from maindscout.db.models import PairEvent
+
+    events = session.scalars(select(PairEvent).where(PairEvent.pair_id == pair_id).order_by(PairEvent.seq))
+    return [{"kind": e.kind, "from": e.from_value, "to": e.to_value, "reason": e.reason, "cause": e.cause,
+             "actor": e.actor, "at": _iso(e.created_at)} for e in events]
