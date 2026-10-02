@@ -85,6 +85,7 @@ def add_claim(
         raise reg.UnknownClaimTypeError(f"Unknown claim type: {claim_type}")
     if subject_type not in type_row.subject_types:
         raise reg.UnknownClaimTypeError(f"{claim_type} cannot describe a {subject_type}")
+    reg.validate_payload(claim_type, type_row.payload_schema, payload)
 
     claim = Claim(
         org_id=org_id,

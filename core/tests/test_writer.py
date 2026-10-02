@@ -11,7 +11,7 @@ from maindscout.domain import registry as reg
 
 def _claim(session, org, subject_id, **kw):
     args = dict(org_id=org.id, subject_type="candidate", subject_id=subject_id,
-                claim_type="SkillClaim", payload={"skill": "python"})
+                claim_type="SkillClaim", payload={"raw_label": "Python", "normalized_skill": "python"})
     args.update(kw)
     return writer.add_claim(session, **args)
 
@@ -24,6 +24,7 @@ def test_claim_is_written_staged_with_registered_flags(session, org, candidate_i
 
 def test_nested_registered_flag_is_accepted(session, org, candidate_id):
     _claim(session, org, candidate_id, claim_type="CareerStepClaim",
+           payload={"company": {"raw_name": "Acme", "provisional": True}, "title_raw": "Engineer"},
            flags={"concurrency": {"overlap_with": ["other"]}})
 
 
@@ -101,3 +102,10 @@ def test_set_flags_has_the_same_guard_as_a_new_claim(session, org, candidate_id)
         writer.set_flags(session, claim, {"made_up": True})
     with pytest.raises(reg.UnknownFlagError):
         writer.set_flags(session, claim, {"job_process_stale": True})  # a job flag on a person
+
+
+def test_payload_must_match_its_schema_no_invented_fields(session, org, candidate_id):
+    with pytest.raises(reg.InvalidPayloadError):
+        _claim(session, org, candidate_id, payload={"raw_label": "Rust", "normalized_skill": "rust", "vibe": "great"})
+    with pytest.raises(reg.InvalidPayloadError):
+        _claim(session, org, candidate_id, payload={"raw_label": "Rust"})  # missing normalized_skill

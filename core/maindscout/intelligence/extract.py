@@ -167,6 +167,7 @@ class StagedClaim:
     source_authority: str = "candidate_authored"
     flags: dict[str, Any] = field(default_factory=dict)
     employment_type: str | None = None
+    note: str | None = None  # why a flag was raised; kept on the evidence, not in the payload
 
 
 @dataclass
@@ -308,10 +309,8 @@ def extract_cv(text: str, artifact_id: uuid.UUID, annotations: list[dict], clien
             "attributable": verdict.attributable,
             "attribution": verdict.attribution,
         }
-        if verdict.reason:
-            payload["note"] = verdict.reason
         run.results = [r for r in run.results if not (r.client_key == key and r.result == "fail")]
-        run.accept(StagedClaim(key, "ContactClaim", payload, span, flags=claim_flags))
+        run.accept(StagedClaim(key, "ContactClaim", payload, span, flags=claim_flags, note=verdict.reason))
 
     known = {c.payload["normalized"] for c in run.staged if c.claim_type == "ContactClaim"}
     for a in annotations:
@@ -325,9 +324,8 @@ def extract_cv(text: str, artifact_id: uuid.UUID, annotations: list[dict], clien
         key = run.key("contact")
         span = {"artifact_id": str(artifact_id), "page": a["page"], "char_start": None, "char_end": None,
                 "snippet": a["uri"], "annotation_id": f"{a['page']}:{a['uri']}"}
-        payload = {"kind": kind, "value": norm, "normalized": norm, "attributable": True, "attribution": "subject",
-                   "note": "taken from a link in the file"}
-        run.accept(StagedClaim(key, "ContactClaim", payload, span))
+        payload = {"kind": kind, "value": norm, "normalized": norm, "attributable": True, "attribution": "subject"}
+        run.accept(StagedClaim(key, "ContactClaim", payload, span, note="taken from a link in the file"))
 
     for item in data.get("career_steps", []):
         key = run.key("career")

@@ -26,6 +26,8 @@ Local setup: [core/README.md](../../core/README.md).
 
 | Component | Status | Page |
 |---|---|---|
+| HTTP API `/v1` | built | [http-api.md](components/http-api.md) |
+| Review: human acts + read models | built | [review.md](components/review.md) |
 | Process document: commit proposed claims | built | [process.md](components/process.md) |
 | Intelligence: extract, span check, triage | built | [intelligence.md](components/intelligence.md) |
 | Ingestion: upload + text layer | built | [ingestion.md](components/ingestion.md) |

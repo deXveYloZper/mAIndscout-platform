@@ -36,7 +36,7 @@ from maindscout.intelligence.llm import LLMClient
 from maindscout.storage import BlobStore
 
 LIVE = ("proposed", "approved")
-PRIORITY = {"identity_note": 100, "duplicate_stint": 50, "revision_diff": 40}
+PRIORITY = {"identity_note": 100, "contradiction": 60, "duplicate_stint": 50, "revision_diff": 40}
 
 
 @dataclass
@@ -85,12 +85,32 @@ def _decision(session: Session, org_id, type_: str, subject_type: str, subject_i
     return decision
 
 
+def natural_key(subject_id, claim_type: str, p: dict, valid_from: str | None = None, valid_to: str | None = None) -> str:
+    """Deduplication key per claim_type_registry.yaml. Same key = same fact, seen again."""
+    sid = subject_id
+    if claim_type == "IdentityClaim":
+        return f"{sid}|{_norm_name(p['full_name'])}"
+    if claim_type == "ContactClaim":
+        return f"{sid}|{p['kind']}|{p['normalized']}"
+    if claim_type == "CareerStepClaim":
+        return f"{sid}|{stints.normalize_company(p['company']['raw_name'])}|{valid_from or ''}|{valid_to or 'open'}"
+    if claim_type == "EducationClaim":
+        return f"{sid}|edu|{_norm_name(p['institution_raw'])}|{valid_from or ''}"
+    if claim_type == "SkillClaim":
+        return f"{sid}|{p['normalized_skill']}"
+    if claim_type == "LocationClaim":
+        return f"{sid}|{_norm_name(p['place_raw'])}|{p['basis']}"
+    if claim_type == "JobRequirementClaim":
+        return f"{sid}|{p['category']}|{p.get('normalized_token') or _norm_name(p['text_raw'])}"
+    raise ValueError(f"No natural key for {claim_type}")
+
+
 # --- writing one claim --------------------------------------------------------------------------
 
 
 def _write_claim(session: Session, doc: Document, run: IntelligenceRun, subject_type: str, subject_id: uuid.UUID,
                  claim_type: str, payload: dict, natural_key: str, span: dict | None, *, valid_from=None, valid_to=None,
-                 precision="unknown", origin="candidate", authority="candidate_authored", flags=None
+                 precision="unknown", origin="candidate", authority="candidate_authored", flags=None, note=None
                  ) -> tuple[Claim, bool]:
     """Add a claim, or add a new observation to the live claim with the same natural key."""
     existing = session.scalar(
@@ -112,7 +132,7 @@ def _write_claim(session: Session, doc: Document, run: IntelligenceRun, subject_
         org_id=doc.org_id, claim_id=claim.id, evidence_type="document_span", document_id=doc.id,
         locator={k: span[k] for k in ("artifact_id", "page", "char_start", "char_end", "annotation_id") if k in span} if span else None,
         snippet=span["snippet"] if span else None,
-        span_validation={"tier": "typed", "result": "pass", "metric_bucket": "hallucination_rate"},
+        span_validation={"tier": "typed", "result": "pass", "metric_bucket": "hallucination_rate", "detail": note},
         source_authority=authority, origin=origin, observed_as_of=doc.as_of,
     )
     session.add(evidence)
@@ -228,6 +248,30 @@ def _flag_careers(session: Session, org_id, candidate_id, run: IntelligenceRun, 
     session.flush()
 
 
+def _contradictions(session: Session, org_id, candidate_id, decisions: list[uuid.UUID]) -> None:
+    """Two current places in different countries, stated as of the same date, cannot both be true.
+
+    Different dates are temporal succession (the person moved): no card, the newer one is current.
+    """
+    places = [c for c in _live_claims(session, org_id, "candidate", candidate_id, "LocationClaim")
+              if c.payload.get("kind", "current") == "current" and c.payload.get("country_code")]
+    for i, a in enumerate(places):
+        for b in places[i + 1:]:
+            if a.payload["country_code"] == b.payload["country_code"] or a.observed_as_of != b.observed_as_of:
+                continue
+            if a.status == "approved" and b.status == "approved":
+                continue
+            already = session.scalar(
+                select(Decision.id).join(DecisionItem, DecisionItem.decision_id == Decision.id).where(
+                    Decision.type == "contradiction", Decision.sealed_at.is_(None), DecisionItem.claim_id == a.id,
+                    Decision.id.in_(select(DecisionItem.decision_id).where(DecisionItem.claim_id == b.id))))
+            if already:
+                continue
+            decisions.append(_decision(session, org_id, "contradiction", "candidate", candidate_id,
+                                       {"question": "which is the current location?"},
+                                       [("left", a.id), ("right", b.id)]).id)
+
+
 def _ensure_pair(session: Session, org_id, candidate_id, job: Job) -> CandidateJob:
     pair = session.scalar(select(CandidateJob).where(CandidateJob.candidate_id == candidate_id, CandidateJob.job_id == job.id))
     if pair is None:
@@ -322,18 +366,7 @@ def _process_cv(session: Session, doc: Document, artifact: ExtractionArtifact, r
 
     for s in outcome.staged:
         p = s.payload
-        if s.claim_type == "IdentityClaim":
-            key = f"{cid}|{_norm_name(p['full_name'])}"
-        elif s.claim_type == "ContactClaim":
-            key = f"{cid}|{p['kind']}|{p['normalized']}"
-        elif s.claim_type == "CareerStepClaim":
-            key = f"{cid}|{stints.normalize_company(p['company']['raw_name'])}|{s.valid_from or ''}|{s.valid_to or 'open'}"
-        elif s.claim_type == "EducationClaim":
-            key = f"{cid}|edu|{_norm_name(p['institution_raw'])}|{s.valid_from or ''}"
-        elif s.claim_type == "SkillClaim":
-            key = f"{cid}|{p['normalized_skill']}"
-        else:
-            key = f"{cid}|{_norm_name(p['place_raw'])}|{p['basis']}"
+        key = natural_key(cid, s.claim_type, p, s.valid_from, s.valid_to)
         # Two entries in one document that share a key are still two entries: never fuse them.
         base, n = key, 1
         while key in run_keys:
@@ -342,7 +375,8 @@ def _process_cv(session: Session, doc: Document, artifact: ExtractionArtifact, r
         run_keys.add(key)
         claim, created = _write_claim(
             session, doc, run, "candidate", cid, s.claim_type, p, key, s.span, valid_from=s.valid_from,
-            valid_to=s.valid_to, precision=s.temporal_precision, origin=s.origin, authority=authority, flags=s.flags)
+            valid_to=s.valid_to, precision=s.temporal_precision, origin=s.origin, authority=authority, flags=s.flags,
+            note=s.note)
         claim_ids.append(claim.id)
         if created and s.claim_type == "CareerStepClaim":
             new_careers.add(claim.id)
@@ -354,6 +388,7 @@ def _process_cv(session: Session, doc: Document, artifact: ExtractionArtifact, r
                     [("current", claim.id)]).id)
 
     _flag_careers(session, doc.org_id, cid, run, new_careers, decisions)
+    _contradictions(session, doc.org_id, cid, decisions)
 
     if note:
         decisions.append(_decision(session, doc.org_id, "identity_note", "candidate", cid, note, []).id)
@@ -383,7 +418,7 @@ def _process_jd(session: Session, doc: Document, artifact: ExtractionArtifact, r
     claim_ids: list[uuid.UUID] = []
     for r in outcome.requirements:
         p = r.payload
-        key = f"{job.id}|{p['category']}|{p.get('normalized_token') or ' '.join(p['text_raw'].lower().split())}"
+        key = natural_key(job.id, "JobRequirementClaim", p)
         claim, _ = _write_claim(session, doc, run, "job", job.id, "JobRequirementClaim", p, key, r.span,
                                 origin="employer", authority="employer_authored")
         claim_ids.append(claim.id)
@@ -391,11 +426,10 @@ def _process_jd(session: Session, doc: Document, artifact: ExtractionArtifact, r
         stale = doc.as_of is not None and date.fromisoformat(iso) < doc.as_of
         payload = {"text_raw": label, "category": "process", "strength": "unknown", "normalized_token": iso,
                    "distinctive": False}
-        if assumed:
-            payload["text_raw"] = f"{label} (year taken from the document date)"
         claim, _ = _write_claim(session, doc, run, "job", job.id, "JobRequirementClaim", payload,
                                 f"{job.id}|process|{iso}", None, origin="employer", authority="employer_authored",
-                                flags={"job_process_stale": True} if stale else None)
+                                flags={"job_process_stale": True} if stale else None,
+                                note="year not written; taken from the document date" if assumed else None)
         claim_ids.append(claim.id)
 
     if session.get(DocumentSubject, (doc.id, "job", job.id)) is None:

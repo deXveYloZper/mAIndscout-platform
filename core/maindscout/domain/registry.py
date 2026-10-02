@@ -5,7 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import json
+from functools import lru_cache
+
 import yaml
+from jsonschema import Draft202012Validator
 
 REGISTRY_DIR = Path(__file__).resolve().parents[3] / "slice0" / "registry"
 
@@ -57,3 +61,22 @@ def validate_flags(flags: dict[str, Any], known: set[str]) -> None:
     unknown = [path for path in flag_paths(flags, known) if path not in known]
     if unknown:
         raise UnknownFlagError(unknown)
+
+
+class InvalidPayloadError(ValueError):
+    pass
+
+
+@lru_cache(maxsize=None)
+def _validator(schema_path: str) -> Draft202012Validator:
+    schema = json.loads((REGISTRY_DIR.parent / schema_path).read_text(encoding="utf-8"))
+    return Draft202012Validator(schema)
+
+
+def validate_payload(claim_type: str, schema_path: str | None, payload: dict[str, Any]) -> None:
+    """Reject payloads that do not match the claim type's schema in slice0/schemas (no invented fields)."""
+    if not schema_path:
+        return
+    errors = sorted(_validator(schema_path).iter_errors(payload), key=lambda e: list(e.path))
+    if errors:
+        raise InvalidPayloadError(f"{claim_type} payload invalid: {errors[0].message}")

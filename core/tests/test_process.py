@@ -245,7 +245,8 @@ def test_process_date_without_a_year_takes_the_documents_year_and_marks_the_assu
     result, doc = run(session, blobs, org, lines, data, doc_type="jd")
     claim = claims(session, result.job_id, "JobRequirementClaim")[0]
     assert claim.payload["normalized_token"] == f"{doc.as_of.year}-08-26"
-    assert "year taken from the document date" in claim.payload["text_raw"]
+    ev = session.scalars(select(Evidence).where(Evidence.claim_id == claim.id)).one()
+    assert "taken from the document date" in ev.span_validation["detail"]
     assert bool(claim.flags.get("job_process_stale")) == (date(doc.as_of.year, 8, 26) < doc.as_of)
 
 

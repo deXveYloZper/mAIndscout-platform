@@ -10,7 +10,7 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 | B | Persistence | **signed off** 2026-10-02 |
 | C | Upload + text layer | **signed off** 2026-10-02 (HTTP route moved to E) |
 | D | Extract, span check, commit, triage | **signed off** 2026-10-02 (HTTP route moved to E) |
-| E | HTTP API + cockpit | in progress |
+| E | HTTP API + cockpit | in progress: API built (100 tests, smoke-tested with Grok); cockpit UI next |
 | F | Erasure + verify | not started |
 | G | Golden folder | partly covered by the live test (`tests/test_live_artifacts.py`). `test_artifacts` holds 11 CVs and 2 job ads. Rule going forward: every CV must pass the invariants; the golden JSON files apply where the person is present (Jure) |
 

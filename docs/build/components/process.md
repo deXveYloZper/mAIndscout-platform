@@ -17,13 +17,15 @@
 - **Careers:** each listed job is its own claim. Different companies overlapping get `concurrency.overlap_with` on both. Same company overlapping across two documents is kept as two claims, both flagged `possible_duplicate_stint`, with a `duplicate_stint` decision.
 - **A job ad** (`doc_type=jd`): creates a job (title, hiring company) and `JobRequirementClaim`s; process dates already passed (against the file's date) get `job_process_stale`. Contact details in the ad are never filed as a person.
 - **Rerun:** a processed document is not read again; passing a different job just (re)triages the pair. `force=True` reprocesses.
+- **Contradictions:** two current locations in different countries from the same date open a `contradiction` card.
+- Why a flag was raised (e.g. which link disagreed) is kept on the evidence row, not in the payload.
 - A document that is neither cv nor jd ends as `needs_human`. Span failures, cost and the model/prompt versions are kept on the run.
 
 ## Depends on
 - [intelligence.md](intelligence.md), [ingestion.md](ingestion.md), [persistence.md](persistence.md), [writer.md](writer.md) (`add_claim` guards flags).
 
 ## Used by
-Later: the HTTP route `POST /v1/documents/{id}/process` and the cockpit (Milestone E).
+[http-api.md](http-api.md) (`POST /v1/documents/{id}/process`, `POST /v1/jobs`, `POST /v1/jobs/{id}/documents`).
 
 ## Contracts
 `process_document(session, blobs, client, org_id, document_id, job_id=None, force=False)` returns `ProcessResult` (run, subject, band, reason, claim and decision ids, span failures, cost). The caller owns the transaction.
@@ -32,6 +34,5 @@ Later: the HTTP route `POST /v1/documents/{id}/process` and the cockpit (Milesto
 `core/tests/test_process.py` (fake model, real Postgres). Live: `RUN_LIVE=1 python -m pytest tests/test_live_artifacts.py`. On 2026-10-02 all 11 CVs and 2 job ads passed it for about $0.07 in total.
 
 ## Known limits
-- Not yet reachable over HTTP; no queue, so it runs inline.
-- `contradiction` decisions and approve/reject come with the cockpit milestone.
+- No queue: it runs inside the HTTP request.
 - Span failures live in the run's manifest, not their own table.

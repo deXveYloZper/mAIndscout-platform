@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 import urllib.error
 import urllib.request
@@ -36,17 +35,9 @@ class LLMClient(Protocol):
 
 def load_env_key(name: str = "XAI_API_KEY") -> str | None:
     """Read from the environment, else from core/.env (never committed)."""
-    if os.environ.get(name):
-        return os.environ[name]
-    env_file = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
-    try:
-        for line in open(env_file, encoding="utf-8"):
-            key, _, value = line.strip().partition("=")
-            if key == name and value:
-                return value
-    except OSError:
-        pass
-    return None
+    from maindscout.settings import env
+
+    return env(name)
 
 
 class XaiClient:
