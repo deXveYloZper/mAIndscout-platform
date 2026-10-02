@@ -12,7 +12,7 @@ One command that runs every PDF in `test_artifacts` through the real pipeline (r
 
 ## How
 - **Throwaway database** `maindscout_eval`, recreated each run; dev data is never touched. Original files go to a temporary folder deleted afterwards.
-- **Oracles:** each `must` / `must_not` key is a named check. Unknown key: **NOT CHECKED** (turns the verdict RED). File not in the folder: **NOT RUN**. Keys about later slices (e.g. mobility as three facts): **INFO**.
+- **Oracles:** each `must` / `must_not` key is a named check. Unknown key: **NOT CHECKED** (turns the verdict RED). File not in the folder: **NOT RUN**. Keys about later slices: **INFO**.
 - **Premise check:** an OCR oracle assumes the file's text layer is garbled. If none of the garbled identifiers it names are in this copy of the file, the flag check is NOT RUN with the reason, never PASS.
 - **Mobility:** `mobility_facts_when_extracted` is a real check since Slice 1 step 1 (residence countries, sponsorship, relocation).
 - **Eval date:** an oracle's `as_of_eval` pins "today" for that file (Procure Ai: 2026-09-04).
