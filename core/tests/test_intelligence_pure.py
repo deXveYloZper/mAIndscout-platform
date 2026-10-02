@@ -103,3 +103,10 @@ def test_name_check_ignores_spacing_case_and_accents():
     assert spans.name_supported("Luiz Gustavo Rocco", "LUIZ GUST AVO ROCCO")
     assert spans.name_supported("Gökhan Çiflikli", "GOKHAN CIFLIKLI")
     assert not spans.name_supported("Jane Roe", "JANE EXAMPLE")
+
+
+
+def test_a_token_inside_a_longer_skill_counts_but_not_inside_another_word():
+    assert triage.supports("insar", ["insar basics"], [])
+    assert not triage.supports("psi", ["psychology"], [])
+    assert not triage.supports("react", ["reactive programming"], [])

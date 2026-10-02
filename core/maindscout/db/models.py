@@ -331,3 +331,38 @@ class DecisionItem(Base):
     claim_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("claim.id"), nullable=False)
     role: Mapped[str] = mapped_column(String, nullable=False)  # e.g. current, proposed, option
     outcome: Mapped[str | None] = mapped_column(String)  # approved | rejected | kept | null while open
+
+
+# --- erasure ------------------------------------------------------------------------------------
+
+
+class Erasure(Base):
+    """Record that a person was erased. Holds no personal data: ids, counts and the outcome only."""
+
+    __tablename__ = "erasure"
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    subject_type: Mapped[str] = mapped_column(String, nullable=False)
+    subject_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)  # no FK: the row is gone
+    requested_by: Mapped[str] = mapped_column(String, nullable=False)
+    reason: Mapped[str | None] = mapped_column(String)
+    document_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    counts: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    survivors: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created()
+
+
+class SuppressionEntry(Base):
+    """Keyed hash of an erased person's identifier. Blocks re-ingesting them; cannot be reversed to the identifier."""
+
+    __tablename__ = "suppression_registry"
+    __table_args__ = (UniqueConstraint("org_id", "identifier_hash"),)
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    identifier_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    reason: Mapped[str] = mapped_column(String, nullable=False)
+    erasure_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("erasure.id"))
+    encounters: Mapped[int] = mapped_column(nullable=False, default=0)  # later uploads blocked by this entry
+    last_encounter_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created()

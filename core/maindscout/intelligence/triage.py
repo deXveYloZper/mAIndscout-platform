@@ -39,13 +39,13 @@ class Triage:
 
 
 def supports(token: str, skills: list[str], titles: list[str]) -> bool:
-    """True if the token is one of the person's skills or appears in a job title."""
+    """True if the token is one of the person's skills, or appears as a word in a skill or a job title."""
     wanted = canon(token)
     haystack = {canon(s) for s in skills}
     if wanted in haystack:
         return True
     pattern = re.compile(rf"(?<![a-z0-9]){re.escape(wanted)}(?![a-z0-9])")
-    blob = _words(" ".join(titles))
+    blob = _words(" ".join(titles + skills))  # a skill like "InSAR basics" is evidence of "insar"
     for alias, target in ALIASES.items():
         if target == wanted:
             blob = blob.replace(alias, wanted)

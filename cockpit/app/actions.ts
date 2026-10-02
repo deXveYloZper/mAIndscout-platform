@@ -96,3 +96,20 @@ export async function correctContact(candidateId: string, replaces: string, path
   revalidatePath(path);
   return { message: "Saved as an approved contact." };
 }
+
+export async function eraseCandidate(candidateId: string, _: FormState, form: FormData): Promise<FormState> {
+  if (String(form.get("confirm") || "").trim().toLowerCase() !== "forget") {
+    return { error: 'Type "forget" to confirm. This cannot be undone.' };
+  }
+  let result: { clean: boolean; survivors: string[] };
+  try {
+    result = await apiJson(`/v1/subjects/candidate/${candidateId}/erase`, { reason: String(form.get("reason") || "") || null });
+  } catch (e) {
+    return fail(e);
+  }
+  if (!result.clean) {
+    return { error: `Erasure did NOT complete. Still found: ${result.survivors.join("; ")}` };
+  }
+  revalidatePath("/");
+  redirect("/?erased=1");
+}

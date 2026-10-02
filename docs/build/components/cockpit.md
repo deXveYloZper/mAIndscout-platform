@@ -16,6 +16,7 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
 - **Job (`/jobs/[id]`):** stale-date warning; drop several CVs at once; Priority open by default, Review later and Do not submit folded away; each person's reason in plain words; band override with a note; requirements marked "decides the band" when distinctive; process dates.
 - **Person (`/people/[id]`):** jobs and bands; name, contacts, career (with periods and overlap warnings), education, location, skills; every fact with its status, Approve and Reject, and its source snippet with a link to the original file.
 - **Inbox (`/inbox`):** default is a job's priority people; "Everyone" widens it. Cards: confirm a contact (approve as is, type the correct value, or reject), who-is-this note, revision diff (keep official or accept new), same job or two, contradiction (pick one).
+- **Forget this person** at the foot of the person page (type `forget`); see [erasure.md](erasure.md).
 - **Original files** are streamed through `/files/[id]`, which only accepts a document id.
 - Same palette and fonts as the public site; dense layout; works at phone width.
 
@@ -32,4 +33,3 @@ The recruiter.
 - No automated UI tests yet.
 - Uploads run in the request: about 15 seconds per CV while the page waits.
 - No sign-in: whoever can reach the cockpit acts as the operator. Run it only on a trusted machine or network until accounts exist.
-- Erasure (Milestone F) has no button yet.

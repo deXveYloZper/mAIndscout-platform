@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from maindscout.api import documents, process, queries, review
+from maindscout.api import documents, erasure, process, queries, review
 from maindscout.db.models import Document, ExtractionArtifact, IntelligenceRun, Org
 from maindscout.db.session import make_engine, make_session_factory
 from maindscout.domain import registry as reg
@@ -88,6 +88,7 @@ def get_org(authorization: str | None = Header(default=None), x_org_id: str | No
 
 ERRORS: list[tuple[type[Exception], int]] = [
     (LookupError, 404),
+    (erasure.ErasureConflict, 409),
     (pdf.UnsupportedMedia, 415),
     (LLMError, 502),
     (review.ReviewError, 422),
@@ -330,3 +331,28 @@ def resolve(decision_id: uuid.UUID, body: ResolveBody, org_id: uuid.UUID = Depen
     decision = review.resolve_decision(session, org_id, decision_id, actor, body.action, body.claim_id)
     session.commit()
     return {"id": str(decision.id), "resolution": decision.resolution}
+
+
+class EraseBody(BaseModel):
+    reason: str | None = None
+
+
+@app.post("/v1/subjects/candidate/{candidate_id}/erase")
+def erase(candidate_id: uuid.UUID, body: EraseBody | None = None, org_id: uuid.UUID = Depends(get_org),
+          session: Session = Depends(get_session), blobs: BlobStore = Depends(get_blobs), actor: str = Depends(get_actor)):
+    """Forget a person. The response includes the verify result; anything but an empty survivor list is a failure."""
+    record = erasure.erase_candidate(session, blobs, org_id, candidate_id, actor, (body or EraseBody()).reason)
+    session.commit()
+    return {"erasure_id": str(record.id), "counts": record.counts, "survivors": record.survivors,
+            "clean": not record.survivors}
+
+
+@app.get("/v1/subjects/candidate/{candidate_id}/erase/verify")
+def verify_erase(candidate_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                 blobs: BlobStore = Depends(get_blobs)):
+    record = session.scalar(select(erasure.Erasure).where(erasure.Erasure.org_id == org_id,
+                                                          erasure.Erasure.subject_id == candidate_id))
+    if record is None:
+        raise LookupError("This person has not been erased")
+    survivors = erasure.verify_erasure(session, blobs, org_id, candidate_id, [])
+    return {"clean": not survivors, "survivors": survivors}

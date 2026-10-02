@@ -249,3 +249,19 @@ def test_revision_diff_keeps_the_approved_view_until_a_human_accepts(client, fak
     session.refresh(claim)
     assert claim.approved_view["title_raw"] == "Principal Flight Software Engineer"
     assert session.get(Decision, uuid.UUID(card["id"])).sealed_at is not None
+
+
+
+def test_erase_route_reports_clean_and_verify_agrees(client, monkeypatch):
+    monkeypatch.setenv("SUPPRESSION_KEY", "k")
+    job_id = make_job(client)
+    cid = drop_cv(client, job_id)["subject_id"]
+    r = client.post(f"/v1/subjects/candidate/{cid}/erase", json={"reason": "asked"}).json()
+    assert r["clean"] is True and r["survivors"] == [] and r["counts"]["claims"] > 0
+    assert client.get(f"/v1/subjects/candidate/{cid}/erase/verify").json() == {"clean": True, "survivors": []}
+    assert client.get(f"/v1/candidates/{cid}").status_code == 404
+    assert client.get(f"/v1/jobs/{job_id}").json()["people"]["do_not_submit"] == []
+
+
+def test_verify_for_someone_never_erased_is_not_found(client):
+    assert client.get(f"/v1/subjects/candidate/{uuid.uuid4()}/erase/verify").status_code == 404

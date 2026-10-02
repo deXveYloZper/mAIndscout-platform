@@ -15,6 +15,10 @@ class BlobStore(Protocol):
 
     def get(self, key: str) -> bytes: ...
 
+    def exists(self, key: str) -> bool: ...
+
+    def delete(self, key: str) -> None: ...
+
 
 class LocalBlobStore:
     def __init__(self, root: str | os.PathLike[str] | None = None):
@@ -32,3 +36,9 @@ class LocalBlobStore:
 
     def get(self, key: str) -> bytes:
         return (self.root / key).read_bytes()
+
+    def exists(self, key: str) -> bool:
+        return (self.root / key).exists()
+
+    def delete(self, key: str) -> None:
+        (self.root / key).unlink(missing_ok=True)

@@ -18,7 +18,21 @@ from maindscout.db.models import Org
 from maindscout.db.session import make_engine, make_session_factory
 
 
+def _ensure_suppression_key() -> None:
+    """Erasure hashes identifiers with this key. Lose it and old suppression entries stop matching."""
+    import secrets
+
+    from maindscout.settings import ENV_FILE, env
+
+    if env("SUPPRESSION_KEY"):
+        return
+    with open(ENV_FILE, "a", encoding="utf-8") as f:
+        f.write("\nSUPPRESSION_KEY=" + secrets.token_urlsafe(32) + "\n")
+    print(f"SUPPRESSION_KEY created in {ENV_FILE}. Back it up with the database.")
+
+
 def init(org_name: str) -> None:
+    _ensure_suppression_key()
     command.upgrade(Config(str(Path(__file__).resolve().parents[1] / "alembic.ini")), "head")
     with make_session_factory(make_engine())() as session:
         writer.seed_registries(session)

@@ -15,7 +15,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from maindscout.api import documents, writer
+from maindscout.api import documents, erasure, writer
 from maindscout.db.models import (
     Candidate,
     CandidateJob,
@@ -43,7 +43,7 @@ PRIORITY = {"identity_note": 100, "contradiction": 60, "duplicate_stint": 50, "r
 class ProcessResult:
     run_id: uuid.UUID
     document_id: uuid.UUID
-    status: str  # committed | needs_human
+    status: str  # committed | needs_human | suppressed (an erased person; the upload was deleted)
     subject_type: str | None = None
     subject_id: uuid.UUID | None = None
     job_id: uuid.UUID | None = None
@@ -317,7 +317,10 @@ def process_document(session: Session, blobs: BlobStore, client: LLMClient, *, o
     if doc.doc_type == "jd":
         result = _process_jd(session, doc, artifact, run, client, job)
     elif doc.doc_type == "cv":
-        result = _process_cv(session, doc, artifact, run, client, job)
+        result = _process_cv(session, blobs, doc, artifact, run, client, job)
+        if result.status == "suppressed":
+            session.flush()
+            return result
     else:
         run.status = "failed"
         run.version_manifest = {**run.version_manifest, "reason": "doc_type must be cv or jd"}
@@ -353,9 +356,31 @@ def _span_failures(results) -> list[dict[str, str]]:
     return [{"client_key": r.client_key, "detail": r.detail or ""} for r in results if r.result == "fail"]
 
 
-def _process_cv(session: Session, doc: Document, artifact: ExtractionArtifact, run: IntelligenceRun,
+def _discard_suppressed(session: Session, blobs: BlobStore, doc: Document, run: IntelligenceRun) -> ProcessResult:
+    """Delete the upload of an erased person. Only the fact that an upload was blocked is kept."""
+    from sqlalchemy import delete, func
+
+    session.execute(delete(ExtractionArtifact).where(ExtractionArtifact.document_id == doc.id))
+    run.status = "failed"
+    run.document_id = None
+    run.version_manifest = {k: v for k, v in run.version_manifest.items() if k.endswith("_version")} | {"reason": "suppressed"}
+    key, doc_id = doc.storage_key, doc.id
+    session.delete(doc)
+    session.flush()
+    if not session.scalar(select(func.count()).select_from(Document).where(Document.storage_key == key)):
+        blobs.delete(key)
+    return ProcessResult(run.id, doc_id, "suppressed")
+
+
+def _process_cv(session: Session, blobs: BlobStore, doc: Document, artifact: ExtractionArtifact, run: IntelligenceRun,
                 client: LLMClient, job: Job | None) -> ProcessResult:
     outcome = extract.extract_cv(artifact.content, artifact.id, artifact.annotations or [], client)
+    # Suppression first: a person who was erased is not ingested again. Nothing about them is kept.
+    identifiers = [(c.payload["kind"], c.payload["normalized"]) for c in outcome.staged if c.claim_type == "ContactClaim"]
+    entry = erasure.is_suppressed(session, doc.org_id, identifiers)
+    if entry is not None:
+        erasure.record_encounter(entry)
+        return _discard_suppressed(session, blobs, doc, run)
     candidate, note = _resolve_candidate(session, doc.org_id, outcome)
     cid = candidate.id
     claim_ids: list[uuid.UUID] = []

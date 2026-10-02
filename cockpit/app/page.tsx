@@ -5,12 +5,14 @@ import { api, type JobSummary } from "@/lib/api";
 
 export const metadata = { title: "Jobs" };
 
-export default async function JobsPage() {
+export default async function JobsPage({ searchParams }: { searchParams: Promise<{ erased?: string }> }) {
+  const { erased } = await searchParams;
   const jobs = await api<JobSummary[]>("/v1/jobs");
   return (
     <>
       <h1>Jobs</h1>
       <p className="sub">Open a job, drop CVs onto it, work the priority pile first.</p>
+      {erased && <p className="ok">The person was erased and the check found nothing left.</p>}
 
       <section className="panel">
         <h3>New job from its advertisement</h3>

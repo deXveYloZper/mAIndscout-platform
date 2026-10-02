@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { eraseCandidate } from "@/app/actions";
 import { ClaimRow, Status } from "@/components/Claim";
+import { EraseForm } from "@/components/EraseForm";
 import { api, type PersonPage } from "@/lib/api";
 import { BAND_LABEL, reasonWords } from "@/lib/format";
 
@@ -73,6 +75,8 @@ export default async function Person({ params }: { params: Promise<{ id: string 
           </li>
         ))}
       </ul>
+
+      <EraseForm action={eraseCandidate.bind(null, person.id)} />
     </>
   );
 }
