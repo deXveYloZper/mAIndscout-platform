@@ -2,7 +2,7 @@
 
 Every item in the Slice 1 gate ([PLAN.md](PLAN.md), "Gate to unlock Slice 2") with its evidence. **This page does not declare the gate.** Only the owner does, in [../decisions/](../decisions/) (draft at the end).
 
-Evidence run: `python -m maindscout eval --with-tests` on 2026-10-03 → **GREEN**, 135 checks: 119 pass, 0 fail, 0 not checked, 13 not run (golden people absent), 3 info; automated tests 156 passed. Summary: [../evals/2026-10-03-golden-summary-slice1.md](../evals/2026-10-03-golden-summary-slice1.md). Cockpit end to end: 20 passed.
+Evidence run: `python -m maindscout eval --with-tests` on 2026-10-03 → **GREEN**, 135 checks: 120 pass, 0 fail, 0 not checked, 13 not run (golden people absent), 2 info; automated tests 156 passed. Summary: [../evals/2026-10-03-golden-summary-slice1.md](../evals/2026-10-03-golden-summary-slice1.md). Cockpit end to end: 20 passed.
 
 ## Gate items
 
