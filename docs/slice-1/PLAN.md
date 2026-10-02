@@ -1,6 +1,6 @@
 # Slice 1 — Defendable match
 
-**Status: LOCKED.** Do not start until [../slice-0/GATES.md](../slice-0/GATES.md) is declared green.
+**Status: OPEN** since 2026-10-02 (Slice 0 gate green, [decision](../decisions/2026-10-02-slice-0-gate.md)).
 
 Slice 0 already bands people. This slice makes the band explainable and the pair durable.
 

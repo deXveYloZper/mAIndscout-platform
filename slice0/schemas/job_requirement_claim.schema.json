@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://maindscout.local/schemas/job_requirement_claim.schema.json",
-  "title": "JobRequirementClaim payload (Slice 0 thin)",
-  "description": "One requirement on a job. Distinctive must-have tokens drive coarse triage. Mobility (residence / visa / relocation) must stay separate rows when extracted.",
+  "title": "JobRequirementClaim payload (Slice 1)",
+  "description": "One requirement on a job. Distinctive must-have tokens drive coarse triage. Mobility (residence / visa / relocation) is always three separate rows, never one location score. Slice 1 adds optional fields only (ADR 2026-10-02-richer-requirements); every Slice 0 payload stays valid.",
   "type": "object",
   "additionalProperties": false,
   "required": ["text_raw", "category", "strength"],
@@ -11,7 +11,7 @@
     "normalized_token": { "type": ["string", "null"] },
     "category": {
       "type": "string",
-      "enum": ["skill", "education", "location", "seniority", "process", "authorization", "other"]
+      "enum": ["skill", "education", "location", "seniority", "process", "authorization", "language", "other"]
     },
     "strength": {
       "type": "string",
@@ -20,6 +20,37 @@
     "distinctive": {
       "type": "boolean",
       "description": "If true, zero support on the person forces do_not_submit for this job."
+    },
+    "mobility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["facet"],
+      "description": "Exactly one mobility facet per row.",
+      "properties": {
+        "facet": { "type": "string", "enum": ["residence", "visa_sponsorship", "relocation_assistance"] },
+        "countries": {
+          "type": ["array", "null"],
+          "items": { "type": "string", "pattern": "^[A-Z]{2}$" },
+          "description": "residence: where the person must live or work from (ISO 3166-1 alpha-2)."
+        },
+        "offered": {
+          "type": ["boolean", "null"],
+          "description": "visa_sponsorship / relocation_assistance: true offered, false not offered, null not stated."
+        }
+      }
+    },
+    "min_years": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "description": "seniority: minimum years of experience, only when a number is written."
+    },
+    "education_level": {
+      "type": ["string", "null"],
+      "enum": ["bachelor", "master", "doctorate", "associate", "diploma", "other", null]
+    },
+    "language": {
+      "type": ["string", "null"],
+      "description": "language: the spoken or written language required (e.g. German)."
     }
   }
 }

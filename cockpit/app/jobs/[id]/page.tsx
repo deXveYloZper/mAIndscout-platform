@@ -3,9 +3,30 @@ import { overrideBand } from "@/app/actions";
 import { Snippet } from "@/components/Claim";
 import { MultiUpload } from "@/components/MultiUpload";
 import { api, apiOr404, type Band, type InboxItem, type JobPage, type PersonOnJob } from "@/lib/api";
-import { BAND_LABEL, reasonWords } from "@/lib/format";
+import { BAND_LABEL, countryName, reasonWords } from "@/lib/format";
 
 export const metadata = { title: "Job" };
+
+const REQUIREMENT_GROUPS: [string, string][] = [
+  ["skill", "Skills"],
+  ["seniority", "Experience"],
+  ["education", "Education"],
+  ["language", "Languages"],
+  ["authorization", "Authorisation"],
+  ["location", "Location"],
+  ["other", "Other"],
+];
+
+const FACET_LABEL: Record<string, string> = {
+  residence: "Must live in or work from",
+  visa_sponsorship: "Visa sponsorship",
+  relocation_assistance: "Relocation assistance",
+};
+
+function facetValue(m: { facet: string; countries?: string[] | null; offered?: boolean | null }): string {
+  if (m.facet === "residence") return (m.countries ?? []).map(countryName).join(", ") || "not stated";
+  return m.offered === true ? "offered" : m.offered === false ? "not offered" : "not stated";
+}
 
 function People({ jobId, people }: { jobId: string; people: PersonOnJob[] }) {
   if (!people.length) return <p className="empty">Nobody here.</p>;
@@ -37,8 +58,11 @@ export default async function Job({ params }: { params: Promise<{ id: string }> 
     apiOr404<JobPage>(`/v1/jobs/${id}`),
     api<InboxItem[]>(`/v1/inbox?job_id=${id}&band=priority`),
   ]);
-  const places = job.requirements.filter((r) => r.payload.category === "location" && r.payload.strength === "unknown");
-  const must = job.requirements.filter((r) => r.payload.category !== "process" && !places.includes(r));
+  const places = job.requirements.filter((r) => r.payload.category === "location" && r.payload.strength === "unknown" && !r.payload.mobility);
+  const mobility = job.requirements.filter((r) => r.payload.mobility);
+  const must = job.requirements.filter((r) => r.payload.category !== "process" && !places.includes(r) && !mobility.includes(r));
+  const groups = REQUIREMENT_GROUPS.map(([cat, title]) => [title, must.filter((r) => r.payload.category === cat)] as const)
+    .filter(([, items]) => items.length > 0);
   const dates = job.requirements.filter((r) => r.payload.category === "process");
 
   return (
@@ -70,17 +94,39 @@ export default async function Job({ params }: { params: Promise<{ id: string }> 
         <People jobId={job.id} people={job.people.do_not_submit} />
       </details>
 
+      {mobility.length > 0 && (
+        <>
+          <h2>Mobility (three separate facts)</h2>
+          <ul className="reqs">
+            {mobility.map((r) => (
+              <li key={r.id}>
+                <strong>{FACET_LABEL[r.payload.mobility.facet]}:</strong> {facetValue(r.payload.mobility)}
+                <details><summary>source</summary><Snippet ev={r.evidence[0]} /></details>
+              </li>
+            ))}
+          </ul>
+          <p className="sub">Where someone lives never puts them in Do not submit by itself; it becomes a question to ask.</p>
+        </>
+      )}
+
       <h2>Requirements</h2>
-      <ul className="reqs">
-        {must.map((r) => (
-          <li key={r.id}>
-            <span className="tag">{r.payload.strength}</span>
-            {r.payload.distinctive && <span className="tag key" title="Zero evidence of this puts a person in Do not submit">decides the band</span>}
-            {r.payload.text_raw}
-            <details><summary>source</summary><Snippet ev={r.evidence[0]} /></details>
-          </li>
-        ))}
-      </ul>
+      {groups.map(([title, items]) => (
+        <section key={title}>
+          <h3 className="group">{title}</h3>
+          <ul className="reqs">
+            {items.map((r) => (
+              <li key={r.id}>
+                <span className="tag">{r.payload.strength}</span>
+                {r.payload.distinctive && <span className="tag key" title="Zero evidence of this puts a person in Do not submit">decides the band</span>}
+                {r.payload.min_years != null && <span className="tag">{r.payload.min_years}+ years</span>}
+                {r.payload.education_level && <span className="tag">{r.payload.education_level}</span>}
+                {r.payload.text_raw}
+                <details><summary>source</summary><Snippet ev={r.evidence[0]} /></details>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
       {dates.length > 0 && (
         <>
           <h2>Process dates</h2>

@@ -116,3 +116,16 @@ def month_day_supported(when, quote: str) -> bool:
     numeric = re.search(rf"(?<!\d)0?{day}\s*[./\-]\s*0?{month}(?!\d)", lowered)
     words = re.search(rf"(?<!\d)0?{day}(st|nd|rd|th)?\s+{named}|{named}[a-z]*\.?\s+0?{day}(?!\d)", lowered)
     return bool(numeric or words)
+
+
+_NUMBER_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten"}
+
+
+def number_supported(value: float, quote: str) -> bool:
+    """A number of years must be written: as digits (3, 3+, 3-5) or as a word (three)."""
+    n = int(value) if float(value).is_integer() else value
+    lowered = quote.lower()
+    if re.search(rf"(?<![\d.]){re.escape(str(n))}(?![\d])", lowered):
+        return True
+    word = _NUMBER_WORDS.get(n) if isinstance(n, int) else None
+    return bool(word and re.search(rf"\b{word}\b", lowered))

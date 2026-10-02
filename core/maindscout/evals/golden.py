@@ -249,7 +249,31 @@ def _not_single_step(w, sid, _):
     return have > 1, f"career steps: {have}"
 
 
+def _mobility_facts(w, jid, expected):
+    """Residence, visa sponsorship and relocation assistance as three separate facts with the expected values."""
+    from maindscout.intelligence.extract import COUNTRY_ALIASES
+
+    facets = {c.payload["mobility"]["facet"]: c.payload["mobility"] for c in claims_of(w, jid, "JobRequirementClaim")
+              if c.payload.get("mobility")}
+    problems = []
+    if "residence" in expected:
+        wanted = set()
+        for name in expected["residence"]:
+            code = next((k for k, v in COUNTRY_ALIASES.items() if name.lower() in v), None)
+            wanted.add(code or name)
+        have = set((facets.get("residence") or {}).get("countries") or [])
+        if not wanted <= have:
+            problems.append(f"residence {sorted(have)} lacks {sorted(wanted - have)}")
+    for key, facet in (("sponsorship", "visa_sponsorship"), ("relocation_assistance", "relocation_assistance")):
+        if key in expected:
+            got = (facets.get(facet) or {}).get("offered")
+            if got is not expected[key]:
+                problems.append(f"{facet} offered={got}, expected {expected[key]}")
+    return not problems, "three facts as expected" if not problems else "; ".join(problems)
+
+
 MUST: dict[str, CheckFn] = {
+    "mobility_facts_when_extracted": _mobility_facts,
     "flags_on_some_contact": _flags_on_contact,
     "identity_full_name_contains": _name_contains,
     "contact_kinds": _contact_kinds,
@@ -278,7 +302,6 @@ MUST_NOT: dict[str, CheckFn] = {
 }
 INFORMATIONAL = {
     "document_flags_allowed": "allowed, not required",
-    "mobility_facts_when_extracted": "residence / visa / relocation as three facts is Slice 1",
 }
 
 

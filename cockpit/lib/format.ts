@@ -72,3 +72,12 @@ export function summary(c: { claim_type: string; payload: Record<string, any> })
       return JSON.stringify(p);
   }
 }
+
+const COUNTRY: Record<string, string> = {
+  GB: "United Kingdom", DE: "Germany", US: "United States", NL: "Netherlands", CA: "Canada", FR: "France",
+  IT: "Italy", ES: "Spain", AT: "Austria", CH: "Switzerland", IE: "Ireland", PL: "Poland", RO: "Romania", RS: "Serbia",
+};
+
+export function countryName(code: string): string {
+  return COUNTRY[code] ?? code;
+}

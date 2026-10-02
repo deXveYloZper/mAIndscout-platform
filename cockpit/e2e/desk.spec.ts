@@ -66,6 +66,11 @@ test("a stale advertisement warns before anyone is submitted", async ({ page }) 
   await expect(page).toHaveURL(/\/jobs\//, { timeout: 120_000 });
   await expect(page.getByText(/process dates have passed/)).toBeVisible();
   await expect(page.locator("p.sub").first()).toContainText("Procure Ai");
+  // Residence, visa and relocation are three separate facts, never one location score.
+  const mobility = page.locator("ul.reqs").first();
+  await expect(mobility).toContainText("Must live in or work from: Germany, United Kingdom");
+  await expect(mobility).toContainText("Visa sponsorship: not offered");
+  await expect(mobility).toContainText("Relocation assistance: not offered");
 });
 
 test("the jobs list shows both jobs with their piles and what waits for review", async ({ page }) => {

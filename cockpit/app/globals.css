@@ -127,3 +127,4 @@ td.nowrap, .nowrap { white-space: nowrap; }
   .hide-narrow { display: none; }
   th, td { padding: 8px 6px; }
 }
+h3.group { margin: 14px 0 4px; color: var(--cream-dim); font-size: 13px; }

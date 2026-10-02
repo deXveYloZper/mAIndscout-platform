@@ -16,7 +16,7 @@ from typing import Any
 from maindscout.intelligence import contacts, spans
 from maindscout.intelligence.llm import LLMClient
 
-PROMPT_VERSION = "2026-10-02.4"
+PROMPT_VERSION = "2026-10-02.5"
 ONTOLOGY_VERSION = "slice0.1"
 RUBRIC_VERSION = "triage.1"
 
@@ -110,14 +110,46 @@ JD_SCHEMA = _obj(
             "items": _obj(
                 {
                     "text": {"type": "string"},
-                    "category": {"type": "string", "enum": ["skill", "education", "location", "seniority", "process", "authorization", "other"]},
+                    "category": {"type": "string", "enum": ["skill", "education", "seniority", "language", "process", "other"]},
                     "strength": {"type": "string", "enum": ["must", "nice", "deal_breaker", "unknown"]},
                     "token": {"type": ["string", "null"], "description": "lowercase skill token, only for category skill"},
                     "distinctive": {"type": "boolean"},
+                    "min_years": {"type": ["number", "null"], "description": "seniority only: minimum years, only if a number is written"},
+                    "education_level": {"type": ["string", "null"], "enum": ["bachelor", "master", "doctorate", "associate", "diploma", "other", None]},
+                    "language": {"type": ["string", "null"], "description": "language only: e.g. German"},
                     "quote": _QUOTE,
                 }
             ),
         },
+        "mobility": _obj(
+            {
+                "residence": {
+                    "type": ["object", "null"],
+                    "additionalProperties": False,
+                    "required": ["countries", "quote"],
+                    "properties": {
+                        "countries": {
+                            "type": "array",
+                            "items": _obj({"name": {"type": "string", "description": "as written, e.g. UK"},
+                                           "code": {"type": "string", "description": "ISO 3166-1 alpha-2, e.g. GB"}}),
+                        },
+                        "quote": _QUOTE,
+                    },
+                },
+                "visa_sponsorship": {
+                    "type": ["object", "null"],
+                    "additionalProperties": False,
+                    "required": ["offered", "quote"],
+                    "properties": {"offered": {"type": "boolean"}, "quote": _QUOTE},
+                },
+                "relocation_assistance": {
+                    "type": ["object", "null"],
+                    "additionalProperties": False,
+                    "required": ["offered", "quote"],
+                    "properties": {"offered": {"type": "boolean"}, "quote": _QUOTE},
+                },
+            }
+        ),
         "work_locations": {
             "type": "array",
             "description": "Where the person would work, as stated (e.g. 'LOCATION: Markham or Gatineau'). Not the company's postal address in a footer.",
@@ -153,7 +185,8 @@ JD_SYSTEM = """You extract structured facts from the text of ONE job advertiseme
 Rules:
 - Every item needs a `quote`: an exact, contiguous piece of the document text (under 300 characters). Copy it character for character.
 - `hiring_company` is the organisation that will employ the person. A careers-platform or ATS provider named in the page chrome or footer is NOT the hiring company; if the employer is not clear, use null.
-- Requirements: one item per distinct requirement. `strength`: must, nice, deal_breaker or unknown. For skill requirements give a lowercase `token`.
+- Requirements: one item per distinct requirement. `strength`: must, nice, deal_breaker or unknown. For skill requirements give a lowercase `token`. For seniority give `min_years` only if a number of years is written. For education give `education_level`. For a spoken or written language requirement use category `language` and give `language`.
+- Mobility is NOT a requirement item. Put it in `mobility`, as three separate facts, each null if the ad says nothing about it: `residence` (countries the person must live in or work from), `visa_sponsorship` (offered true or false), `relocation_assistance` (offered true or false).
 - `distinctive` is true only for what the job is fundamentally about. For a specialist scientific or engineering role that means the specialist domain knowledge (e.g. InSAR, radar interferometry); general programming languages and tools (python, matlab, sql, git, linux, GIS software) are NOT distinctive there, however strongly required. For a software engineering role it means the core languages and frameworks the role is built on (e.g. React and Node.js for a full-stack JavaScript role). Never distinctive: degrees, soft skills, spoken languages, nice-to-haves, side tools.
 - Process dates: closing dates, interview or event dates and similar. `date` is YYYY-MM-DD. Set `year_written` true only if the year is actually written in the quote; never guess a year silently.
 - Work locations: each place the person would work, one item per place, as stated in the ad. A footer address is not a work location.
@@ -434,9 +467,25 @@ def extract_jd(text: str, artifact_id: uuid.UUID, client: LLMClient, as_of: date
         }
         if token:
             payload["normalized_token"] = token
+        years = item.get("min_years")
+        if item["category"] == "seniority" and years is not None:
+            if not spans.number_supported(years, item["quote"]):
+                run.reject(key, f"{years} years is not written in the quote")
+                continue
+            payload["min_years"] = years
+        if item["category"] == "education" and item.get("education_level"):
+            payload["education_level"] = item["education_level"]
+        if item["category"] == "language" and item.get("language"):
+            if item["language"].lower() not in item["quote"].lower():
+                run.reject(key, "language is not written in the quote")
+                continue
+            payload["language"] = item["language"].strip()
+            payload["normalized_token"] = item["language"].strip().lower()
         claim = StagedClaim(key, "JobRequirementClaim", payload, span, origin="employer", source_authority="employer_authored")
         run.accept(claim)
         reqs.append(claim)
+
+    reqs.extend(_mobility(run, data.get("mobility") or {}))
 
     for item in data.get("work_locations", []):
         key = run.key("place")
@@ -473,6 +522,73 @@ def extract_jd(text: str, artifact_id: uuid.UUID, client: LLMClient, as_of: date
         run.results.append(SpanResult(key, "pass"))
 
     return JobOutcome(title, company, reqs, dates, run.results, _cost(result))
+
+
+COUNTRY_ALIASES = {
+    "GB": ["united kingdom", "uk", "u.k.", "great britain", "britain", "england"],
+    "DE": ["germany", "deutschland"],
+    "US": ["united states", "usa", "united states of america"],  # never "us": it is also a pronoun
+    "NL": ["netherlands", "holland"],
+    "CA": ["canada"], "FR": ["france"], "IT": ["italy"], "ES": ["spain"], "AT": ["austria"],
+    "CH": ["switzerland"], "IE": ["ireland"], "PL": ["poland"], "RO": ["romania"], "RS": ["serbia"],
+}
+
+
+def _country_in_quote(name: str, code: str, quote: str) -> bool:
+    def words(text: str, keep_case: bool = False) -> str:
+        text = text.replace(".", "")
+        return " " + re.sub(r"[^A-Za-z]+", " ", text if keep_case else text.lower()).strip() + " "
+
+    for option in (name, *COUNTRY_ALIASES.get(code, [])):
+        bare = option.replace(".", "").strip()
+        if not bare:
+            continue
+        if len(bare) <= 3:
+            # Short names (UK, US, UAE) must be written in capitals: "us" the pronoun is not a country.
+            if words(bare.upper(), keep_case=True) in words(quote, keep_case=True):
+                return True
+        elif words(bare) in words(quote):
+            return True
+    return False
+
+
+def _mobility(run: "_Run", data: dict[str, Any]) -> list[StagedClaim]:
+    """Residence, visa and relocation: three separate facts, each checked against its own quote."""
+    out: list[StagedClaim] = []
+
+    def stage(facet: str, category: str, text: str, mobility: dict, quote: str, strength: str) -> None:
+        key = run.key(facet)
+        span = run.span_for(quote, key)
+        if not span:
+            return
+        payload = {"text_raw": text, "category": category, "strength": strength, "normalized_token": facet,
+                   "distinctive": False, "mobility": {"facet": facet, **mobility}}
+        claim = StagedClaim(key, "JobRequirementClaim", payload, span, origin="employer", source_authority="employer_authored")
+        run.accept(claim)
+        out.append(claim)
+
+    residence = data.get("residence")
+    if residence and residence.get("countries"):
+        good = [c for c in residence["countries"]
+                if re.fullmatch(r"[A-Z]{2}", c.get("code", "")) and _country_in_quote(c.get("name", ""), c["code"], residence["quote"])]
+        if len(good) != len(residence["countries"]):
+            run.reject(run.key("residence"), "a country is not written in the quote")
+        elif good:
+            names = " or ".join(c["name"] for c in good)
+            stage("residence", "location", f"Live in or work from: {names}", {"countries": sorted({c["code"] for c in good})},
+                  residence["quote"], "must")
+    for facet, word, category, label in (("visa_sponsorship", "visa", "authorization", "Visa sponsorship"),
+                                         ("relocation_assistance", "relocat", "other", "Relocation assistance")):
+        item = data.get(facet)
+        if not item:
+            continue
+        lowered = item["quote"].lower()
+        if word not in lowered and not (facet == "visa_sponsorship" and "sponsor" in lowered):
+            run.reject(run.key(facet), f"{label.lower()} is not mentioned in the quote")
+            continue
+        stage(facet, category, f"{label}: {'offered' if item['offered'] else 'not offered'}", {"offered": bool(item["offered"])},
+              item["quote"], "unknown")
+    return out
 
 
 def _cost(result) -> dict[str, Any]:

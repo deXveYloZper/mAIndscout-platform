@@ -22,5 +22,8 @@ Every later component: persistence, `intelligence/`, `api/`, cockpit.
 ## Tests
 `pytest slice0/domain/test_reconcile.py`, expected 8 passing.
 
+## Changes since vendoring
+- 2026-10-02: `job_requirement_claim.schema.json` extended with optional `mobility`, `min_years`, `education_level`, `language` and category `language` ([ADR](../../decisions/2026-10-02-richer-requirements.md)). All Slice 0 payloads stay valid.
+
 ## Known limits
 Golden files describe expected output for CVs and JDs we do not have yet.
