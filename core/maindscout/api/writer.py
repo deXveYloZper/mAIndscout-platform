@@ -64,8 +64,11 @@ def add_claim(
 ) -> Claim:
     """Write one claim. Rejects unknown flag keys, unknown claim types and wrong subject types."""
     flags = flags or {}
-    known_flags = set(session.scalars(select(FlagTypeRegistry.key)))
-    reg.validate_flags(flags, known_flags)
+    flag_rows = {row.key: row for row in session.scalars(select(FlagTypeRegistry))}
+    reg.validate_flags(flags, set(flag_rows))
+    for path in reg.flag_paths(flags, set(flag_rows)):
+        if subject_type not in flag_rows[path].valid_subject_types:
+            raise reg.UnknownFlagError([f"{path} (not valid on a {subject_type})"])
 
     type_row = session.get(ClaimTypeRegistry, claim_type)
     if type_row is None:

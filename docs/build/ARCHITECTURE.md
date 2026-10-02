@@ -26,6 +26,8 @@ Local setup: [core/README.md](../../core/README.md).
 
 | Component | Status | Page |
 |---|---|---|
+| Process document: commit proposed claims | built | [process.md](components/process.md) |
+| Intelligence: extract, span check, triage | built | [intelligence.md](components/intelligence.md) |
 | Ingestion: upload + text layer | built | [ingestion.md](components/ingestion.md) |
 | Writer: `api/` + registries | in progress | [writer.md](components/writer.md) |
 | Persistence: tables + migrations | built | [persistence.md](components/persistence.md) |

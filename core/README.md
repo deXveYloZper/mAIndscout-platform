@@ -9,4 +9,6 @@ python -m alembic upgrade head       # create tables in the dev database
 python -m pytest                     # creates and migrates a throwaway maindscout_test database
 ```
 
+Model: set `XAI_API_KEY` in `core/.env` (git-ignored). Live check over real files: `RUN_LIVE=1 python -m pytest tests/test_live_artifacts.py` (costs a few cents).
+
 `DATABASE_URL` overrides the default dev connection; `BLOB_DIR` the original-file folder (default `core/.blobs`); `TEST_ARTIFACTS` the folder of real CVs and job ads used by `test_real_artifacts.py`. Documentation: [../docs/build/](../docs/build/README.md).

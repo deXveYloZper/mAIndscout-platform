@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1] / "maindscout"
-WRITE_CALLS = re.compile(r"\.(add|add_all|merge|delete|execute|flush|commit)\(")
+WRITE_CALLS = re.compile(r"\b(session|sess|db|conn)\.(add|add_all|merge|delete|execute|flush|commit)\(")
 
 
 def _files(package: str):

@@ -1,0 +1,66 @@
+"""Coarse triage: a band and a reason, never a number.
+
+Rules are data, not model judgement (docs/slice-0/HANDOFF.md section 11):
+1. A distinctive must-have with zero support in the person's skills and titles -> do_not_submit.
+2. At least one distinctive must-have supported -> priority.
+3. Otherwise -> review_later.
+4. A place or country mismatch never forces do_not_submit by itself.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+
+ALIASES = {
+    "nodejs": "node", "node.js": "node", "node js": "node",
+    "reactjs": "react", "react.js": "react",
+    "vuejs": "vue", "vue.js": "vue",
+    "js": "javascript", "ts": "typescript",
+    "d-insar": "insar", "dinsar": "insar",
+    "persistent scatterer interferometry": "psi",
+    "radar interferometry": "interferometry",
+}
+
+
+def canon(token: str) -> str:
+    token = token.strip().lower()
+    return ALIASES.get(token, token)
+
+
+def _words(text: str) -> str:
+    return " " + re.sub(r"[^a-z0-9.+#\-]+", " ", text.lower()) + " "
+
+
+@dataclass
+class Triage:
+    band: str  # priority | review_later | do_not_submit
+    reason: str
+
+
+def supports(token: str, skills: list[str], titles: list[str]) -> bool:
+    """True if the token is one of the person's skills or appears in a job title."""
+    wanted = canon(token)
+    haystack = {canon(s) for s in skills}
+    if wanted in haystack:
+        return True
+    pattern = re.compile(rf"(?<![a-z0-9]){re.escape(wanted)}(?![a-z0-9])")
+    blob = _words(" ".join(titles))
+    for alias, target in ALIASES.items():
+        if target == wanted:
+            blob = blob.replace(alias, wanted)
+    return bool(pattern.search(blob))
+
+
+def triage(requirements: list[dict], skills: list[str], titles: list[str], process_stale: bool = False) -> Triage:
+    """`requirements` are JobRequirementClaim payloads of the job."""
+    distinctive = [
+        r["normalized_token"] for r in requirements
+        if r.get("distinctive") and r.get("strength") in ("must", "deal_breaker") and r.get("normalized_token")
+    ]
+    if not distinctive:
+        return Triage("review_later", "no_distinctive_requirements")
+    supported = [t for t in distinctive if supports(t, skills, titles)]
+    if supported:
+        return Triage("priority", f"supported:{','.join(sorted(set(supported)))}")
+    return Triage("do_not_submit", f"no_support_for_must_have:{distinctive[0]}")
