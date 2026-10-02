@@ -7,11 +7,11 @@ Single page: what exists, what is next. Slice gates are declared green by a huma
 | Milestone | What | State |
 |---|---|---|
 | A | Vendor `slice0/`, reconcile tests green | done (8 passed, 2026-10-02); awaiting human sign-off |
-| B | Persistence | not started |
+| B | Persistence | done (17 tests passing, 2026-10-02); awaiting human sign-off |
 | C | Upload + text layer | not started |
 | D | Extract, span check, commit, triage | not started |
 | E | Cockpit | not started |
 | F | Erasure + verify | not started |
-| G | Golden folder | blocked: needs real CVs and JDs from the owner |
+| G | Golden folder | blocked: `test_artifacts` has the Catalyst and Procure Ai JDs but different CVs (Gokhan, Ioannis, Luiz) than the golden set (Jure, Veljko, Nir, Bianca, Dmitry) |
 
 Also pending: website ↔ platform contracts ([connections/website.md](connections/website.md)).

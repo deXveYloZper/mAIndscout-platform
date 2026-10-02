@@ -22,9 +22,12 @@ Target architecture lives in [../../01-system-blueprint.md](../../01-system-blue
 ## Components
 
 Dependency direction is top to bottom: a component may depend only on those below it.
+Local setup: [core/README.md](../../core/README.md).
 
 | Component | Status | Page |
 |---|---|---|
+| Writer: `api/` + registries | in progress | [writer.md](components/writer.md) |
+| Persistence: tables + migrations | built | [persistence.md](components/persistence.md) |
 | Contracts (vendored `slice0/`) | built | [contracts.md](components/contracts.md) |
 
 Vendored contracts (from the blueprint, not yet implemented against): `slice0/schemas`, `slice0/registry`, `slice0/domain/reconcile.py`, `slice0/api/openapi.yaml`. See [components/contracts.md](components/contracts.md).
