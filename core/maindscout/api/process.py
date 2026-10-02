@@ -295,11 +295,15 @@ def _ensure_pair(session: Session, org_id, candidate_id, job: Job) -> CandidateJ
 
 
 def process_document(session: Session, blobs: BlobStore, client: LLMClient, *, org_id: uuid.UUID,
-                     document_id: uuid.UUID, job_id: uuid.UUID | None = None, force: bool = False) -> ProcessResult:
+                     document_id: uuid.UUID, job_id: uuid.UUID | None = None, force: bool = False,
+                     as_of: date | None = None) -> ProcessResult:
+    """`as_of` overrides the document's own date (used by the golden eval to pin "today")."""
     doc = session.get(Document, document_id)
     if doc is None or doc.org_id != org_id:
         raise LookupError(f"No document {document_id}")
     artifact = documents.extract_document(session, blobs, doc.id)
+    if as_of is not None:
+        doc.as_of, doc.as_of_basis = as_of, "override"
 
     prior = session.scalar(select(IntelligenceRun).where(
         IntelligenceRun.document_id == doc.id, IntelligenceRun.status == "committed").order_by(IntelligenceRun.created_at.desc()))

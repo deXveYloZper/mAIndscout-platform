@@ -9,6 +9,7 @@ python -m alembic upgrade head       # create tables in the dev database
 python -m pytest                     # creates and migrates a throwaway maindscout_test database
 python -m maindscout init            # migrate, seed, create the org; prints the org id
 python -m maindscout serve           # API on http://127.0.0.1:8765 (docs at /docs)
+python -m maindscout eval --with-tests  # golden eval over test_artifacts (real model, a few cents)
 ```
 
 Put `OPERATOR_TOKEN=<any long random string>` in `core/.env`; every API call needs it as a Bearer token plus `X-Org-Id`.

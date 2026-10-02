@@ -14,6 +14,7 @@ This is separate from the **spec** (`00`–`05`, `docs/VISION.md`, `docs/ROADMAP
 | How two systems talk (platform ↔ website, API ↔ cockpit) | [connections/](connections/) |
 | Why a decision was made | [../decisions/](../decisions/) |
 | What changed and when | [LOG.md](LOG.md) |
+| Golden eval results | [../evals/](../evals/) |
 
 ## Rules (part of "done")
 

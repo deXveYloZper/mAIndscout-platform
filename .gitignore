@@ -12,3 +12,6 @@ node_modules/
 *.egg-info/
 
 .blobs/
+
+# Golden eval reports (full report names real people)
+core/eval-reports/

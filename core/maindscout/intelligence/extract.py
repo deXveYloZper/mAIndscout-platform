@@ -16,7 +16,7 @@ from typing import Any
 from maindscout.intelligence import contacts, spans
 from maindscout.intelligence.llm import LLMClient
 
-PROMPT_VERSION = "2026-10-02.3"
+PROMPT_VERSION = "2026-10-02.4"
 ONTOLOGY_VERSION = "slice0.1"
 RUBRIC_VERSION = "triage.1"
 
@@ -118,6 +118,11 @@ JD_SCHEMA = _obj(
                 }
             ),
         },
+        "work_locations": {
+            "type": "array",
+            "description": "Where the person would work, as stated (e.g. 'LOCATION: Markham or Gatineau'). Not the company's postal address in a footer.",
+            "items": _obj({"place": {"type": "string"}, "quote": _QUOTE}),
+        },
         "process_dates": {
             "type": "array",
             "items": _obj(
@@ -151,6 +156,7 @@ Rules:
 - Requirements: one item per distinct requirement. `strength`: must, nice, deal_breaker or unknown. For skill requirements give a lowercase `token`.
 - `distinctive` is true only for what the job is fundamentally about. For a specialist scientific or engineering role that means the specialist domain knowledge (e.g. InSAR, radar interferometry); general programming languages and tools (python, matlab, sql, git, linux, GIS software) are NOT distinctive there, however strongly required. For a software engineering role it means the core languages and frameworks the role is built on (e.g. React and Node.js for a full-stack JavaScript role). Never distinctive: degrees, soft skills, spoken languages, nice-to-haves, side tools.
 - Process dates: closing dates, interview or event dates and similar. `date` is YYYY-MM-DD. Set `year_written` true only if the year is actually written in the quote; never guess a year silently.
+- Work locations: each place the person would work, one item per place, as stated in the ad. A footer address is not a work location.
 - Contact details in the document belong to the company. Do not extract them as people."""
 
 
@@ -428,6 +434,20 @@ def extract_jd(text: str, artifact_id: uuid.UUID, client: LLMClient, as_of: date
         }
         if token:
             payload["normalized_token"] = token
+        claim = StagedClaim(key, "JobRequirementClaim", payload, span, origin="employer", source_authority="employer_authored")
+        run.accept(claim)
+        reqs.append(claim)
+
+    for item in data.get("work_locations", []):
+        key = run.key("place")
+        place = item["place"].strip()
+        span = run.span_for(item["quote"], key)
+        if not span or not place:
+            continue
+        if place.lower() not in item["quote"].lower():
+            run.reject(key, "place is not written in the quote")
+            continue
+        payload = {"text_raw": place, "category": "location", "strength": "unknown", "distinctive": False}
         claim = StagedClaim(key, "JobRequirementClaim", payload, span, origin="employer", source_authority="employer_authored")
         run.accept(claim)
         reqs.append(claim)

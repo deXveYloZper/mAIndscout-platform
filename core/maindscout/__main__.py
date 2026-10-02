@@ -2,6 +2,7 @@
 
     python -m maindscout init [--org NAME]   migrate, seed registries, create the org if none exists, print its id
     python -m maindscout serve [--port 8765] run the API
+    python -m maindscout eval [--folder DIR] [--with-tests]   golden eval over real files (Milestone G)
 """
 
 from __future__ import annotations
@@ -50,9 +51,16 @@ def main() -> None:
     p_init.add_argument("--org", default="mAIndscout")
     p_serve = sub.add_parser("serve")
     p_serve.add_argument("--port", type=int, default=8765)
+    p_eval = sub.add_parser("eval")
+    p_eval.add_argument("--folder", type=Path, default=None)
+    p_eval.add_argument("--with-tests", action="store_true")
     args = parser.parse_args()
     if args.cmd == "init":
         init(args.org)
+    elif args.cmd == "eval":
+        from maindscout.evals.golden import main as eval_main
+
+        raise SystemExit(eval_main(args.folder, args.with_tests))
     else:
         import uvicorn
 

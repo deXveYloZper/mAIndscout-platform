@@ -26,6 +26,7 @@ Local setup: [core/README.md](../../core/README.md).
 
 | Component | Status | Page |
 |---|---|---|
+| Golden eval (Milestone G) | built | [golden-eval.md](components/golden-eval.md) |
 | Erasure + suppression | built | [erasure.md](components/erasure.md) |
 | Cockpit (recruiter UI) | built | [cockpit.md](components/cockpit.md) |
 | HTTP API `/v1` | built | [http-api.md](components/http-api.md) |
