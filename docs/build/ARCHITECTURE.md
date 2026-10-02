@@ -15,7 +15,7 @@ Target architecture lives in [../../01-system-blueprint.md](../../01-system-blue
 ```
 
 - The **website** is the public face and one source of applications and clients. See [connections/website.md](connections/website.md).
-- The **cockpit** is the recruiter's UI. It only talks to `api/`.
+- The **cockpit** is the recruiter's UI. It only talks to `api/`, server-side ([connections/cockpit-api.md](connections/cockpit-api.md)).
 - **`api/`** is the only thing that writes to the database.
 - **`intelligence/`** is pure: a workspace goes in, staged claims come out. It never opens a database session.
 
@@ -26,6 +26,7 @@ Local setup: [core/README.md](../../core/README.md).
 
 | Component | Status | Page |
 |---|---|---|
+| Cockpit (recruiter UI) | built | [cockpit.md](components/cockpit.md) |
 | HTTP API `/v1` | built | [http-api.md](components/http-api.md) |
 | Review: human acts + read models | built | [review.md](components/review.md) |
 | Process document: commit proposed claims | built | [process.md](components/process.md) |

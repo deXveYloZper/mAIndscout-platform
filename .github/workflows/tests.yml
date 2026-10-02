@@ -31,3 +31,17 @@ jobs:
       - name: Core tests (live and real-file tests skip here)
         working-directory: core
         run: python -m pytest -q
+
+  cockpit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cockpit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build

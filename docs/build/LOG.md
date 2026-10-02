@@ -2,6 +2,7 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-02 — Milestone E part 2: cockpit (jobs, job bands, person, inbox cards, file proxy); cockpit build in CI — [cockpit](components/cockpit.md), [cockpit → API](connections/cockpit-api.md)
 - 2026-10-02 — Milestone E part 1: HTTP API, review acts, inbox and page read models, contradiction cards, payload schema validation on every write — [http-api](components/http-api.md), [review](components/review.md)
 - 2026-10-02 — Review fixes (CI, guarded flag updates); Milestones A–D signed off by the owner — [sign-off](../decisions/2026-10-02-milestones-a-d-signoff.md)
 - 2026-10-02 — Milestone D: Grok extraction, typed span check, contact checks, identity, triage, process_document — [intelligence](components/intelligence.md), [process](components/process.md), [ADR](../decisions/2026-10-02-extraction-model.md)
