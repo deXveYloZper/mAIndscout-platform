@@ -1,0 +1,33 @@
+name: tests
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: maindscout
+          POSTGRES_PASSWORD: maindscout_dev
+          POSTGRES_DB: maindscout
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U maindscout" --health-interval 3s --health-retries 20
+    env:
+      TEST_ADMIN_URL: postgresql+psycopg://maindscout:maindscout_dev@localhost:5432/maindscout
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e "core[dev]"
+      - name: Slice 0 reconcile contract
+        run: python -m pytest -q slice0/domain/test_reconcile.py
+      - name: Core tests (live and real-file tests skip here)
+        working-directory: core
+        run: python -m pytest -q

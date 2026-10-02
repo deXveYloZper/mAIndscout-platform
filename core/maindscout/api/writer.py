@@ -51,6 +51,20 @@ def create_org(session: Session, name: str) -> Org:
     return org
 
 
+def _check_flags(session: Session, flags: dict[str, Any], subject_type: str) -> None:
+    flag_rows = {row.key: row for row in session.scalars(select(FlagTypeRegistry))}
+    reg.validate_flags(flags, set(flag_rows))
+    for path in reg.flag_paths(flags, set(flag_rows)):
+        if subject_type not in flag_rows[path].valid_subject_types:
+            raise reg.UnknownFlagError([f"{path} (not valid on a {subject_type})"])
+
+
+def set_flags(session: Session, claim: Claim, flags: dict[str, Any]) -> None:
+    """Replace a claim's flags, with the same checks as a new claim. Flags never touch the approved view."""
+    _check_flags(session, flags, claim.subject_type)
+    claim.flags = flags
+
+
 def add_claim(
     session: Session,
     *,
@@ -64,11 +78,7 @@ def add_claim(
 ) -> Claim:
     """Write one claim. Rejects unknown flag keys, unknown claim types and wrong subject types."""
     flags = flags or {}
-    flag_rows = {row.key: row for row in session.scalars(select(FlagTypeRegistry))}
-    reg.validate_flags(flags, set(flag_rows))
-    for path in reg.flag_paths(flags, set(flag_rows)):
-        if subject_type not in flag_rows[path].valid_subject_types:
-            raise reg.UnknownFlagError([f"{path} (not valid on a {subject_type})"])
+    _check_flags(session, flags, subject_type)
 
     type_row = session.get(ClaimTypeRegistry, claim_type)
     if type_row is None:

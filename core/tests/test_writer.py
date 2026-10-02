@@ -91,3 +91,13 @@ def test_pair_is_unique_and_band_is_not_a_number(session, org):
     with pytest.raises(IntegrityError):
         session.flush()
     nested.rollback()
+
+
+def test_set_flags_has_the_same_guard_as_a_new_claim(session, org, candidate_id):
+    claim = _claim(session, org, candidate_id)
+    writer.set_flags(session, claim, {"possible_duplicate_stint": True})
+    assert claim.flags == {"possible_duplicate_stint": True}
+    with pytest.raises(reg.UnknownFlagError):
+        writer.set_flags(session, claim, {"made_up": True})
+    with pytest.raises(reg.UnknownFlagError):
+        writer.set_flags(session, claim, {"job_process_stale": True})  # a job flag on a person

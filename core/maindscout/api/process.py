@@ -171,10 +171,10 @@ def _resolve_candidate(session: Session, org_id, outcome: extract.ExtractionOutc
         same_name = session.scalars(
             select(Claim).where(
                 Claim.org_id == org_id, Claim.claim_type == "IdentityClaim", Claim.status.in_(LIVE),
-                Claim.subject_id != candidate.id,
+                Claim.subject_id != candidate.id, Claim.natural_key.like(f"%|{_norm_name(outcome.full_name)}"),
             )
         )
-        twins = sorted({str(c.subject_id) for c in same_name if _norm_name(c.payload.get("full_name", "")) == _norm_name(outcome.full_name)})
+        twins = sorted({str(c.subject_id) for c in same_name})
         if twins:
             note = {"reason": "same name as an existing person, no clean contact in common", "candidate_ids": twins}
     elif not outcome.full_name:
@@ -207,7 +207,7 @@ def _flag_careers(session: Session, org_id, candidate_id, run: IntelligenceRun, 
                 continue
             if stints.same_company_overlap(_step(claim), _step(other)):
                 for target, partner in ((claim, other), (other, claim)):
-                    target.flags = {**target.flags, "possible_duplicate_stint": True}
+                    writer.set_flags(session, target, {**target.flags, "possible_duplicate_stint": True})
                 decision = _decision(
                     session, org_id, "duplicate_stint", "candidate", candidate_id,
                     {"company": claim.payload["company"]["raw_name"], "question": "same stint, or two?"},
@@ -224,7 +224,7 @@ def _flag_careers(session: Session, org_id, candidate_id, run: IntelligenceRun, 
         if found:
             flags["concurrency.overlap_with"] = found
         if flags != claim.flags:
-            claim.flags = flags
+            writer.set_flags(session, claim, flags)
     session.flush()
 
 
