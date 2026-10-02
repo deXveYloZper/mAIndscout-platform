@@ -29,6 +29,7 @@ The cockpit must never touch the database. Every action goes through one guarded
 | `POST /v1/jobs/{id}/documents` | Drop a CV onto the job (store, extract, band) |
 | `GET /v1/jobs/{id}/people?band=` | People on the job |
 | `POST /v1/jobs/{id}/people/{cid}/triage` | Human band override (sticks through reprocessing) |
+| `POST /v1/jobs/{id}/people/{cid}/state` | Move the pair: seen, submitted (note), we_passed (reason); there is no delete |
 | `GET /v1/candidates?unassigned=` · `POST /v1/candidates` | Everyone (or the pool) · read a CV into the pool, no job |
 | `POST /v1/jobs/{id}/people/{cid}` | Put an existing person on a job and band them (no re-read) |
 | `GET /v1/jobs/{id}/people/{cid}/gaps` | The gap table: every requirement as evidence / missing / conflict / question, plus the pair's history; never a number |

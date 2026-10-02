@@ -18,7 +18,7 @@ import hmac
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import delete, func, or_, select, text, update
 from sqlalchemy.orm import Session
 
 from maindscout.db.models import (
@@ -130,6 +130,8 @@ def erase_candidate(session: Session, blobs: BlobStore, org_id: uuid.UUID, candi
     session.execute(update(Claim).where(Claim.superseded_by.in_(claim_ids)).values(superseded_by=None))
     run("claims", delete(Claim).where(Claim.id.in_(claim_ids)))
     pair_ids = select(CandidateJob.id).where(CandidateJob.candidate_id == candidate_id)
+    # Pairs are permanent (a database trigger refuses deletes); erasure is the one exception, for this transaction only.
+    session.execute(text("SET LOCAL maindscout.erasure = 'on'"))
     run("pair_history", delete(PairEvent).where(PairEvent.pair_id.in_(pair_ids)))
     run("pairs", delete(CandidateJob).where(CandidateJob.candidate_id == candidate_id))
     run("not_same", delete(NotSame).where(or_(NotSame.candidate_a == candidate_id, NotSame.candidate_b == candidate_id)))

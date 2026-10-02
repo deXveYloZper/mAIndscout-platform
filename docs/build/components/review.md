@@ -20,6 +20,7 @@ The only ways a fact becomes official (approve, reject, type a correction, answe
   - `contradiction`: `pick` approves one side and rejects the other in the same act. Raised today for two current locations in different countries stated as of the same date; different dates count as a move, not a contradiction.
   - `identity_note`: `acknowledge` only. Merging people is not in Slice 0.
 - **Re-triage after every human act** (approve, reject, typed fact, card resolved): bands of every job the person is on are recomputed from live facts; a change to a job's requirements re-triages everyone on that job. Each band change is a `pair_event` with old band, new band, reason, cause (act, claim id, claim type) and actor.
+- **Pair state** (`set_state`): `new` → `seen` → `submitted` (needs a note) or `we_passed` (needs a reason code); reopening needs a note. The outcome is stored on the pair and each move is a `pair_event` of kind `state`. Bands and states are independent ([ADR](../../decisions/2026-10-02-pair-states.md)).
 - **Band override** stores who overrode it and is recorded in the history; reprocessing and new facts never change an overridden band.
 - **Inbox** scope is the people on a job in a band (default `priority`) or everyone. Blocking items first (identity notes and suspect contacts flagged `possible_ocr_identifier`), then oldest first. Never sorted by a score. Item shapes follow `slice0/cockpit/review-items.md`.
 - **Person page** shows each fact with status, flags, dates and its evidence (file, page, snippet, and why a flag was raised).

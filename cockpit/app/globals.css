@@ -147,3 +147,11 @@ table.gaps tr.conflict td:first-child { border-left: 2px solid var(--red); }
   table.gaps td { display: block; border: none; padding: 2px 0; }
 }
 .history li { padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+
+.statetag { font-size: 11px; border: 1px solid var(--line); padding: 0 6px; margin-left: 6px; }
+.statetag.submitted { color: var(--green); border-color: var(--green); }
+.statetag.we_passed { color: var(--cream-dim); }
+.statetag.seen { color: var(--cream); }
+.people li.passed { opacity: 0.55; }
+.statecontrols { display: flex; flex-direction: column; gap: 8px; }
+.statecontrols p { margin: 0; }

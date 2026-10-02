@@ -360,3 +360,35 @@ def test_erasure_takes_the_pair_history_with_it(client, monkeypatch):
     cid = drop_cv(client, job_id)["subject_id"]
     r = client.post(f"/v1/subjects/candidate/{cid}/erase", json={}).json()
     assert r["clean"] and r["counts"]["pair_history"] >= 1
+
+
+def test_a_pair_moves_through_states_with_reasons_and_every_move_is_recorded(client):
+    job_id = make_job(client)
+    cid = drop_cv(client, job_id)["subject_id"]
+    base = f"/v1/jobs/{job_id}/people/{cid}"
+    assert client.get(f"{base}/gaps").json()["state"] == "new"
+    assert client.post(f"{base}/state", json={"state": "seen"}).json()["state"] == "seen"
+    assert client.post(f"{base}/state", json={"state": "we_passed"}).status_code == 422, "passing needs a reason"
+    assert client.post(f"{base}/state", json={"state": "we_passed", "reason": "vibes"}).status_code == 422
+    r = client.post(f"{base}/state", json={"state": "we_passed", "reason": "skills", "note": "no radar work"}).json()
+    assert r["state"] == "we_passed" and r["outcome"]["reason"] == "skills"
+    assert client.post(f"{base}/state", json={"state": "seen"}).status_code == 422, "reopening needs a note"
+    client.post(f"{base}/state", json={"state": "seen", "note": "client widened the brief"})
+    assert client.post(f"{base}/state", json={"state": "submitted"}).status_code == 422, "submitting needs a note"
+    client.post(f"{base}/state", json={"state": "submitted", "note": "sent to hiring manager"})
+    states = [(e["from"], e["to"]) for e in client.get(f"{base}/gaps").json()["history"] if e["kind"] == "state"]
+    assert states == [("new", "seen"), ("seen", "we_passed"), ("we_passed", "seen"), ("seen", "submitted")]
+    assert client.post(f"{base}/state", json={"state": "new"}).status_code == 422
+
+
+def test_a_pair_cannot_be_deleted(client, session):
+    from sqlalchemy import text
+    from sqlalchemy.exc import DBAPIError
+    job_id = make_job(client)
+    cid = drop_cv(client, job_id)["subject_id"]
+    assert client.delete(f"/v1/jobs/{job_id}/people/{cid}").status_code == 405, "there is no delete route"
+    nested = session.begin_nested()
+    with pytest.raises(DBAPIError, match="permanent"):
+        session.execute(text("DELETE FROM candidate_job WHERE candidate_id = :c"), {"c": cid})
+    nested.rollback()
+    assert client.get(f"/v1/jobs/{job_id}/people/{cid}/gaps").status_code == 200

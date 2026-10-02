@@ -21,6 +21,8 @@ from maindscout.db.models import Candidate, CandidateJob, Claim, ClaimObservatio
 from maindscout.domain import stints
 
 REJECT_CODES = ("low_confidence", "wrong", "not_about_subject", "duplicate", "outdated", "other")
+PASS_REASONS = ("skills", "seniority", "location", "compensation", "candidate_not_interested", "client_rejected",
+                "duplicate", "other")
 
 
 class ReviewError(ValueError):
@@ -216,5 +218,43 @@ def override_band(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, candid
     pair.band_overridden_by, pair.version = actor, pair.version + 1
     session.add(PairEvent(org_id=org_id, pair_id=pair.id, kind="band", from_value=old, to_value=band,
                           reason=pair.triage_reason, cause={"act": "override"}, actor=actor))
+    session.flush()
+    return pair
+
+
+def set_state(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, candidate_id: uuid.UUID, state: str, actor: str,
+              reason: str | None = None, note: str | None = None) -> CandidateJob:
+    """Move a pair to another state. The pair is never deleted; every move is recorded with who and why.
+
+    - we_passed needs a reason code (PASS_REASONS): outcomes with reasons are how the desk's taste is learned later.
+    - submitted needs a note (to whom, how).
+    - reopening (back to seen) after we_passed or submitted needs a note.
+    """
+    from maindscout.db.models import PAIR_STATES
+
+    if state not in PAIR_STATES or state == "new":
+        raise ReviewError("state must be seen, submitted or we_passed")
+    pair = session.scalar(select(CandidateJob).where(CandidateJob.job_id == job_id, CandidateJob.candidate_id == candidate_id,
+                                                     CandidateJob.org_id == org_id))
+    if pair is None:
+        raise LookupError("No such pair")
+    if state == pair.pair_state:
+        return pair
+    if state == "we_passed" and reason not in PASS_REASONS:
+        raise ReviewError(f"we_passed needs a reason: one of {PASS_REASONS}")
+    if state == "submitted" and not (note or "").strip():
+        raise ReviewError("submitted needs a note (to whom, how)")
+    if pair.pair_state in ("we_passed", "submitted") and state == "seen" and not (note or "").strip():
+        raise ReviewError("reopening needs a note saying why")
+    old = pair.pair_state
+    pair.pair_state = state
+    pair.version = (pair.version or 1) + 1
+    if state in ("we_passed", "submitted"):
+        pair.outcome = {"party": "operator", "state": state, "reason": reason, "note": note, "by": actor}
+    elif state == "seen":
+        pair.outcome = None
+    words = reason if state == "we_passed" else note
+    session.add(PairEvent(org_id=org_id, pair_id=pair.id, kind="state", from_value=old, to_value=state,
+                          reason=words, cause={"act": "state", "note": note}, actor=actor))
     session.flush()
     return pair

@@ -176,3 +176,20 @@ export async function addSkill(candidateId: string, token: string, path: string)
   });
   revalidatePath(path);
 }
+
+
+/** Move a person-job pair: seen, submitted (with a note) or we_passed (with a reason). Pairs are never deleted. */
+export async function setPairState(jobId: string, candidateId: string, path: string, _: FormState, form: FormData): Promise<FormState> {
+  try {
+    await apiJson(`/v1/jobs/${jobId}/people/${candidateId}/state`, {
+      state: String(form.get("state") || ""),
+      reason: String(form.get("reason") || "") || null,
+      note: String(form.get("note") || "") || null,
+    });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  revalidatePath(`/jobs/${jobId}`);
+  return { message: "Saved." };
+}

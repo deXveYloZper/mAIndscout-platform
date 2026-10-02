@@ -11,8 +11,8 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 | 1 | Richer job requirements; mobility as three facts | done 2026-10-02 |
 | 2 | Gap table per person on a job | done 2026-10-02 |
 | 3 | Re-triage when a fact the band depends on is approved | done 2026-10-02 |
-| 4 | Pair states; a pair can never be deleted | next |
-| 5 | Reserved score breakdown shape; coverage floor | |
+| 4 | Pair states; a pair can never be deleted | done 2026-10-02 |
+| 5 | Reserved score breakdown shape; coverage floor | next |
 | 6 | Slice 1 gate evidence in eval and e2e | |
 
 Slice 0 (ingest + job-first triage) is closed ([handoff](../slice-0/HANDOFF.md), [gates](../slice-0/GATES.md))

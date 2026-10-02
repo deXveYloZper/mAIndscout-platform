@@ -253,6 +253,21 @@ def gap_table(job_id: uuid.UUID, candidate_id: uuid.UUID, org_id: uuid.UUID = De
     return queries.gap_page(session, org_id, job_id, candidate_id)
 
 
+class StateBody(BaseModel):
+    state: str
+    reason: str | None = None
+    note: str | None = None
+
+
+@app.post("/v1/jobs/{job_id}/people/{candidate_id}/state")
+def set_pair_state(job_id: uuid.UUID, candidate_id: uuid.UUID, body: StateBody, org_id: uuid.UUID = Depends(get_org),
+                   session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Move a pair: seen, submitted (needs a note) or we_passed (needs a reason). Pairs are never deleted."""
+    pair = review.set_state(session, org_id, job_id, candidate_id, body.state, actor, body.reason, body.note)
+    session.commit()
+    return {"state": pair.pair_state, "outcome": pair.outcome}
+
+
 class BandBody(BaseModel):
     band: str
     reason: str | None = None

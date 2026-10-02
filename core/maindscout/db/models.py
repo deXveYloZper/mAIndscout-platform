@@ -48,6 +48,7 @@ CLAIM_STATUS = ("staged", "proposed", "approved", "rejected", "superseded")
 PRECISION = ("exact", "month", "year_only", "ordered_only", "unknown")
 VERIFIABILITY = ("registry", "public_record", "scholarly", "web", "unverifiable")
 TRIAGE_BANDS = ("priority", "review_later", "do_not_submit", "unassigned")
+PAIR_STATES = ("new", "seen", "submitted", "we_passed")
 RUN_STATUS = ("running", "committed", "failed")
 DECISION_TYPES = ("revision_diff", "duplicate_stint", "contradiction", "identity_note")
 
@@ -189,6 +190,7 @@ class CandidateJob(Base):
     __table_args__ = (
         UniqueConstraint("candidate_id", "job_id"),
         CheckConstraint(_in("triage_band", TRIAGE_BANDS), name="pair_band"),
+        CheckConstraint(_in("pair_state", PAIR_STATES), name="pair_state"),
     )
     id: Mapped[uuid.UUID] = _pk()
     org_id: Mapped[uuid.UUID] = _org()
@@ -197,7 +199,8 @@ class CandidateJob(Base):
     triage_band: Mapped[str] = mapped_column(String, nullable=False, default="unassigned")
     triage_reason: Mapped[str | None] = mapped_column(String)
     band_overridden_by: Mapped[str | None] = mapped_column(String)
-    pair_state: Mapped[str] = mapped_column(String, nullable=False, default="matched")
+    pair_state: Mapped[str] = mapped_column(String, nullable=False, default="new")  # the recruiter's progress; see PAIR_STATES
+    outcome: Mapped[dict | None] = mapped_column(JSONB)  # why it ended: {party, reason, note} for we_passed / submitted
     merged_into_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("candidate_job.id"))
     version: Mapped[int] = mapped_column(nullable=False, default=1)
     created_at: Mapped[datetime] = _created()

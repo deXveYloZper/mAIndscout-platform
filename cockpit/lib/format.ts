@@ -81,3 +81,17 @@ const COUNTRY: Record<string, string> = {
 export function countryName(code: string): string {
   return COUNTRY[code] ?? code;
 }
+
+
+export const STATE_LABEL: Record<string, string> = { new: "new", seen: "seen", submitted: "submitted", we_passed: "we passed" };
+
+export const PASS_REASONS: [string, string][] = [
+  ["skills", "Skills"],
+  ["seniority", "Seniority"],
+  ["location", "Location / right to work"],
+  ["compensation", "Compensation"],
+  ["candidate_not_interested", "Candidate not interested"],
+  ["client_rejected", "Client rejected"],
+  ["duplicate", "Duplicate"],
+  ["other", "Other"],
+];

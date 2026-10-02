@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { addSkill, overrideBand } from "@/app/actions";
+import { addSkill, overrideBand, setPairState } from "@/app/actions";
+import { StateControls } from "@/components/StateControls";
 import { apiOr404, type Band } from "@/lib/api";
-import { BAND_LABEL, reasonWords } from "@/lib/format";
+import { BAND_LABEL, reasonWords, STATE_LABEL } from "@/lib/format";
 
 export const metadata = { title: "Person on job" };
 
@@ -26,6 +27,7 @@ const CAUSE_LABEL: Record<string, string> = {
   approve: "fact approved",
   reject: "fact rejected",
   override: "set by hand",
+  state: "status changed",
 };
 
 type GapPage = {
@@ -34,6 +36,7 @@ type GapPage = {
   band: Band;
   reason: string | null;
   overridden_by: string | null;
+  state: string;
   counts: Record<GapRow["status"], number>;
   history: HistoryEvent[];
   rows: GapRow[];
@@ -60,6 +63,10 @@ export default async function PersonOnJob({ params }: { params: Promise<{ id: st
         <span className={`bandtag ${page.band}`}>{BAND_LABEL[page.band]}</span> {reasonWords(page.reason)} ·{" "}
         <Link href={`/people/${page.person.id}`}>Full profile and facts</Link>
       </p>
+
+      <section className="panel">
+        <StateControls state={page.state} action={setPairState.bind(null, page.job.id, page.person.id, path)} />
+      </section>
 
       <p className="counts" aria-label="Rows by status">
         {(Object.keys(STATUS_LABEL) as GapRow["status"][]).map((s) => (
@@ -128,7 +135,10 @@ export default async function PersonOnJob({ params }: { params: Promise<{ id: st
             {page.history.map((e, i) => (
               <li key={i}>
                 <span className="sub">{e.at.slice(0, 16).replace("T", " ")}</span>{" "}
-                {e.from && e.from !== "unassigned" ? `${BAND_LABEL[e.from as Band] ?? e.from} → ` : ""}<strong>{BAND_LABEL[e.to as Band] ?? e.to}</strong>
+                {(() => {
+                  const label = (v: string) => (e.kind === "state" ? STATE_LABEL[v] : BAND_LABEL[v as Band]) ?? v;
+                  return <>{e.from && e.from !== "unassigned" ? `${label(e.from)} → ` : ""}<strong>{label(e.to)}</strong></>;
+                })()}
                 {" "}· {CAUSE_LABEL[e.cause.act] ?? e.cause.act}{e.cause.claim_type ? ` (${e.cause.claim_type.replace("Claim", "").toLowerCase()})` : ""} · {reasonWords(e.reason)} · <span className="sub">{e.actor}</span>
               </li>
             ))}

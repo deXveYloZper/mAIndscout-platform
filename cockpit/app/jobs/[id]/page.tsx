@@ -3,7 +3,7 @@ import { overrideBand } from "@/app/actions";
 import { Snippet } from "@/components/Claim";
 import { MultiUpload } from "@/components/MultiUpload";
 import { api, apiOr404, type Band, type InboxItem, type JobPage, type PersonOnJob } from "@/lib/api";
-import { BAND_LABEL, countryName, reasonWords } from "@/lib/format";
+import { BAND_LABEL, countryName, reasonWords, STATE_LABEL } from "@/lib/format";
 
 export const metadata = { title: "Job" };
 
@@ -33,9 +33,10 @@ function People({ jobId, people }: { jobId: string; people: PersonOnJob[] }) {
   return (
     <ul className="people">
       {people.map((p) => (
-        <li key={p.candidate_id}>
+        <li key={p.candidate_id} className={p.state === "we_passed" ? "passed" : undefined}>
           <span>
             <Link href={`/jobs/${jobId}/people/${p.candidate_id}`}>{p.name ?? "name not read"}</Link>
+            {p.state && p.state !== "new" && <span className={`statetag ${p.state}`}>{STATE_LABEL[p.state]}</span>}
             {p.open_decisions > 0 && <span className="pill">{p.open_decisions} to review</span>}
           </span>
           <span className="reason">

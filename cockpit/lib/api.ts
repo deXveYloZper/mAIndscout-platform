@@ -84,6 +84,7 @@ export type PersonOnJob = {
   overridden_by: string | null;
   open_decisions: number;
   gaps?: { evidence: number; missing: number; conflict: number; question: number };
+  state?: string;
 };
 
 export type JobPage = JobSummary & {

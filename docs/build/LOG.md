@@ -2,6 +2,7 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-02 — Slice 1 step 4: pair states with reasons (seen / submitted / we passed / reopen), outcomes, pairs made permanent by a database trigger (erasure the only exception) — [ADR](../decisions/2026-10-02-pair-states.md)
 - 2026-10-02 — Slice 1 step 3: re-triage after every human act, band history (`pair_event`, migrations 0003/0004), "They have …" on missing skills; erasure removes pair history — [review](components/review.md), [gap-table](components/gap-table.md)
 - 2026-10-02 — Slice 1 step 2: gap table (domain, API, cockpit, default view of a person on a job). Fixed on the way: span offsets after ligatures (snippets were shifted), "js" matching inside "next.js", slash alternatives, vague tokens, mobility reliability (5/5), a forced re-read creating a second job and keeping stale proposals — [gap-table](components/gap-table.md)
 - 2026-10-02 — Slice 1 step 1: richer job requirements (years, education, languages) and mobility as three facts; golden mobility check live and passing on the Procure Ai ad — [ADR](../decisions/2026-10-02-richer-requirements.md)

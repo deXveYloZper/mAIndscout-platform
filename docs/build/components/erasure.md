@@ -12,6 +12,7 @@ One action that deletes everything the platform holds about a person, followed b
 
 ## How
 - **Deletes:** the pair history of the person's pairs; the person's claims with their observations and evidence; review decisions and their items; pairs with jobs; not-same records; document links; their documents, text artifacts and runs; the original files (unless another org's document uses the same stored bytes); the candidate row. Ids of the person are removed from other people's identity notes.
+- **Pairs are permanent** (a database trigger refuses deletes); erasure is the only exception and switches the guard off for its own transaction only (`SET LOCAL maindscout.erasure = 'on'`).
 - **Refuses rather than half-erasing:** if a document is also about someone else, other subjects' facts cite it, or a job was created from it, nothing is deleted and the error lists why (`409`).
 - **Suppression:** each email, phone and LinkedIn is stored only as an HMAC-SHA256 with `SUPPRESSION_KEY` (created by `python -m maindscout init`, kept in `core/.env`). When a new CV yields one of those identifiers, the upload, its text and its file are deleted, no person is created, and only an encounter count is kept. Status `suppressed`.
 - **Verify:** counts rows by person id and by the erased document ids, checks the files are gone, checks no identity note still points at them, and flags **another person carrying one of the erased identifiers** (the same human stored twice). Any finding is a survivor. Empty list is the only green.
