@@ -1,0 +1,35 @@
+{
+  "observations": [
+    {
+      "id": "o1",
+      "bundle_id": "matrix",
+      "claim_type": "CareerStepClaim",
+      "subject_id": "nir",
+      "company_raw": "Matrix IT",
+      "title": "Software Engineer",
+      "valid_from": "2015-01-01",
+      "valid_to": "2020-12-01",
+      "employment_type": "full_time",
+      "attribute_path": "title",
+      "value": "Software Engineer",
+      "origin": "candidate",
+      "source_authority": "candidate_authored",
+      "observed_as_of": "2026-01-01"
+    },
+    {
+      "id": "o2",
+      "bundle_id": "hit",
+      "claim_type": "EducationClaim",
+      "subject_id": "nir",
+      "institution_raw": "Holon Institute of Technology",
+      "credential": "B.Sc. Computer Science",
+      "valid_from": "2017-01-01",
+      "valid_to": "2020-12-01",
+      "attribute_path": "institution_raw",
+      "value": "Holon Institute of Technology",
+      "origin": "candidate",
+      "source_authority": "candidate_authored",
+      "observed_as_of": "2026-01-01"
+    }
+  ]
+}

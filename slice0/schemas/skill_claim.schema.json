@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maindscout.local/schemas/skill_claim.schema.json",
+  "title": "SkillClaim payload",
+  "description": "Natural key = candidate + normalized_skill. last_evidenced_as_of is the last stint/document that mentioned it — a core-skills list on a CV is not proof the skill is current.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["raw_label", "normalized_skill"],
+  "properties": {
+    "raw_label": { "type": "string", "minLength": 1 },
+    "normalized_skill": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Lowercase token, e.g. python, java, react."
+    },
+    "last_evidenced_as_of": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    }
+  }
+}

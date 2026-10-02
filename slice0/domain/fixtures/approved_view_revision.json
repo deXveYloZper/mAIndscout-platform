@@ -1,0 +1,27 @@
+{
+  "approved_views": {
+    "cand-1|redis|2021-01-01|open": {
+      "company": {"raw_name": "Redis", "provisional": true, "company_id": null},
+      "title_raw": "Software Engineer",
+      "employment_type": "full_time"
+    }
+  },
+  "observations": [
+    {
+      "id": "o1",
+      "bundle_id": "new-linkedin",
+      "claim_type": "CareerStepClaim",
+      "subject_id": "cand-1",
+      "company_raw": "Redis",
+      "title": "Senior Software Engineer",
+      "valid_from": "2021-01-01",
+      "valid_to": null,
+      "employment_type": "full_time",
+      "attribute_path": "title",
+      "value": "Senior Software Engineer",
+      "origin": "candidate",
+      "source_authority": "candidate_authored",
+      "observed_as_of": "2026-06-01"
+    }
+  ]
+}

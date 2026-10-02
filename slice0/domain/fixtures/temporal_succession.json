@@ -1,0 +1,36 @@
+{
+  "observations": [
+    {
+      "id": "o1",
+      "bundle_id": "series-a-co",
+      "claim_type": "CareerStepClaim",
+      "subject_id": "cand-1",
+      "company_raw": "Startup GmbH",
+      "title": "Founding Engineer",
+      "valid_from": "2019-01-01",
+      "valid_to": "2021-06-01",
+      "employment_type": "full_time",
+      "attribute_path": "title",
+      "value": "Founding Engineer",
+      "origin": "candidate",
+      "source_authority": "candidate_authored",
+      "observed_as_of": "2021-06-01"
+    },
+    {
+      "id": "o2",
+      "bundle_id": "series-b-co",
+      "claim_type": "CareerStepClaim",
+      "subject_id": "cand-1",
+      "company_raw": "OtherCo",
+      "title": "Senior Engineer",
+      "valid_from": "2021-07-01",
+      "valid_to": null,
+      "employment_type": "full_time",
+      "attribute_path": "title",
+      "value": "Senior Engineer",
+      "origin": "candidate",
+      "source_authority": "candidate_authored",
+      "observed_as_of": "2026-01-01"
+    }
+  ]
+}

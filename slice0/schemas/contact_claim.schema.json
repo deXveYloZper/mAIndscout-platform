@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maindscout.local/schemas/contact_claim.schema.json",
+  "title": "ContactClaim payload",
+  "description": "One identifier. Attributable subject contacts may be match keys. possible_ocr_identifier lives on claim.flags, not here. Unattributable values are stored and must not be used as match keys (02-F2.1).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "value", "normalized", "attributable", "attribution"],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": ["email", "phone", "linkedin", "url", "other"]
+    },
+    "value": { "type": "string", "minLength": 1 },
+    "normalized": {
+      "type": "string",
+      "minLength": 1,
+      "description": "email lowercased; phone E.164 if parseable else digits-only; linkedin path lowercased; url hostname+path lowercased."
+    },
+    "attributable": { "type": "boolean" },
+    "attribution": {
+      "type": "string",
+      "enum": ["subject", "author", "template", "unknown"]
+    }
+  }
+}

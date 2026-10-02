@@ -1,0 +1,33 @@
+{
+  "id": "triage-procure-ai",
+  "job_source": "AI Product Engineer (m_f_d) - full stack; all levels _ Careers at Procure Ai.pdf",
+  "distinctive_must_have_tokens": ["react", "node", "javascript", "typescript"],
+  "people": [
+    {
+      "source": "Jure Domajnko - CV (1).pdf",
+      "band_not": "do_not_submit",
+      "notes": "AI product / search / LLM work. Austria is not a Slice-0 kill."
+    },
+    {
+      "source": "Nir_Chodorov_CV_2026.pdf (1).pdf",
+      "band_allowed": ["priority", "review_later"],
+      "notes": "Senior backend; frontend evidence thinner."
+    },
+    {
+      "source": "Bianca Gogiltan CV (1).pdf",
+      "band_not": "do_not_submit",
+      "kill_forbidden": "country_romania"
+    },
+    {
+      "source": "Veljko Djosovic CV (3).pdf",
+      "band_allowed": ["priority", "review_later"],
+      "kill_forbidden": "country_serbia"
+    },
+    {
+      "source": "CV - Dmitry Chernyshov.pdf",
+      "band_allowed": ["do_not_submit", "review_later"],
+      "band_not": "priority"
+    }
+  ],
+  "must_not": { "composite_score": true, "hiring_company": "Revolut People" }
+}

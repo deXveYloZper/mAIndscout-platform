@@ -1,0 +1,266 @@
+openapi: 3.1.0
+info:
+  title: mAIndScout Slice 0 API
+  version: 0.1.0
+  description: |
+    The only writer. intelligence/ and the cockpit call these routes.
+    Header X-Org-Id is required on every request.
+    Slice 0 has no matching, scoring, brief inheritance, PA, or research routes.
+
+servers:
+  - url: /v1
+
+security:
+  - orgHeader: []
+
+paths:
+  /documents:
+    post:
+      operationId: uploadDocument
+      summary: Store bytes, hash, create document row. Does not extract.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+                doc_type_hint:
+                  type: string
+                  enum: [cv, jd, other]
+      responses:
+        "201":
+          description: Stored
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [document_id, sha256, reused]
+                properties:
+                  document_id: { type: string, format: uuid }
+                  sha256: { type: string }
+                  reused: { type: boolean }
+
+  /documents/{document_id}:
+    get:
+      operationId: getDocument
+      parameters:
+        - $ref: "#/components/parameters/documentId"
+      responses:
+        "200": { description: Document metadata }
+
+  /documents/{document_id}/process:
+    post:
+      operationId: processDocument
+      summary: Extract text layer, identity pass, typed span check, reconcile, commit.
+      parameters:
+        - $ref: "#/components/parameters/documentId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force_reprocess: { type: boolean, default: false }
+      responses:
+        "200":
+          description: ProcessDocumentResponse
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessDocumentResponse"
+
+  /runs/{run_id}:
+    get:
+      operationId: getRun
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Run + manifest + cost }
+
+  /candidates/{candidate_id}:
+    get:
+      operationId: getCandidate
+      parameters:
+        - $ref: "#/components/parameters/candidateId"
+      responses:
+        "200": { description: Candidate + resolved name }
+
+  /candidates/{candidate_id}/claims:
+    get:
+      operationId: listCandidateClaims
+      parameters:
+        - $ref: "#/components/parameters/candidateId"
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [proposed, approved, rejected, superseded]
+      responses:
+        "200": { description: Claims with observations and evidence }
+
+  /inbox:
+    get:
+      operationId: listInbox
+      description: Order = created_at ASC, blocking Decisions first. No score ranking.
+      parameters:
+        - name: kind
+          in: query
+          schema:
+            type: string
+            enum: [revision_diff, duplicate_stint, contradiction, other]
+      responses:
+        "200": { description: Decision summaries }
+
+  /decisions/{decision_id}:
+    get:
+      operationId: getDecision
+      parameters:
+        - $ref: "#/components/parameters/decisionId"
+      responses:
+        "200": { description: Decision + items + first-open seals the batch }
+
+  /claims/{claim_id}/approve:
+    post:
+      operationId: approveClaim
+      parameters:
+        - $ref: "#/components/parameters/claimId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                attention_grade:
+                  type: string
+                  enum: [human_individual, human_bulk]
+                  default: human_individual
+      responses:
+        "200": { description: Pins approved_view }
+
+  /claims/{claim_id}/reject:
+    post:
+      operationId: rejectClaim
+      parameters:
+        - $ref: "#/components/parameters/claimId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason_code]
+              properties:
+                reason_code:
+                  type: string
+                  enum: [low_confidence, wrong, duplicate, other]
+                note: { type: string }
+      responses:
+        "200": { description: Rejected. Identity keys of this claim stop matching in this transaction. }
+
+  /claims:
+    post:
+      operationId: createHumanAssertion
+      summary: Born-approved human_assertion. Used by inline confirm of OCR contacts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject_type, subject_id, claim_type, payload]
+              properties:
+                subject_type: { type: string, enum: [candidate] }
+                subject_id: { type: string, format: uuid }
+                claim_type: { type: string }
+                payload: { type: object }
+                supersedes: { type: string, format: uuid }
+      responses:
+        "201": { description: Created approved }
+
+  /subjects/{subject_type}/{subject_id}/erase:
+    post:
+      operationId: eraseSubject
+      parameters:
+        - name: subject_type
+          in: path
+          required: true
+          schema: { type: string, enum: [candidate] }
+        - name: subject_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Erasure result including verify query
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, survivors]
+                properties:
+                  ok: { type: boolean }
+                  survivors:
+                    type: array
+                    items: { type: string }
+
+  /subjects/{subject_type}/{subject_id}/erase/verify:
+    get:
+      operationId: verifyErasure
+      parameters:
+        - name: subject_type
+          in: path
+          required: true
+          schema: { type: string, enum: [candidate] }
+        - name: subject_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: "{ ok, survivors }" }
+        "409": { description: Survivors found }
+
+components:
+  securitySchemes:
+    orgHeader:
+      type: apiKey
+      in: header
+      name: X-Org-Id
+  parameters:
+    documentId:
+      name: document_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    candidateId:
+      name: candidate_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    claimId:
+      name: claim_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    decisionId:
+      name: decision_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    ProcessDocumentResponse:
+      type: object
+      required: [run_id, document_id, status]
+      properties:
+        run_id: { type: string, format: uuid }
+        document_id: { type: string, format: uuid }
+        subject_id: { type: string, format: uuid, nullable: true }
+        status: { type: string, enum: [committed, failed, needs_human] }
+        committed_claim_ids:
+          type: array
+          items: { type: string, format: uuid }
+        inbox_decision_id: { type: string, format: uuid, nullable: true }

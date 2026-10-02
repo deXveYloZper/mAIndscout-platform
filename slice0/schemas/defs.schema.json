@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maindscout.local/schemas/defs.schema.json",
+  "title": "Shared definitions",
+  "description": "Enums and the claim envelope. Payload schemas live beside this file.",
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "isoDate": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "isoDateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "orgId": { "$ref": "#/$defs/uuid" },
+    "subjectType": {
+      "type": "string",
+      "enum": ["candidate", "company", "job"]
+    },
+    "claimClass": {
+      "type": "string",
+      "enum": ["observed", "inferred", "computed"]
+    },
+    "claimStatus": {
+      "type": "string",
+      "enum": ["staged", "proposed", "approved", "rejected", "superseded"]
+    },
+    "temporalPrecision": {
+      "type": "string",
+      "enum": ["exact", "month", "year_only", "ordered_only", "unknown"]
+    },
+    "sourceAuthority": {
+      "type": "string",
+      "enum": [
+        "verified_primary",
+        "human_assertion",
+        "candidate_authored",
+        "employer_authored",
+        "third_party_assertion",
+        "web_inference"
+      ]
+    },
+    "origin": {
+      "type": "string",
+      "enum": [
+        "candidate",
+        "employer",
+        "registry",
+        "independent_web",
+        "human",
+        "relayed",
+        "unknown"
+      ]
+    },
+    "verifiability": {
+      "type": "string",
+      "enum": [
+        "registry",
+        "public_record",
+        "scholarly",
+        "web",
+        "unverifiable"
+      ]
+    },
+    "spanTier": {
+      "type": "string",
+      "enum": ["typed", "paraphrase"]
+    },
+    "spanResult": {
+      "type": "string",
+      "enum": ["pass", "fail"]
+    },
+    "locator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id"],
+      "properties": {
+        "artifact_id": { "$ref": "#/$defs/uuid" },
+        "page": { "type": ["integer", "null"], "minimum": 1 },
+        "char_start": { "type": ["integer", "null"], "minimum": 0 },
+        "char_end": { "type": ["integer", "null"], "minimum": 0 },
+        "annotation_id": { "type": ["string", "null"] }
+      }
+    },
+    "spanValidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tier", "result"],
+      "properties": {
+        "tier": { "$ref": "#/$defs/spanTier" },
+        "result": { "$ref": "#/$defs/spanResult" },
+        "metric_bucket": {
+          "type": "string",
+          "enum": ["hallucination_rate", "paraphrase_pass_rate", "none"]
+        },
+        "detail": { "type": ["string", "null"] }
+      }
+    },
+    "claimEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "org_id",
+        "subject_type",
+        "subject_id",
+        "claim_type",
+        "class",
+        "payload",
+        "status"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/uuid" },
+        "org_id": { "$ref": "#/$defs/orgId" },
+        "subject_type": { "$ref": "#/$defs/subjectType" },
+        "subject_id": { "$ref": "#/$defs/uuid" },
+        "claim_type": {
+          "type": "string",
+          "enum": [
+            "IdentityClaim",
+            "ContactClaim",
+            "CareerStepClaim",
+            "EducationClaim",
+            "SkillClaim",
+            "LocationClaim",
+            "SameAsClaim"
+          ]
+        },
+        "class": { "$ref": "#/$defs/claimClass" },
+        "payload": { "type": "object" },
+        "natural_key": { "type": ["string", "null"] },
+        "valid_from": { "anyOf": [{ "$ref": "#/$defs/isoDate" }, { "type": "null" }] },
+        "valid_to": { "anyOf": [{ "$ref": "#/$defs/isoDate" }, { "type": "null" }] },
+        "temporal_precision": { "$ref": "#/$defs/temporalPrecision" },
+        "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "verifiability": { "$ref": "#/$defs/verifiability" },
+        "flags": {
+          "type": "object",
+          "description": "Keys must exist in flag_type_registry."
+        },
+        "status": { "$ref": "#/$defs/claimStatus" },
+        "approved_view": { "type": ["object", "null"] },
+        "approved_view_hash": { "type": ["string", "null"] },
+        "run_id": { "anyOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
+        "observed_as_of": { "anyOf": [{ "$ref": "#/$defs/isoDate" }, { "type": "null" }] },
+        "superseded_by": { "anyOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attribute_path",
+        "value",
+        "source_authority",
+        "origin"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/uuid" },
+        "claim_id": { "anyOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
+        "attribute_path": { "type": "string" },
+        "value": true,
+        "evidence_id": { "anyOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
+        "source_authority": { "$ref": "#/$defs/sourceAuthority" },
+        "origin": { "$ref": "#/$defs/origin" },
+        "observed_as_of": { "anyOf": [{ "$ref": "#/$defs/isoDate" }, { "type": "null" }] }
+      }
+    }
+  }
+}

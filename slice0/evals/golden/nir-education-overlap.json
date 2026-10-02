@@ -1,0 +1,14 @@
+{
+  "id": "nir-education-overlap",
+  "source": "Nir_Chodorov_CV_2026.pdf (1).pdf",
+  "subject_hint": { "full_name": "Nir Chodorov" },
+  "must": {
+    "career_steps_containing": ["Redis", "Matrix"],
+    "education_containing": "Holon"
+  },
+  "must_not": {
+    "computed_failures": ["education_employment_overlap"],
+    "flags": ["concurrency.overlap_with"]
+  },
+  "notes": "B.Sc. 2017–2020 inside Matrix IT 2015–2020 is legal. Redis and Matrix do not overlap."
+}

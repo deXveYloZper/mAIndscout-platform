@@ -1,0 +1,14 @@
+{
+  "id": "catalyst-jd",
+  "source": "Catalyst - InSAR Processing Specialist.pdf",
+  "doc_type": "jd",
+  "must": {
+    "hiring_company_from_content": ["CATALYST", "PCI Geomatics"],
+    "locations_mentioned": ["Markham", "Gatineau"]
+  },
+  "must_not": {
+    "candidate_identity_keys": ["hello@catalyst.earth", "+1 (905) 764-0614"],
+    "composite_score_emitted_against_software_cvs": true
+  },
+  "notes": "Footer contacts are company contacts. Filename is consistent with body. Zero-domain vs the five software/finance CVs: no composite (Slice 1 scoring)."
+}

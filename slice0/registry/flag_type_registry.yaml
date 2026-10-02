@@ -1,0 +1,118 @@
+# AL-13 seed. Compiler and writers validate keys against this list.
+# brief_template uses {placeholders} only; phrasing can be swapped later.
+version: 1
+
+flags:
+  - key: possible_duplicate_stint
+    default_severity: medium
+    brief_template: "Two roles at {company} look like they might be the same stint. Same job, or two?"
+    blocks_auto_approval: true
+    blocks_matching: false
+    valid_subject_types: [candidate]
+
+  - key: concurrency.overlap_with
+    default_severity: medium
+    brief_template: "This role overlaps with another current-looking role ({other_title} at {other_company}). How do they sit together?"
+    blocks_auto_approval: true
+    blocks_matching: false
+    valid_subject_types: [candidate]
+
+  - key: possible_ocr_identifier
+    default_severity: high
+    brief_template: "The extracted {kind} ({value}) may be a text-layer error. Confirm before we use it as a key or send mail."
+    blocks_auto_approval: true
+    blocks_matching: false
+    valid_subject_types: [candidate]
+    notes: "Must not become a deterministic identity key until a human ContactClaim confirms it."
+
+  - key: paraphrase_only_support
+    default_severity: medium
+    brief_template: "This fact is only paraphrase-supported by the source span. Worth keeping?"
+    blocks_auto_approval: true
+    blocks_matching: false
+    valid_subject_types: [candidate, company, job]
+
+  - key: needs_vision
+    default_severity: low
+    brief_template: "Layout or photo suggests the text layer is incomplete. Vision is off in Slice 0; treat extraction as lossy."
+    blocks_auto_approval: false
+    blocks_matching: false
+    valid_subject_types: [candidate, job]
+
+  - key: needs_human
+    default_severity: high
+    brief_template: "Classification or extraction is below threshold. Decide document type or discard."
+    blocks_auto_approval: true
+    blocks_matching: false
+    valid_subject_types: [candidate, company, job]
+
+  - key: insufficient_identity
+    default_severity: high
+    brief_template: "No high-precision identifier. Profile exists; web enrichment is blocked."
+    blocks_auto_approval: true
+    blocks_matching: false
+    valid_subject_types: [candidate]
+
+  - key: extraordinary_unverified
+    default_severity: high
+    brief_template: "This claim is consequential and thinly sourced. Verify or ask."
+    blocks_auto_approval: true
+    blocks_matching: false
+    valid_subject_types: [candidate, company]
+
+  - key: single_source_web
+    default_severity: high
+    brief_template: "Consequential web claim from one origin. Needs a second origin or a human."
+    blocks_auto_approval: true
+    blocks_matching: false
+    valid_subject_types: [candidate, company]
+
+  - key: suppressed_by_critic
+    default_severity: low
+    brief_template: "Held back by the critic (not in Slice 0). Review if this should surface."
+    blocks_auto_approval: true
+    blocks_matching: false
+    valid_subject_types: [candidate, company, job]
+
+  - key: possible_deal_breaker
+    default_severity: high
+    brief_template: "Possible deal-breaker on {requirement}. Visible; not an auto-exclude until approved."
+    blocks_auto_approval: false
+    blocks_matching: false
+    valid_subject_types: [candidate]
+
+  - key: budget_truncated
+    default_severity: low
+    brief_template: "Run stopped at the budget cap. Completeness is partial by design."
+    blocks_auto_approval: false
+    blocks_matching: false
+    valid_subject_types: [candidate, company, job]
+
+  - key: job_process_stale
+    default_severity: high
+    brief_template: "This posting's own process dates have passed ({dates}). Confirm it is still open before submitting anyone."
+    blocks_auto_approval: false
+    blocks_matching: false
+    valid_subject_types: [job]
+
+  - key: exceeds_expectations
+    default_severity: medium
+    brief_template: "This person clears {requirement} by a wide margin. Confirm scope, autonomy, and compensation still fit."
+    blocks_auto_approval: false
+    blocks_matching: false
+    valid_subject_types: [candidate]
+
+  - key: possible_progress_evidence_mismatch
+    default_severity: medium
+    brief_template: "Pipeline state is advanced but profile coverage is very low. Missing CV or claims?"
+    blocks_auto_approval: false
+    blocks_matching: false
+    valid_subject_types: [candidate]
+
+  - key: possible_duplicate_subject_batch
+    default_severity: medium
+    brief_template: "Several documents in this batch share the first name {given_name} with no shared identifier. Confirm they are different people."
+    blocks_auto_approval: false
+    blocks_matching: false
+    valid_subject_types: [candidate]
+    notes: "AL-41. Cheap set-intersection. Not required to fire in Slice 0 extract, but the key is registered."

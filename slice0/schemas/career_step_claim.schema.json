@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maindscout.local/schemas/career_step_claim.schema.json",
+  "title": "CareerStepClaim payload",
+  "description": "One stint. Natural key = candidate + canonical company + overlapping period. Company may be provisional until resolution (02-F3.1). Do not fuse non-overlapping periods (boomerang) or concurrent distinct roles.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["company", "title_raw"],
+  "properties": {
+    "company": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw_name", "provisional"],
+      "properties": {
+        "raw_name": { "type": "string", "minLength": 1 },
+        "company_id": { "type": ["string", "null"], "format": "uuid" },
+        "provisional": { "type": "boolean" }
+      }
+    },
+    "title_raw": { "type": "string", "minLength": 1 },
+    "title_normalized": { "type": ["string", "null"] },
+    "employment_type": {
+      "type": "string",
+      "enum": [
+        "full_time",
+        "part_time",
+        "contract",
+        "consulting",
+        "internship",
+        "side",
+        "unknown"
+      ],
+      "default": "unknown"
+    },
+    "location_raw": { "type": ["string", "null"] }
+  }
+}

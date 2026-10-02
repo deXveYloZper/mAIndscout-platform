@@ -1,0 +1,13 @@
+{
+  "id": "dmitry-ocr-email",
+  "source": "CV - Dmitry Chernyshov.pdf",
+  "subject_hint": { "full_name": "Dmitry Chernyshov" },
+  "must": {
+    "document_flags_allowed": ["needs_vision"],
+    "career_steps_containing": ["Corza", "KPMG"]
+  },
+  "must_not": {
+    "fused_kpmg_into_one_stint_across_moscow_and_toronto": false
+  },
+  "notes": "Two-column layout. Email on the visual may read hi@dmitychernyshov.ca. Flag OCR; do not treat KPMG Moscow and KPMG Toronto as one stint without review."
+}

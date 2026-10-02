@@ -1,0 +1,79 @@
+# Slice-0 claim types. Adding a type requires a schema file + a reconcile or extract fixture.
+version: 1
+
+types:
+  IdentityClaim:
+    class: observed
+    subject_types: [candidate]
+    natural_key: "candidate_id + normalized(full_name)"
+    volatility: stable
+    default_review: individual
+    payload_schema: schemas/identity_claim.schema.json
+
+  ContactClaim:
+    class: observed
+    subject_types: [candidate]
+    natural_key: "candidate_id + kind + normalized"
+    volatility: stable
+    default_review: individual
+    payload_schema: schemas/contact_claim.schema.json
+    notes: >
+      Match key only if attributable=true AND attribution=subject
+      AND flags.possible_ocr_identifier is absent or false.
+
+  CareerStepClaim:
+    class: observed
+    subject_types: [candidate]
+    natural_key: "candidate_id + canonical_company + overlapping_period"
+    volatility: stable
+    default_review: individual
+    payload_schema: schemas/career_step_claim.schema.json
+    notes: >
+      Attach observation only when same-stint is confident.
+      Else separate + possible_duplicate_stint.
+      Concurrent employment-like stints: separate + concurrency.overlap_with on both.
+
+  EducationClaim:
+    class: observed
+    subject_types: [candidate]
+    natural_key: "candidate_id + institution_normalized + credential + overlapping_period"
+    volatility: stable
+    default_review: individual
+    payload_schema: schemas/education_claim.schema.json
+
+  SkillClaim:
+    class: observed
+    subject_types: [candidate]
+    natural_key: "candidate_id + normalized_skill"
+    volatility: stable
+    default_review: policy_eligible
+    payload_schema: schemas/skill_claim.schema.json
+
+  LocationClaim:
+    class: observed
+    subject_types: [candidate]
+    natural_key: "candidate_id + place_normalized + basis"
+    volatility: volatile
+    default_review: individual
+    payload_schema: schemas/location_claim.schema.json
+
+
+  JobRequirementClaim:
+    class: observed
+    subject_types: [job]
+    natural_key: "job_id + category + normalized_token_or_text"
+    volatility: stable
+    default_review: policy_eligible
+    payload_schema: schemas/job_requirement_claim.schema.json
+    notes: >
+      Thin in Slice 0. distinctive=true tokens drive do_not_submit.
+      Mobility must be separate rows when extracted.
+
+  SameAsClaim:
+    class: inferred
+    subject_types: [candidate, company]
+    natural_key: "min(a_id,b_id) + max(a_id,b_id) + subject_type"
+    volatility: stable
+    default_review: individual
+    payload_schema: null
+    notes: "Slice 0 human-only. Pair collapse per 05 RA-03."

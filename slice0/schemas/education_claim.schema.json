@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maindscout.local/schemas/education_claim.schema.json",
+  "title": "EducationClaim payload",
+  "description": "One credential. Overlap with a CareerStepClaim is allowed (05 RA-09).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["institution_raw"],
+  "properties": {
+    "institution_raw": { "type": "string", "minLength": 1 },
+    "institution_id": { "type": ["string", "null"], "format": "uuid" },
+    "credential": { "type": ["string", "null"] },
+    "field": { "type": ["string", "null"] },
+    "level": {
+      "type": ["string", "null"],
+      "enum": ["bachelor", "master", "doctorate", "associate", "diploma", "other", null]
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "jure-ocr-email",
+  "source": "Jure Domajnko - CV (1).pdf",
+  "subject_hint": { "full_name": "Jure Domajnko" },
+  "must": {
+    "flags_on_some_contact": ["possible_ocr_identifier"],
+    "identity_full_name_contains": "Domajnko"
+  },
+  "must_not": {
+    "deterministic_match_keys": [
+      "domainko@gmail.com",
+      "linkedin.com/in/jure-domainko"
+    ]
+  },
+  "notes": "Text layer misspells email/LinkedIn. Visible page is domajnkoj@gmail.com / jure-domajnko. Do not key identity on the text-layer form."
+}

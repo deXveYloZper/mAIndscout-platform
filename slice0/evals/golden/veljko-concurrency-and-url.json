@@ -1,0 +1,19 @@
+{
+  "id": "veljko-concurrency-and-url",
+  "source": "Veljko Djosovic CV (3).pdf",
+  "subject_hint": { "full_name": "Veljko Djosovic" },
+  "must": {
+    "career_steps_min": 3,
+    "separate_current_stints_containing": [
+      "BlueCat",
+      "Partizan"
+    ],
+    "flags": ["concurrency.overlap_with"],
+    "concurrency_flag_claim_count_min": 2
+  },
+  "must_not": {
+    "fused_into_single_career_step": true,
+    "deterministic_match_keys": ["wipiper.com"]
+  },
+  "notes": "BlueCat + AI trainer + Partizan stay separate. wipiper vs wipher is OCR/text-layer noise on the personal URL."
+}

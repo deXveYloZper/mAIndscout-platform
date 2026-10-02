@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maindscout.local/schemas/location_claim.schema.json",
+  "title": "LocationClaim payload",
+  "description": "Natural key = candidate + place + basis. Job-side residence/visa/relocation are RequirementClaims (Slice 1, AL-22), not this type.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["place_raw", "basis"],
+  "properties": {
+    "place_raw": { "type": "string", "minLength": 1 },
+    "country_code": {
+      "type": ["string", "null"],
+      "pattern": "^[A-Z]{2}$"
+    },
+    "basis": {
+      "type": "string",
+      "enum": ["stated", "inferred"]
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["current", "willing", "historical"],
+      "default": "current"
+    }
+  }
+}

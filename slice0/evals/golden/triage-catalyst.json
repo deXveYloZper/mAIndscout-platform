@@ -1,0 +1,13 @@
+{
+  "id": "triage-catalyst",
+  "job_source": "Catalyst - InSAR Processing Specialist.pdf",
+  "distinctive_must_have_tokens": ["insar", "d-insar", "psi", "interferometry"],
+  "people": [
+    { "source": "Veljko Djosovic CV (3).pdf", "band": "do_not_submit" },
+    { "source": "Bianca Gogiltan CV (1).pdf", "band": "do_not_submit" },
+    { "source": "Nir_Chodorov_CV_2026.pdf (1).pdf", "band": "do_not_submit" },
+    { "source": "Jure Domajnko - CV (1).pdf", "band": "do_not_submit" },
+    { "source": "CV - Dmitry Chernyshov.pdf", "band": "do_not_submit" }
+  ],
+  "must_not": { "composite_score": true }
+}

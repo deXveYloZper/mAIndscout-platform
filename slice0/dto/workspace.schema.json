@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maindscout.local/dto/workspace.schema.json",
+  "title": "Slice-0 process_document workspace",
+  "description": "intelligence/ receives this DTO and returns staged claims. It does not open a DB session. api/ commits.",
+  "type": "object",
+  "$defs": {
+    "uuid": { "type": "string", "format": "uuid" },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prompt_version", "model_version", "ontology_version", "rubric_version"],
+      "properties": {
+        "prompt_version": { "type": "string" },
+        "model_version": { "type": "string" },
+        "ontology_version": { "type": "string" },
+        "rubric_version": { "type": "string" }
+      }
+    },
+    "stagedClaim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim_type", "payload", "span"],
+      "properties": {
+        "client_key": {
+          "type": "string",
+          "description": "Idempotency key scoped to run_id. Retry overwrites the same key."
+        },
+        "claim_type": {
+          "type": "string",
+          "enum": [
+            "IdentityClaim",
+            "ContactClaim",
+            "CareerStepClaim",
+            "EducationClaim",
+            "SkillClaim",
+            "LocationClaim"
+          ]
+        },
+        "payload": { "type": "object" },
+        "valid_from": { "type": ["string", "null"] },
+        "valid_to": { "type": ["string", "null"] },
+        "temporal_precision": {
+          "type": "string",
+          "enum": ["exact", "month", "year_only", "ordered_only", "unknown"]
+        },
+        "origin": {
+          "type": "string",
+          "enum": ["candidate", "employer", "registry", "independent_web", "human", "relayed", "unknown"]
+        },
+        "source_authority": { "type": "string" },
+        "flags": { "type": "object" },
+        "span": {
+          "type": "object",
+          "required": ["artifact_id"],
+          "properties": {
+            "artifact_id": { "$ref": "#/$defs/uuid" },
+            "page": { "type": ["integer", "null"] },
+            "char_start": { "type": ["integer", "null"] },
+            "char_end": { "type": ["integer", "null"] },
+            "snippet": { "type": ["string", "null"] }
+          }
+        }
+      }
+    }
+  },
+  "properties": {
+    "ProcessDocumentRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["org_id", "document_id"],
+      "properties": {
+        "org_id": { "$ref": "#/$defs/uuid" },
+        "document_id": { "$ref": "#/$defs/uuid" },
+        "force_reprocess": { "type": "boolean", "default": false }
+      }
+    },
+    "Workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "org_id",
+        "document_id",
+        "artifact_id",
+        "text",
+        "manifest"
+      ],
+      "properties": {
+        "run_id": { "$ref": "#/$defs/uuid" },
+        "org_id": { "$ref": "#/$defs/uuid" },
+        "document_id": { "$ref": "#/$defs/uuid" },
+        "artifact_id": { "$ref": "#/$defs/uuid" },
+        "doc_type": {
+          "type": ["string", "null"],
+          "enum": ["cv", "jd", "other", null]
+        },
+        "text": { "type": "string" },
+        "annotations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": { "type": "string", "enum": ["link", "mailto", "tel"] },
+              "value": { "type": "string" }
+            }
+          }
+        },
+        "existing_subject_id": { "type": ["string", "null"], "format": "uuid" },
+        "existing_claims": {
+          "type": "array",
+          "description": "Approved + proposed claims for the resolved subject. Downstream-shaped; no raw document.",
+          "items": { "type": "object" }
+        },
+        "manifest": { "$ref": "#/$defs/manifest" }
+      }
+    },
+    "WorkspaceResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "staged_claims", "span_results", "document_flags"],
+      "properties": {
+        "run_id": { "$ref": "#/$defs/uuid" },
+        "proposed_subject": {
+          "type": "object",
+          "properties": {
+            "full_name": { "type": "string" },
+            "contacts": { "type": "array", "items": { "type": "object" } }
+          }
+        },
+        "staged_claims": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/stagedClaim" }
+        },
+        "span_results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["client_key", "tier", "result"],
+            "properties": {
+              "client_key": { "type": "string" },
+              "tier": { "type": "string", "enum": ["typed"] },
+              "result": { "type": "string", "enum": ["pass", "fail"] },
+              "detail": { "type": ["string", "null"] }
+            }
+          }
+        },
+        "document_flags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "cost": {
+          "type": "object",
+          "properties": {
+            "model": { "type": "string" },
+            "input_tokens": { "type": "integer" },
+            "output_tokens": { "type": "integer" },
+            "usd": { "type": "number" }
+          }
+        }
+      }
+    },
+    "ProcessDocumentResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "document_id", "status"],
+      "properties": {
+        "run_id": { "$ref": "#/$defs/uuid" },
+        "document_id": { "$ref": "#/$defs/uuid" },
+        "subject_id": { "type": ["string", "null"], "format": "uuid" },
+        "status": {
+          "type": "string",
+          "enum": ["committed", "failed", "needs_human"]
+        },
+        "committed_claim_ids": {
+          "type": "array",
+          "items": { "type": "string", "format": "uuid" }
+        },
+        "inbox_decision_id": { "type": ["string", "null"], "format": "uuid" }
+      }
+    }
+  }
+}

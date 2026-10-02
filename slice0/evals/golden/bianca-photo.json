@@ -1,0 +1,14 @@
+{
+  "id": "bianca-photo",
+  "source": "Bianca Gogiltan CV (1).pdf",
+  "subject_hint": { "full_name": "Bianca Gogiltan" },
+  "must": {
+    "document_flags_allowed": ["needs_vision"],
+    "contact_kinds": ["email", "phone"]
+  },
+  "must_not": {
+    "claim_types": ["AppearanceClaim"],
+    "payload_keys_anywhere": ["gender", "photo", "ethnicity", "appearance"]
+  },
+  "notes": "Photo on the page. Text path must not invent appearance claims. needs_vision may raise."
+}

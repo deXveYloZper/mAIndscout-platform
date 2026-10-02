@@ -1,0 +1,52 @@
+{
+  "observations": [
+    {
+      "id": "o1",
+      "bundle_id": "bluecat",
+      "claim_type": "CareerStepClaim",
+      "subject_id": "veljko",
+      "company_raw": "BlueCat Networks",
+      "title": "Full-stack Engineer",
+      "valid_from": "2024-08-01",
+      "valid_to": null,
+      "employment_type": "full_time",
+      "attribute_path": "title",
+      "value": "Full-stack Engineer",
+      "origin": "candidate",
+      "source_authority": "candidate_authored",
+      "observed_as_of": "2026-01-01"
+    },
+    {
+      "id": "o2",
+      "bundle_id": "trainer",
+      "claim_type": "CareerStepClaim",
+      "subject_id": "veljko",
+      "company_raw": "AI Training Platform",
+      "title": "AI Coding Response Evaluator",
+      "valid_from": "2025-01-01",
+      "valid_to": null,
+      "employment_type": "contract",
+      "attribute_path": "title",
+      "value": "AI Coding Response Evaluator",
+      "origin": "candidate",
+      "source_authority": "candidate_authored",
+      "observed_as_of": "2026-01-01"
+    },
+    {
+      "id": "o3",
+      "bundle_id": "partizan",
+      "claim_type": "CareerStepClaim",
+      "subject_id": "veljko",
+      "company_raw": "Basketball Club Partizan",
+      "title": "Website & Application Maintenance",
+      "valid_from": "2021-01-01",
+      "valid_to": null,
+      "employment_type": "part_time",
+      "attribute_path": "title",
+      "value": "Website & Application Maintenance",
+      "origin": "candidate",
+      "source_authority": "candidate_authored",
+      "observed_as_of": "2026-01-01"
+    }
+  ]
+}

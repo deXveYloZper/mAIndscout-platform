@@ -1,0 +1,36 @@
+{
+  "observations": [
+    {
+      "id": "o1",
+      "bundle_id": "cv",
+      "claim_type": "CareerStepClaim",
+      "subject_id": "cand-1",
+      "company_raw": "Finalsite",
+      "title": "Software Engineer",
+      "valid_from": "2023-03-01",
+      "valid_to": null,
+      "employment_type": "full_time",
+      "attribute_path": "title",
+      "value": "Software Engineer",
+      "origin": "candidate",
+      "source_authority": "candidate_authored",
+      "observed_as_of": "2026-01-01"
+    },
+    {
+      "id": "o2",
+      "bundle_id": "agency-notes",
+      "claim_type": "CareerStepClaim",
+      "subject_id": "cand-1",
+      "company_raw": "Finalsite",
+      "title": "Software Engineer",
+      "valid_from": "2023-03-01",
+      "valid_to": null,
+      "employment_type": "full_time",
+      "attribute_path": "title",
+      "value": "Software Engineer",
+      "origin": "relayed",
+      "source_authority": "third_party_assertion",
+      "observed_as_of": "2026-02-01"
+    }
+  ]
+}

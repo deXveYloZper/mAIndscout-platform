@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maindscout.local/schemas/job_requirement_claim.schema.json",
+  "title": "JobRequirementClaim payload (Slice 0 thin)",
+  "description": "One requirement on a job. Distinctive must-have tokens drive coarse triage. Mobility (residence / visa / relocation) must stay separate rows when extracted.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["text_raw", "category", "strength"],
+  "properties": {
+    "text_raw": { "type": "string", "minLength": 1 },
+    "normalized_token": { "type": ["string", "null"] },
+    "category": {
+      "type": "string",
+      "enum": ["skill", "education", "location", "seniority", "process", "authorization", "other"]
+    },
+    "strength": {
+      "type": "string",
+      "enum": ["must", "nice", "deal_breaker", "unknown"]
+    },
+    "distinctive": {
+      "type": "boolean",
+      "description": "If true, zero support on the person forces do_not_submit for this job."
+    }
+  }
+}

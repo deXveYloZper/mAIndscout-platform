@@ -1,0 +1,19 @@
+{
+  "id": "procure-ai-jd-stale",
+  "source": "AI Product Engineer (m_f_d) - full stack; all levels _ Careers at Procure Ai.pdf",
+  "doc_type": "jd",
+  "as_of_eval": "2026-09-04",
+  "must": {
+    "flags": ["job_process_stale"],
+    "mobility_facts_when_extracted": {
+      "residence": ["Germany", "United Kingdom"],
+      "sponsorship": false,
+      "relocation_assistance": false
+    }
+  },
+  "must_not": {
+    "hiring_company": "Revolut People",
+    "auto_exclude_eu_candidates_outside_de_uk": true
+  },
+  "notes": "Hackathon dates 26–27 Aug 2026 have passed by 4 Sep 2026. Revolut People is ATS chrome. Visa/relocation/residence stay three facts (Slice 1 RequirementClaim)."
+}

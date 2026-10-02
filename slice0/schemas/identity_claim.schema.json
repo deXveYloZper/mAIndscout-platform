@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maindscout.local/schemas/identity_claim.schema.json",
+  "title": "IdentityClaim payload",
+  "description": "Name of a person. No DOB, gender, photo, or other special-category / appearance fields (01 §F, P14).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["full_name"],
+  "properties": {
+    "full_name": { "type": "string", "minLength": 1 },
+    "given_name": { "type": ["string", "null"] },
+    "family_name": { "type": ["string", "null"] },
+    "honorific": { "type": ["string", "null"] },
+    "name_variants": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    }
+  }
+}
