@@ -2,6 +2,7 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-02 — Slice 1 step 2: gap table (domain, API, cockpit, default view of a person on a job). Fixed on the way: span offsets after ligatures (snippets were shifted), "js" matching inside "next.js", slash alternatives, vague tokens, mobility reliability (5/5), a forced re-read creating a second job and keeping stale proposals — [gap-table](components/gap-table.md)
 - 2026-10-02 — Slice 1 step 1: richer job requirements (years, education, languages) and mobility as three facts; golden mobility check live and passing on the Procure Ai ad — [ADR](../decisions/2026-10-02-richer-requirements.md)
 - 2026-10-02 — **Slice 0 gate GREEN**, declared by the owner; fresh eval GREEN with the new model key — [decision](../decisions/2026-10-02-slice-0-gate.md)
 - 2026-10-02 — Thorough Slice 0 testing: CI root cause fixed; 17 end-to-end tests; 14 UX fixes incl. unassigned pool, live upload progress, type-a-name, all-jobs inbox — [test report](../slice-0/TEST-REPORT.md)

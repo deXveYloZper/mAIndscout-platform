@@ -16,7 +16,7 @@ from typing import Any
 from maindscout.intelligence import contacts, spans
 from maindscout.intelligence.llm import LLMClient
 
-PROMPT_VERSION = "2026-10-02.5"
+PROMPT_VERSION = "2026-10-02.6"
 ONTOLOGY_VERSION = "slice0.1"
 RUBRIC_VERSION = "triage.1"
 
@@ -123,31 +123,25 @@ JD_SCHEMA = _obj(
         },
         "mobility": _obj(
             {
-                "residence": {
-                    "type": ["object", "null"],
-                    "additionalProperties": False,
-                    "required": ["countries", "quote"],
-                    "properties": {
-                        "countries": {
-                            "type": "array",
-                            "items": _obj({"name": {"type": "string", "description": "as written, e.g. UK"},
-                                           "code": {"type": "string", "description": "ISO 3166-1 alpha-2, e.g. GB"}}),
-                        },
-                        "quote": _QUOTE,
+                "residence": _obj({
+                    "stated": {"type": "boolean", "description": "does the ad say where the person must live or work from?"},
+                    "countries": {
+                        "type": "array",
+                        "items": _obj({"name": {"type": "string", "description": "as written, e.g. UK"},
+                                       "code": {"type": "string", "description": "ISO 3166-1 alpha-2, e.g. GB"}}),
                     },
-                },
-                "visa_sponsorship": {
-                    "type": ["object", "null"],
-                    "additionalProperties": False,
-                    "required": ["offered", "quote"],
-                    "properties": {"offered": {"type": "boolean"}, "quote": _QUOTE},
-                },
-                "relocation_assistance": {
-                    "type": ["object", "null"],
-                    "additionalProperties": False,
-                    "required": ["offered", "quote"],
-                    "properties": {"offered": {"type": "boolean"}, "quote": _QUOTE},
-                },
+                    "quote": {"type": ["string", "null"]},
+                }),
+                "visa_sponsorship": _obj({
+                    "stated": {"type": "boolean", "description": "does the ad mention visa sponsorship or support?"},
+                    "offered": {"type": ["boolean", "null"]},
+                    "quote": {"type": ["string", "null"]},
+                }),
+                "relocation_assistance": _obj({
+                    "stated": {"type": "boolean", "description": "does the ad mention relocation help?"},
+                    "offered": {"type": ["boolean", "null"]},
+                    "quote": {"type": ["string", "null"]},
+                }),
             }
         ),
         "work_locations": {
@@ -186,7 +180,8 @@ Rules:
 - Every item needs a `quote`: an exact, contiguous piece of the document text (under 300 characters). Copy it character for character.
 - `hiring_company` is the organisation that will employ the person. A careers-platform or ATS provider named in the page chrome or footer is NOT the hiring company; if the employer is not clear, use null.
 - Requirements: one item per distinct requirement. `strength`: must, nice, deal_breaker or unknown. For skill requirements give a lowercase `token`. For seniority give `min_years` only if a number of years is written. For education give `education_level`. For a spoken or written language requirement use category `language` and give `language`.
-- Mobility is NOT a requirement item. Put it in `mobility`, as three separate facts, each null if the ad says nothing about it: `residence` (countries the person must live in or work from), `visa_sponsorship` (offered true or false), `relocation_assistance` (offered true or false).
+- Mobility is NOT a requirement item. Always fill all three parts of `mobility`, deciding each one separately: `residence` (countries the person must live in or work from, e.g. "based in Germany or the UK", "Remote: Germany | United Kingdom"), `visa_sponsorship` (e.g. "does not offer visa support" means stated=true, offered=false), `relocation_assistance` (e.g. "no relocation assistance" means stated=true, offered=false). If the ad says nothing about a part, set stated=false and leave the rest empty. One sentence may support more than one part; quote it for each.
+- `token` is only for a concrete, nameable technology, tool or method (python, react, insar). For qualities or broad areas (software fundamentals, clean code, communication) leave `token` null. If a requirement names alternatives ("JavaScript/TypeScript"), write them with a slash: "javascript/typescript".
 - `distinctive` is true only for what the job is fundamentally about. For a specialist scientific or engineering role that means the specialist domain knowledge (e.g. InSAR, radar interferometry); general programming languages and tools (python, matlab, sql, git, linux, GIS software) are NOT distinctive there, however strongly required. For a software engineering role it means the core languages and frameworks the role is built on (e.g. React and Node.js for a full-stack JavaScript role). Never distinctive: degrees, soft skills, spoken languages, nice-to-haves, side tools.
 - Process dates: closing dates, interview or event dates and similar. `date` is YYYY-MM-DD. Set `year_written` true only if the year is actually written in the quote; never guess a year silently.
 - Work locations: each place the person would work, one item per place, as stated in the ad. A footer address is not a work location.
@@ -568,7 +563,7 @@ def _mobility(run: "_Run", data: dict[str, Any]) -> list[StagedClaim]:
         out.append(claim)
 
     residence = data.get("residence")
-    if residence and residence.get("countries"):
+    if residence and residence.get("stated") is not False and residence.get("countries") and residence.get("quote"):
         good = [c for c in residence["countries"]
                 if re.fullmatch(r"[A-Z]{2}", c.get("code", "")) and _country_in_quote(c.get("name", ""), c["code"], residence["quote"])]
         if len(good) != len(residence["countries"]):
@@ -580,7 +575,7 @@ def _mobility(run: "_Run", data: dict[str, Any]) -> list[StagedClaim]:
     for facet, word, category, label in (("visa_sponsorship", "visa", "authorization", "Visa sponsorship"),
                                          ("relocation_assistance", "relocat", "other", "Relocation assistance")):
         item = data.get(facet)
-        if not item:
+        if not item or item.get("stated") is False or item.get("offered") is None or not item.get("quote"):
             continue
         lowered = item["quote"].lower()
         if word not in lowered and not (facet == "visa_sponsorship" and "sponsor" in lowered):

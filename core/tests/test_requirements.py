@@ -31,10 +31,10 @@ def jd(**over):
              "quote": "A degree in Computer Science or a related field."},
         ],
         "mobility": {
-            "residence": {"countries": [{"name": "Germany", "code": "DE"}, {"name": "UK", "code": "GB"}],
+            "residence": {"stated": True, "countries": [{"name": "Germany", "code": "DE"}, {"name": "UK", "code": "GB"}],
                           "quote": "This role is based in Germany or the UK."},
-            "visa_sponsorship": {"offered": False, "quote": "Unfortunately, this role does not offer visa support or relocation assistance."},
-            "relocation_assistance": {"offered": False, "quote": "Unfortunately, this role does not offer visa support or relocation assistance."},
+            "visa_sponsorship": {"stated": True, "offered": False, "quote": "Unfortunately, this role does not offer visa support or relocation assistance."},
+            "relocation_assistance": {"stated": True, "offered": False, "quote": "Unfortunately, this role does not offer visa support or relocation assistance."},
         },
         "work_locations": [],
         "process_dates": [],
@@ -102,3 +102,36 @@ def test_country_matching_understands_common_names():
     assert extract._country_in_quote("U.K.", "GB", "Must live in the U.K.")
     assert not extract._country_in_quote("France", "FR", "based in Germany or the UK.")
     assert not extract._country_in_quote("US", "US", "focus on business results")  # 'us' inside a word does not count
+
+
+
+def test_a_part_the_ad_does_not_state_is_not_a_fact(session, blobs, org):
+    data = jd()
+    data["mobility"]["relocation_assistance"] = {"stated": False, "offered": None, "quote": None}
+    result, _ = run(session, blobs, org, LINES, data, doc_type="jd")
+    assert set(by_facet(reqs(session, result.job_id))) == {"residence", "visa_sponsorship"}
+
+
+
+def test_a_forced_re_read_updates_the_same_job_and_retires_the_old_reading(session, blobs, org):
+    from maindscout.api import process
+    from maindscout.db.models import Job
+    from maindscout.intelligence.llm import FakeClient
+
+    first = jd()
+    first["requirements"].append({"text": "Software fundamentals", "category": "skill", "strength": "must",
+                                  "token": "software-fundamentals", "distinctive": False, "min_years": None,
+                                  "education_level": None, "language": None,
+                                  "quote": "5+ years of production experience with TypeScript."})
+    result, doc = run(session, blobs, org, LINES, first, doc_type="jd")
+    approved = next(c for c in reqs(session, result.job_id) if c.payload["category"] == "education")
+    approved.status, approved.approved_view = "approved", dict(approved.payload)
+    session.flush()
+    again = process.process_document(session, blobs, FakeClient(jd(requirements=[])), org_id=org.id,
+                                     document_id=doc.id, force=True)
+    assert again.job_id == result.job_id
+    assert len(session.scalars(select(Job)).all()) == 1, "re-reading an ad never makes a second job"
+    by_text = {c.payload["text_raw"]: c.status for c in reqs(session, result.job_id)}
+    assert by_text["Software fundamentals"] == "superseded", "the machine's earlier proposal it no longer finds is retired"
+    assert by_text["Degree in Computer Science"] == "approved", "approved facts are never touched"
+    assert by_text["Live in or work from: Germany or UK"] == "proposed", "facts found again stay"

@@ -35,10 +35,17 @@ function People({ jobId, people }: { jobId: string; people: PersonOnJob[] }) {
       {people.map((p) => (
         <li key={p.candidate_id}>
           <span>
-            <Link href={`/people/${p.candidate_id}`}>{p.name ?? "name not read"}</Link>
+            <Link href={`/jobs/${jobId}/people/${p.candidate_id}`}>{p.name ?? "name not read"}</Link>
             {p.open_decisions > 0 && <span className="pill">{p.open_decisions} to review</span>}
           </span>
-          <span className="reason">{reasonWords(p.reason)}</span>
+          <span className="reason">
+            {reasonWords(p.reason)}
+            {p.gaps && (
+              <span className="mini">
+                {" "}· {p.gaps.evidence} evidence · {p.gaps.missing} missing{p.gaps.conflict ? ` · ${p.gaps.conflict} conflict` : ""} · {p.gaps.question} to ask
+              </span>
+            )}
+          </span>
           <form action={overrideBand.bind(null, jobId, p.candidate_id)} className="row">
             <select name="band" defaultValue={p.band} aria-label="Band">
               {(Object.keys(BAND_LABEL) as Band[]).map((b) => <option key={b} value={b}>{BAND_LABEL[b]}</option>)}

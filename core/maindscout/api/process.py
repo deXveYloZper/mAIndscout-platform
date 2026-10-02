@@ -313,15 +313,18 @@ def process_document(session: Session, blobs: BlobStore, client: LLMClient, *, o
     job = session.get(Job, job_id) if job_id else None
     if job_id and (job is None or job.org_id != org_id):
         raise LookupError(f"No job {job_id}")
+    if job is None and doc.doc_type == "jd":
+        # Re-reading an ad updates the job it already created; it never makes a second job.
+        job = session.scalar(select(Job).where(Job.source_document_id == doc.id, Job.org_id == org_id))
 
     run = IntelligenceRun(org_id=org_id, document_id=doc.id, version_manifest=_manifest(client), status="running")
     session.add(run)
     session.flush()
 
     if doc.doc_type == "jd":
-        result = _process_jd(session, doc, artifact, run, client, job)
+        result = _process_jd(session, doc, artifact, run, client, job, forced=force and prior is not None)
     elif doc.doc_type == "cv":
-        result = _process_cv(session, blobs, doc, artifact, run, client, job)
+        result = _process_cv(session, blobs, doc, artifact, run, client, job, forced=force and prior is not None)
         if result.status == "suppressed":
             session.flush()
             return result
@@ -356,6 +359,25 @@ def _again(session: Session, doc: Document, prior: IntelligenceRun, job_id: uuid
     return result
 
 
+def _retire_earlier_reading(session: Session, doc: Document, run: IntelligenceRun, kept: set[uuid.UUID]) -> int:
+    """After a forced re-read, the machine's earlier proposals from this same document that the new reading
+    did not find again are superseded. Only `proposed` claims whose every piece of evidence is this document;
+    anything approved, or also supported by another source, is left alone."""
+    retired = 0
+    candidates = session.scalars(
+        select(Claim).join(Evidence, Evidence.claim_id == Claim.id).where(
+            Evidence.document_id == doc.id, Claim.status == "proposed", Claim.run_id != run.id).distinct())
+    for claim in candidates:
+        if claim.id in kept:
+            continue
+        sources = set(session.scalars(select(Evidence.document_id).where(Evidence.claim_id == claim.id)))
+        if sources == {doc.id}:
+            claim.status = "superseded"
+            retired += 1
+    session.flush()
+    return retired
+
+
 def _span_failures(results) -> list[dict[str, str]]:
     return [{"client_key": r.client_key, "detail": r.detail or ""} for r in results if r.result == "fail"]
 
@@ -377,7 +399,7 @@ def _discard_suppressed(session: Session, blobs: BlobStore, doc: Document, run: 
 
 
 def _process_cv(session: Session, blobs: BlobStore, doc: Document, artifact: ExtractionArtifact, run: IntelligenceRun,
-                client: LLMClient, job: Job | None) -> ProcessResult:
+                client: LLMClient, job: Job | None, forced: bool = False) -> ProcessResult:
     outcome = extract.extract_cv(artifact.content, artifact.id, artifact.annotations or [], client)
     # Suppression first: a person who was erased is not ingested again. Nothing about them is kept.
     identifiers = [(c.payload["kind"], c.payload["normalized"]) for c in outcome.staged if c.claim_type == "ContactClaim"]
@@ -416,6 +438,8 @@ def _process_cv(session: Session, blobs: BlobStore, doc: Document, artifact: Ext
                     {"old_view": claim.approved_view, "new_view": p, "claim_id": str(claim.id)},
                     [("current", claim.id)]).id)
 
+    if forced:
+        _retire_earlier_reading(session, doc, run, set(claim_ids))
     _flag_careers(session, doc.org_id, cid, run, new_careers, decisions)
     _contradictions(session, doc.org_id, cid, decisions)
 
@@ -434,7 +458,7 @@ def _process_cv(session: Session, blobs: BlobStore, doc: Document, artifact: Ext
 
 
 def _process_jd(session: Session, doc: Document, artifact: ExtractionArtifact, run: IntelligenceRun,
-                client: LLMClient, job: Job | None) -> ProcessResult:
+                client: LLMClient, job: Job | None, forced: bool = False) -> ProcessResult:
     outcome = extract.extract_jd(artifact.content, artifact.id, client, doc.as_of)
     if job is None:
         job = Job(org_id=doc.org_id, title=outcome.title or (doc.filename or "Untitled job").rsplit(".", 1)[0])
@@ -461,6 +485,8 @@ def _process_jd(session: Session, doc: Document, artifact: ExtractionArtifact, r
                                 note="year not written; taken from the document date" if assumed else None)
         claim_ids.append(claim.id)
 
+    if forced:
+        _retire_earlier_reading(session, doc, run, set(claim_ids))
     if session.get(DocumentSubject, (doc.id, "job", job.id)) is None:
         session.add(DocumentSubject(document_id=doc.id, subject_type="job", subject_id=job.id, org_id=doc.org_id,
                                     established_by="extraction"))

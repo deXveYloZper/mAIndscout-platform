@@ -9,8 +9,8 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 | Step | What | State |
 |---|---|---|
 | 1 | Richer job requirements; mobility as three facts | done 2026-10-02 |
-| 2 | Gap table per person on a job | next |
-| 3 | Re-triage when a fact the band depends on is approved | |
+| 2 | Gap table per person on a job | done 2026-10-02 |
+| 3 | Re-triage when a fact the band depends on is approved | next |
 | 4 | Pair states; a pair can never be deleted | |
 | 5 | Reserved score breakdown shape; coverage floor | |
 | 6 | Slice 1 gate evidence in eval and e2e | |

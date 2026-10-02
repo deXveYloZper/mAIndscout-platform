@@ -100,6 +100,7 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
         people.setdefault(p.triage_band, []).append({
             "candidate_id": str(p.candidate_id), "name": who.get(p.candidate_id), "band": p.triage_band,
             "reason": p.triage_reason, "overridden_by": p.band_overridden_by, "open_decisions": open_counts.get(p.candidate_id, 0),
+            "gaps": gap_counts(session, org_id, job, p.candidate_id),
         })
     return {
         "id": str(job.id), "title": job.title, "hiring_company": job.hiring_company, "state": job.state,
@@ -214,3 +215,46 @@ def list_people(session: Session, org_id: uuid.UUID) -> list[dict[str, Any]]:
         .group_by(DocumentSubject.subject_id)).all())
     return [{"id": str(p.id), "name": who.get(p.id), "created_at": _iso(p.created_at), "jobs": pairs.get(p.id, []),
              "document_id": docs.get(p.id)} for p in people]
+
+
+def _gap_rows(session: Session, org_id: uuid.UUID, job: Job, candidate_id: uuid.UUID):
+    from maindscout.domain import gaps
+
+    reqs = list(session.scalars(select(Claim).where(Claim.subject_id == job.id, Claim.claim_type == "JobRequirementClaim",
+                                                    Claim.status.in_(LIVE)).order_by(Claim.created_at, Claim.natural_key)))
+    mine = list(session.scalars(select(Claim).where(Claim.subject_id == candidate_id, Claim.status.in_(LIVE))))
+    ev = evidence_for(session, [c.id for c in mine])
+    facts = [gaps.Fact(str(c.id), c.claim_type, c.approved_view or c.payload, c.status, c.valid_from, c.valid_to,
+                       (ev[c.id][-1]["snippet"] if ev[c.id] else None)) for c in mine]  # newest reading
+    return gaps.gap_table([{"id": str(r.id), "payload": r.payload} for r in reqs], facts)
+
+
+def gap_counts(session: Session, org_id: uuid.UUID, job: Job, candidate_id: uuid.UUID) -> dict[str, int]:
+    from maindscout.domain import gaps
+
+    return gaps.counts(_gap_rows(session, org_id, job, candidate_id))
+
+
+def gap_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, candidate_id: uuid.UUID) -> dict[str, Any]:
+    """A person against a job: every requirement as evidence / missing / conflict / question. No number."""
+    from maindscout.domain import gaps
+
+    job = session.get(Job, job_id)
+    person = session.get(Candidate, candidate_id)
+    if job is None or job.org_id != org_id or person is None or person.org_id != org_id:
+        raise LookupError("No such job or person")
+    pair = session.scalar(select(CandidateJob).where(CandidateJob.job_id == job.id, CandidateJob.candidate_id == person.id))
+    if pair is None:
+        raise LookupError("This person is not on this job")
+    rows = _gap_rows(session, org_id, job, person.id)
+    return {
+        "job": {"id": str(job.id), "title": job.title, "hiring_company": job.hiring_company},
+        "person": {"id": str(person.id), "name": names(session, [person.id])[person.id]},
+        "band": pair.triage_band, "reason": pair.triage_reason, "overridden_by": pair.band_overridden_by,
+        "counts": gaps.counts(rows),
+        "rows": [{
+            "requirement_id": r.requirement_id, "requirement": r.requirement, "kind": r.kind, "strength": r.strength,
+            "distinctive": r.distinctive, "status": r.status, "detail": r.detail, "official": r.official,
+            "facts": [{"id": f.id, "claim_type": f.claim_type, "status": f.status, "snippet": f.snippet} for f in r.facts[:4]],
+        } for r in rows],
+    }

@@ -47,7 +47,7 @@ export default async function Person({ params }: { params: Promise<{ id: string 
           <ul className="people">
             {person.jobs.map((j) => (
               <li key={j.job_id}>
-                <Link href={`/jobs/${j.job_id}`}>{j.title}</Link>
+                <Link href={`/jobs/${j.job_id}/people/${person.id}`}>{j.title}</Link>
                 <span>{BAND_LABEL[j.band]}</span>
                 <span className="reason">{reasonWords(j.reason)}</span>
               </li>

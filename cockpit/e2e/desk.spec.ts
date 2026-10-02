@@ -59,6 +59,18 @@ test("CVs dropped on a job are read one by one and each is banded", async ({ pag
   await expect(page.locator("summary", { hasText: "Do not submit (3)" })).toBeVisible();
 });
 
+test("a person on a job opens as a gap table, with no overall score", async ({ page }) => {
+  await page.goto(catalystUrl);
+  await page.getByRole("link", { name: "Ioannis Gkanatsios" }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Ioannis Gkanatsios");
+  const insar = page.locator("table.gaps tr", { hasText: /InSAR/ }).first();
+  await expect(insar.locator(".gapstatus")).toHaveText("Evidence");
+  await expect(insar).toContainText("decides the band");
+  await expect(page.getByText("There is no overall score, by design")).toBeVisible();
+  await expect(page.locator("body")).not.toContainText(/\d+\s*%/);
+  await expect(page.locator(".counts")).toContainText("Evidence:");
+});
+
 test("a stale advertisement warns before anyone is submitted", async ({ page }) => {
   await page.goto("/");
   await page.locator('input[type="file"]').setInputFiles(PROCURE);
@@ -105,6 +117,7 @@ test("a name the machine could not read is typed in the inbox and becomes offici
   await openJob(page, /InSAR Processing Specialist/);
   await page.locator("summary", { hasText: /Do not submit \(\d+\)/ }).click();
   await page.getByRole("link", { name: "Yousuf Butt" }).click();
+  await page.getByRole("link", { name: "Full profile and facts" }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Yousuf Butt");
   await expect(page.locator(".claim", { hasText: "Yousuf Butt" }).getByText("approved")).toBeVisible();
 });
@@ -121,6 +134,7 @@ test("facts are approved and rejected one by one on the person page", async ({ p
   await openJob(page, /InSAR Processing Specialist/);
   await page.locator("summary", { hasText: /Do not submit \(\d+\)/ }).click();
   await page.getByRole("link", { name: /Jure Domajnko/ }).click();
+  await page.getByRole("link", { name: "Full profile and facts" }).click();
   const name = page.locator(".claim").filter({ hasText: /Jure Domajnko/ }).first();
   await name.getByRole("button", { name: "Approve" }).click();
   await expect(name.getByText("approved")).toBeVisible();
@@ -141,6 +155,7 @@ test("a typed contact is saved as an approved fact", async ({ page }) => {
   await openJob(page, /InSAR Processing Specialist/);
   await page.locator("summary", { hasText: /Do not submit \(\d+\)/ }).click();
   await page.getByRole("link", { name: /Jure Domajnko/ }).click();
+  await page.getByRole("link", { name: "Full profile and facts" }).click();
   const panel = page.locator(".panel", { hasText: "Add or correct a fact" });
   await panel.getByLabel("Kind of fact").selectOption("phone");
   await panel.getByLabel("Value").fill("+43 660 1234567");
@@ -181,6 +196,7 @@ test("forgetting a person needs a typed confirmation, then leaves nothing", asyn
   await openJob(page, /InSAR Processing Specialist/);
   await page.locator("summary", { hasText: /Do not submit \(\d+\)/ }).click();
   await page.getByRole("link", { name: "Yousuf Butt" }).click();
+  await page.getByRole("link", { name: "Full profile and facts" }).click();
   const danger = page.locator("details.danger");
   await danger.locator("summary").click();
   await danger.getByLabel("Type forget to confirm").fill("delete");

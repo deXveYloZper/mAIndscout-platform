@@ -279,3 +279,23 @@ def test_a_cv_without_a_job_joins_the_pool_and_can_be_put_on_a_job_later(client)
     assert placed["band"] == "do_not_submit" and placed["reused"] is True
     assert client.get("/v1/candidates", params={"unassigned": True}).json() == []
     assert client.get("/v1/candidates").json()[0]["jobs"][0]["band"] == "do_not_submit"
+
+
+
+def test_gap_table_lists_every_requirement_with_a_status_and_never_a_number(client):
+    job_id = make_job(client)
+    cid = drop_cv(client, job_id)["subject_id"]
+    page = client.get(f"/v1/jobs/{job_id}/people/{cid}/gaps").json()
+    assert page["person"]["name"] == "Jane Example" and page["band"] == "do_not_submit"
+    insar = next(r for r in page["rows"] if r["requirement"] == "InSAR processing experience")
+    assert insar["status"] == "missing" and insar["distinctive"] is True and insar["official"] is False
+    assert set(page["counts"]) == {"evidence", "missing", "conflict", "question"}
+    assert not any(k in page for k in ("score", "fit", "total"))
+    people = client.get(f"/v1/jobs/{job_id}").json()["people"]["do_not_submit"]
+    assert people[0]["gaps"]["missing"] >= 1
+
+
+def test_gap_table_for_someone_not_on_the_job_is_not_found(client):
+    job_id = make_job(client)
+    r = client.post("/v1/candidates", files=pdf_file(CV_LINES, "pool.pdf")).json()
+    assert client.get(f"/v1/jobs/{job_id}/people/{r['subject_id']}/gaps").status_code == 404

@@ -83,6 +83,7 @@ export type PersonOnJob = {
   reason: string | null;
   overridden_by: string | null;
   open_decisions: number;
+  gaps?: { evidence: number; missing: number; conflict: number; question: number };
 };
 
 export type JobPage = JobSummary & {

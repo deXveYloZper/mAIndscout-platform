@@ -246,6 +246,13 @@ def job_people(job_id: uuid.UUID, band: str | None = Query(None), org_id: uuid.U
     return people.get(band, []) if band else people
 
 
+@app.get("/v1/jobs/{job_id}/people/{candidate_id}/gaps")
+def gap_table(job_id: uuid.UUID, candidate_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org),
+              session: Session = Depends(get_session)):
+    """Every requirement of the job against this person: evidence, missing, conflict or question. Never a number."""
+    return queries.gap_page(session, org_id, job_id, candidate_id)
+
+
 class BandBody(BaseModel):
     band: str
     reason: str | None = None

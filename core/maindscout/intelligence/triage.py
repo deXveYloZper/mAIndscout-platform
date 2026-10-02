@@ -39,17 +39,25 @@ class Triage:
 
 
 def supports(token: str, skills: list[str], titles: list[str]) -> bool:
-    """True if the token is one of the person's skills, or appears as a word in a skill or a job title."""
+    """True if the token is one of the person's skills, or appears as a word in a skill or a job title.
+
+    Alternatives written with a slash ("javascript/typescript") are supported by either one.
+    """
+    if "/" in token:
+        return any(supports(part, skills, titles) for part in token.split("/") if part.strip())
     wanted = canon(token)
     haystack = {canon(s) for s in skills}
     if wanted in haystack:
         return True
-    pattern = re.compile(rf"(?<![a-z0-9]){re.escape(wanted)}(?![a-z0-9])")
+    def whole(word: str) -> str:
+        # A token is a whole word: "js" is not inside "next.js", "react" is not inside "reactive".
+        return rf"(?<![a-z0-9.+#]){re.escape(word)}(?![a-z0-9+#])"
+
     blob = _words(" ".join(titles + skills))  # a skill like "InSAR basics" is evidence of "insar"
     for alias, target in ALIASES.items():
         if target == wanted:
-            blob = blob.replace(alias, wanted)
-    return bool(pattern.search(blob))
+            blob = re.sub(whole(alias), wanted, blob)
+    return bool(re.search(whole(wanted), blob))
 
 
 def triage(requirements: list[dict], skills: list[str], titles: list[str], process_stale: bool = False) -> Triage:

@@ -25,32 +25,36 @@ class Located:
 
 
 def _squash(text: str) -> tuple[str, list[int]]:
-    """Collapse whitespace and lowercase, remembering where each kept character came from."""
+    """Expand ligatures, collapse whitespace and lowercase, remembering for every kept character which
+    character of the ORIGINAL text it came from (so offsets stay true even when "ﬁ" becomes "fi")."""
     out: list[str] = []
     origin: list[int] = []
     previous_space = True
-    for index, char in enumerate(text):
-        if char.isspace():
-            if not previous_space:
-                out.append(" ")
+    for index, raw in enumerate(text):
+        for char in _LIGATURE_MAP.get(raw, raw):
+            if char.isspace():
+                if not previous_space:
+                    out.append(" ")
+                    origin.append(index)
+                previous_space = True
+            else:
+                out.append(char.lower())
                 origin.append(index)
-            previous_space = True
-        else:
-            out.append(char.lower())
-            origin.append(index)
-            previous_space = False
+                previous_space = False
     return "".join(out), origin
 
 
-_LIGATURES = str.maketrans({"ﬁ": "fi", "ﬂ": "fl", "’": "'", "‘": "'", "“": '"', "”": '"'})
+_LIGATURE_MAP = {"ﬁ": "fi", "ﬂ": "fl", "ﬀ": "ff", "ﬃ": "ffi", "ﬄ": "ffl",
+                 "’": "'", "‘": "'", "“": '"', "”": '"'}
+_LIGATURES = str.maketrans(_LIGATURE_MAP)
 
 
 def locate(text: str, quote: str) -> Located | None:
     """Find the quote in the document, tolerant only of whitespace and case. Returns offsets into text."""
     if not quote or not quote.strip():
         return None
-    haystack, origin = _squash(text.translate(_LIGATURES))
-    needle, _ = _squash(quote.translate(_LIGATURES))
+    haystack, origin = _squash(text)
+    needle, _ = _squash(quote)
     needle = needle.strip()
     if not needle:
         return None

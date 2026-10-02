@@ -110,3 +110,28 @@ def test_a_token_inside_a_longer_skill_counts_but_not_inside_another_word():
     assert triage.supports("insar", ["insar basics"], [])
     assert not triage.supports("psi", ["psychology"], [])
     assert not triage.supports("react", ["reactive programming"], [])
+
+
+
+def test_alternatives_with_a_slash_are_supported_by_either():
+    assert triage.supports("javascript/typescript", ["typescript"], [])
+    assert not triage.supports("javascript/typescript", ["python"], [])
+
+
+
+def test_offsets_stay_true_after_ligatures_earlier_in_the_text():
+    text = "At Bitpanda (a 7M+ user ﬁntech) I led the AI team.\nProduct & AI Engineer, Self Employed"
+    found = spans.locate(text, "Product & AI Engineer")
+    assert found is not None
+    assert found.snippet == "Product & AI Engineer"
+    assert text[found.char_start:found.char_end] == "Product & AI Engineer"
+    across = spans.locate(text, "user fintech")
+    assert across is not None and text[across.char_start:across.char_end] == "user ﬁntech"
+
+
+
+def test_aliases_match_whole_words_only():
+    assert not triage.supports("javascript", ["next.js"], [])
+    assert triage.supports("javascript", ["js"], [])
+    assert triage.supports("node", ["node.js"], [])
+    assert triage.supports("javascript/typescript", ["typescript (8+ yrs)"], [])
