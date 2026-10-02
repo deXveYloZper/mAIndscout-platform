@@ -37,6 +37,7 @@ from maindscout.db.models import (
     Job,
     NotSame,
     PairEvent,
+    Score,
     SuppressionEntry,
 )
 from maindscout.settings import env
@@ -134,6 +135,7 @@ def erase_candidate(session: Session, blobs: BlobStore, org_id: uuid.UUID, candi
     session.execute(text("SET LOCAL maindscout.erasure = 'on'"))
     run("pair_history", delete(PairEvent).where(PairEvent.pair_id.in_(pair_ids)))
     run("pairs", delete(CandidateJob).where(CandidateJob.candidate_id == candidate_id))
+    run("breakdown_snapshots", delete(Score).where(Score.candidate_id == candidate_id))
     run("not_same", delete(NotSame).where(or_(NotSame.candidate_a == candidate_id, NotSame.candidate_b == candidate_id)))
     run("document_links", delete(DocumentSubject).where(or_(DocumentSubject.subject_id == candidate_id, DocumentSubject.document_id.in_(doc_ids))))
     run("text_artifacts", delete(ExtractionArtifact).where(ExtractionArtifact.document_id.in_(doc_ids)))
@@ -196,6 +198,7 @@ def verify_erasure(session: Session, blobs: BlobStore, org_id: uuid.UUID, candid
         ("claims", count(Claim, Claim.subject_id == candidate_id)),
         ("decisions", count(Decision, Decision.subject_id == candidate_id)),
         ("pairs", count(CandidateJob, CandidateJob.candidate_id == candidate_id)),
+        ("breakdown snapshots", count(Score, Score.candidate_id == candidate_id)),
         ("document links", count(DocumentSubject, DocumentSubject.subject_id == candidate_id)),
         ("not-same records", count(NotSame, or_(NotSame.candidate_a == candidate_id, NotSame.candidate_b == candidate_id))),
         ("candidates redirected to this person", count(Candidate, Candidate.merged_into_id == candidate_id)),

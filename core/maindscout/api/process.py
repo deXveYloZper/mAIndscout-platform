@@ -30,6 +30,7 @@ from maindscout.db.models import (
     IntelligenceRun,
     Job,
     PairEvent,
+    Score,
 )
 from maindscout.domain import stints
 from maindscout.intelligence import extract, triage
@@ -280,8 +281,29 @@ def _triage_now(session: Session, org_id, candidate_id, job: Job) -> triage.Tria
     return triage.triage(requirements, skills, titles)
 
 
+def snapshot_pair(session: Session, pair: CandidateJob) -> Score | None:
+    """Store what the machine considered for this pair (breakdown + coverage, never a value), only when it changed."""
+    from maindscout.api.queries import _gap_rows
+    from maindscout.domain import coverage
+
+    rows = _gap_rows(session, pair.org_id, session.get(Job, pair.job_id), pair.candidate_id)
+    digest = coverage.claim_set_hash(rows)
+    latest = session.scalar(select(Score.claim_set_hash).where(Score.candidate_id == pair.candidate_id, Score.job_id == pair.job_id)
+                            .order_by(Score.computed_at.desc(), Score.id.desc()).limit(1))
+    if latest == digest:
+        return None
+    score = Score(org_id=pair.org_id, candidate_id=pair.candidate_id, job_id=pair.job_id, value=None,
+                  coverage=coverage.coverage(rows).as_dict(), breakdown=coverage.breakdown(rows),
+                  claim_set_hash=digest, engine_version=coverage.ENGINE_VERSION)
+    session.add(score)
+    session.flush()
+    return score
+
+
 def retriage_pair(session: Session, pair: CandidateJob, cause: dict, actor: str = "system") -> PairEvent | None:
-    """Recompute the band from live facts. Records a history event when it changes. A band set by hand stays."""
+    """Recompute the band from live facts. Records a history event when it changes. A band set by hand stays.
+    Either way, a new breakdown snapshot is stored if the facts behind the pair changed."""
+    snapshot_pair(session, pair)
     if pair.band_overridden_by:
         return None
     job = session.get(Job, pair.job_id)

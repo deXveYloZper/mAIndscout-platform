@@ -85,6 +85,7 @@ export type PersonOnJob = {
   open_decisions: number;
   gaps?: { evidence: number; missing: number; conflict: number; question: number };
   state?: string;
+  coverage?: { applicable: number; official: number; needed: number; met: boolean; words: string };
 };
 
 export type JobPage = JobSummary & {

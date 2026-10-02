@@ -100,7 +100,7 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
         people.setdefault(p.triage_band, []).append({
             "candidate_id": str(p.candidate_id), "name": who.get(p.candidate_id), "band": p.triage_band,
             "reason": p.triage_reason, "overridden_by": p.band_overridden_by, "open_decisions": open_counts.get(p.candidate_id, 0),
-            "gaps": gap_counts(session, org_id, job, p.candidate_id),
+            **_gap_summary(session, org_id, job, p.candidate_id),
             "state": p.pair_state, "outcome": p.outcome,
         })
     return {
@@ -254,6 +254,7 @@ def gap_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, candidate_i
         "band": pair.triage_band, "reason": pair.triage_reason, "overridden_by": pair.band_overridden_by,
         "state": pair.pair_state, "outcome": pair.outcome,
         "counts": gaps.counts(rows),
+        "coverage": _coverage(rows),
         "history": pair_history(session, pair.id),
         "rows": [{
             "requirement_id": r.requirement_id, "requirement": r.requirement, "kind": r.kind, "strength": r.strength,
@@ -270,3 +271,16 @@ def pair_history(session: Session, pair_id: uuid.UUID) -> list[dict[str, Any]]:
     events = session.scalars(select(PairEvent).where(PairEvent.pair_id == pair_id).order_by(PairEvent.seq))
     return [{"kind": e.kind, "from": e.from_value, "to": e.to_value, "reason": e.reason, "cause": e.cause,
              "actor": e.actor, "at": _iso(e.created_at)} for e in events]
+
+
+def _coverage(rows) -> dict[str, Any]:
+    from maindscout.domain import coverage
+
+    return coverage.coverage(rows).as_dict()
+
+
+def _gap_summary(session: Session, org_id: uuid.UUID, job: Job, candidate_id: uuid.UUID) -> dict[str, Any]:
+    from maindscout.domain import gaps
+
+    rows = _gap_rows(session, org_id, job, candidate_id)
+    return {"gaps": gaps.counts(rows), "coverage": _coverage(rows)}

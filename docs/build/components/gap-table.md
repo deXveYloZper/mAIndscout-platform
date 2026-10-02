@@ -34,4 +34,4 @@ Slice 1: "On a job, each person has a gap table: every requirement → evidence 
 ## Known limits
 - Education compares level only, not field; the row says "check the field on the call".
 - Languages are found only if the CV lists them as skills.
-- Rows use proposed facts too; each row shows whether its facts are approved. The coverage floor (step 5) will decide when the table is too thin to show a band confidently.
+- Rows use proposed facts too; each row shows whether its facts are approved, and the coverage line ([coverage.md](coverage.md)) says when the picture is too thin to rely on.

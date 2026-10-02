@@ -394,3 +394,31 @@ class PairEvent(Base):
     cause: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)  # e.g. {"act": "approve", "claim_id": ...}
     actor: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = _created()
+
+
+# --- reserved score shape -----------------------------------------------------------------------
+
+
+class Score(Base):
+    """Blueprint section D5 `score`, reserved. Append-only snapshots of what the machine considered for a pair.
+
+    `value` must stay NULL: a database rule forbids any number until a recorded decision lifts it.
+    """
+
+    __tablename__ = "score"
+    __table_args__ = (
+        CheckConstraint("value IS NULL", name="score_value_reserved"),
+        Index("ix_score_pair", "candidate_id", "job_id", "computed_at"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate.id"), nullable=False)
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("job.id"), nullable=False)
+    kind: Mapped[str] = mapped_column(String, nullable=False, default="job_fit")
+    tier: Mapped[str] = mapped_column(String, nullable=False, default="provisional")
+    value: Mapped[float | None] = mapped_column(Numeric(6, 3))
+    coverage: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    breakdown: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    claim_set_hash: Mapped[str] = mapped_column(String(32), nullable=False)
+    engine_version: Mapped[str] = mapped_column(String, nullable=False)
+    computed_at: Mapped[datetime] = _created()

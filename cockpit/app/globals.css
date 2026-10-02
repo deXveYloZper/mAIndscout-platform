@@ -155,3 +155,8 @@ table.gaps tr.conflict td:first-child { border-left: 2px solid var(--red); }
 .people li.passed { opacity: 0.55; }
 .statecontrols { display: flex; flex-direction: column; gap: 8px; }
 .statecontrols p { margin: 0; }
+
+.coverage { padding: 8px 12px; border: 1px solid var(--line); margin: 8px 0 14px; }
+.coverage.thin { border-color: var(--amber); }
+.coverage.met { border-color: var(--green); }
+.thintag { font-size: 11px; border: 1px dashed var(--amber); color: var(--amber); padding: 0 6px; margin-left: 6px; }

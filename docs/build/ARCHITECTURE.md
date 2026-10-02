@@ -26,6 +26,7 @@ Local setup: [core/README.md](../../core/README.md).
 
 | Component | Status | Page |
 |---|---|---|
+| Coverage floor + reserved score (Slice 1) | built | [coverage.md](components/coverage.md) |
 | Gap table (Slice 1) | built | [gap-table.md](components/gap-table.md) |
 | Golden eval (Milestone G) | built | [golden-eval.md](components/golden-eval.md) |
 | Erasure + suppression | built | [erasure.md](components/erasure.md) |

@@ -38,6 +38,7 @@ type GapPage = {
   overridden_by: string | null;
   state: string;
   counts: Record<GapRow["status"], number>;
+  coverage: { applicable: number; official: number; needed: number; met: boolean; words: string };
   history: HistoryEvent[];
   rows: GapRow[];
 };
@@ -74,6 +75,10 @@ export default async function PersonOnJob({ params }: { params: Promise<{ id: st
         ))}
       </p>
       <p className="sub">Every requirement of the job against this person&apos;s file. There is no overall score, by design: read the rows.</p>
+      <p className={`coverage ${page.coverage.met ? "met" : "thin"}`}>
+        <strong>Official coverage:</strong> {page.coverage.words}.
+        {!page.coverage.met && page.coverage.applicable > 0 && " Approve the facts behind the must-haves (on the full profile) before relying on this band."}
+      </p>
 
       <div className="tablewrap">
         <table className="gaps">

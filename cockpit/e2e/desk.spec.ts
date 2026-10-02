@@ -69,6 +69,8 @@ test("a person on a job opens as a gap table, with no overall score", async ({ p
   await expect(page.getByText("There is no overall score, by design")).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/\d+\s*%/);
   await expect(page.locator(".counts")).toContainText("Evidence:");
+  // Nothing is approved yet, so the picture is reported as thin, in counts, never a percentage.
+  await expect(page.locator(".coverage")).toContainText("must-haves rest on approved facts: below the floor");
 });
 
 test("recording a missing must-have as a fact moves the band, and the history says why", async ({ page }) => {

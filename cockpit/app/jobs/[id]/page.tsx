@@ -37,6 +37,9 @@ function People({ jobId, people }: { jobId: string; people: PersonOnJob[] }) {
           <span>
             <Link href={`/jobs/${jobId}/people/${p.candidate_id}`}>{p.name ?? "name not read"}</Link>
             {p.state && p.state !== "new" && <span className={`statetag ${p.state}`}>{STATE_LABEL[p.state]}</span>}
+            {p.coverage && !p.coverage.met && p.coverage.applicable > 0 && (
+              <span className="thintag" title={p.coverage.words}>thin</span>
+            )}
             {p.open_decisions > 0 && <span className="pill">{p.open_decisions} to review</span>}
           </span>
           <span className="reason">
