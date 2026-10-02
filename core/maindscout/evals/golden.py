@@ -421,6 +421,86 @@ def invariants(w: World, path: Path, label: str) -> list[Check]:
     return out
 
 
+# --- Slice 1 gate (docs/slice-1/PLAN.md) ----------------------------------------------------------
+
+
+def slice1_checks(w: World, org_id: uuid.UUID) -> list[Check]:
+    """The Slice 2 unlock list, checked on the real files. Each act here is rolled back with the eval database."""
+    from sqlalchemy import text as sql
+    from sqlalchemy.exc import DBAPIError
+
+    from maindscout.api import queries, review
+    from maindscout.db.models import Score
+
+    s, case, out = w.session, "slice-1-gate", []
+
+    def add(name: str, ok: bool, detail: str) -> None:
+        out.append(Check(case, name, PASS if ok else FAIL, detail))
+
+    # 1. No composite, on any job, anywhere it could hide.
+    pairs = list(s.scalars(select(CandidateJob)))
+    numbers = [p for p in pairs if p.triage_band not in ("priority", "review_later", "do_not_submit")
+               or re.search(r"\d+\s*%", p.triage_reason or "")]
+    valued = s.scalar(select(text("count(*)")).select_from(Score).where(Score.value.is_not(None)))
+    snapshots = s.scalar(select(text("count(*)")).select_from(Score))
+    add("no composite score on any pair", not numbers and valued == 0,
+        f"{len(pairs)} pairs with a band and a reason; {snapshots} breakdown snapshots, none with a value")
+
+    # 2. The gap table is the default view and carries no single number.
+    sample = pairs[0] if pairs else None
+    if sample:
+        page = queries.gap_page(s, org_id, sample.job_id, sample.candidate_id)
+        flat = json.dumps({k: v for k, v in page.items() if k not in ("history",)})
+        add("gap table is rows, never a single number", bool(page["rows"]) and not any(k in page for k in ("score", "fit", "total", "value"))
+            and not re.search(r"\d+\s*%", flat), f"{len(page['rows'])} rows; keys: {sorted(page)}")
+
+    # 3. Living elsewhere is never a conflict and never decides a band.
+    mobility_rows, bad = 0, []
+    for name, jid in w.jobs.items():
+        job = s.get(Job, jid)
+        for pair in s.scalars(select(CandidateJob).where(CandidateJob.job_id == jid)):
+            for row in queries._gap_rows(s, org_id, job, pair.candidate_id):
+                if row.kind == "mobility":
+                    mobility_rows += 1
+                    if row.status == "conflict":
+                        bad.append(f"{row.requirement} is a conflict")
+            if re.search(r"location|country|residen", pair.triage_reason or ""):
+                bad.append(f"band reason mentions place: {pair.triage_reason}")
+    add("residence, visa, relocation never exclude anyone", not bad and mobility_rows > 0,
+        f"{mobility_rows} mobility rows, all evidence or ask" if not bad else "; ".join(bad[:3]))
+
+    # 4. Approving (typing) a missing must-have moves the band; the reason updates; rejecting moves it back.
+    catalyst = next((jid for n, jid in w.jobs.items() if "catalyst" in n.lower()), None)
+    target = s.scalar(select(CandidateJob).where(CandidateJob.job_id == catalyst, CandidateJob.triage_band == "do_not_submit")) if catalyst else None
+    if target is None:
+        out.append(Check(case, "approving a missing skill moves the band", NOT_RUN, "no do-not-submit person on the Catalyst job"))
+    else:
+        typed = review.assert_claim(s, org_id, "eval", subject_type="candidate", subject_id=target.candidate_id,
+                                    claim_type="SkillClaim", payload={"raw_label": "InSAR", "normalized_skill": "insar"})
+        s.refresh(target)
+        moved = (target.triage_band, target.triage_reason)
+        review.reject_claim(s, org_id, typed.id, "eval", "wrong")
+        s.refresh(target)
+        back = target.triage_band
+        history = queries.pair_history(s, target.id)
+        add("approving a missing skill moves the band and updates the reason",
+            moved == ("priority", "supported:insar") and back == "do_not_submit"
+            and [e["cause"]["act"] for e in history[-2:]] == ["typed", "reject"],
+            f"do_not_submit -> {moved[0]} ({moved[1]}) -> {back}; history records both")
+
+    # 5. A pair cannot be deleted.
+    if sample:
+        nested = s.begin_nested()
+        try:
+            s.execute(sql("DELETE FROM candidate_job WHERE id = :i"), {"i": sample.id})
+            refused = False
+        except DBAPIError:
+            refused = True
+        nested.rollback()
+        add("a pair cannot be deleted", refused, "the database refused the delete" if refused else "DELETE succeeded")
+    return out
+
+
 # --- running ---------------------------------------------------------------------------------------
 
 
@@ -483,6 +563,7 @@ def evaluate(folder: Path, client: LLMClient, blob_dir: Path) -> tuple[list[Chec
             checks += invariants(w, path, f"cv-{i:02d}")
         checks.append(Check("all", "one person per CV (no merges)", PASS if session.scalar(
             select(text("count(*)")).select_from(Candidate)) == len(cvs) else FAIL, f"{len(cvs)} CVs"))
+        checks += slice1_checks(w, org.id)
         meta = {"files": [f.name for f in files], "cvs": [f.name for f in cvs], "cost_usd": round(cost, 4),
                 "model": client.model, "date": datetime.now().isoformat(timespec="seconds")}
         session.rollback()

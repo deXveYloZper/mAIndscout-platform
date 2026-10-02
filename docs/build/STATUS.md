@@ -13,7 +13,7 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 | 3 | Re-triage when a fact the band depends on is approved | done 2026-10-02 |
 | 4 | Pair states; a pair can never be deleted | done 2026-10-02 |
 | 5 | Reserved score breakdown shape; coverage floor | done 2026-10-02 |
-| 6 | Slice 1 gate evidence in eval and e2e | next |
+| 6 | Slice 1 gate evidence in eval and e2e | done 2026-10-03: eval GREEN incl. 5 gate checks; readiness in [../slice-1/GATE-READINESS.md](../slice-1/GATE-READINESS.md); waiting for the owner's declaration |
 
 Slice 0 (ingest + job-first triage) is closed ([handoff](../slice-0/HANDOFF.md), [gates](../slice-0/GATES.md))
 

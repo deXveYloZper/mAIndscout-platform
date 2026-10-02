@@ -17,6 +17,7 @@ One command that runs every PDF in `test_artifacts` through the real pipeline (r
 - **Mobility:** `mobility_facts_when_extracted` is a real check since Slice 1 step 1 (residence countries, sponsorship, relocation).
 - **Eval date:** an oracle's `as_of_eval` pins "today" for that file (Procure Ai: 2026-09-04).
 - **Every CV:** processed; nothing approved without a human; has a career history; has a name or an identity note; every snippet is exactly at its location; span failures at most 40%; no appearance or protected attributes; a band and a reason (never a number) on every job. Plus: one person per CV (no merges).
+- **Slice 1 gate checks** (case `slice-1-gate`): no composite on any pair or snapshot; gap table is rows, never a number; mobility never excludes anyone; typing a missing must-have moves the band and the reason (then rejecting moves it back); a pair cannot be deleted. Acts are rolled back with the eval database.
 - **Verdict:** GREEN only with zero FAIL and zero NOT CHECKED. `--with-tests` adds the pytest result.
 - **Reports:** `core/eval-reports/golden-<time>.md` names the files (git-ignored, real people); `…-summary.md` hides file names and emails and can be committed (see [../../evals/](../../evals/)).
 
