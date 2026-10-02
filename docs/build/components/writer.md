@@ -5,7 +5,7 @@
 **Code:** `core/maindscout/api/writer.py`, `core/maindscout/domain/registry.py`
 
 ## What
-`api/` is the only code allowed to write to the database. Today it can seed the registries, create an org, and write a claim. `domain/registry.py` loads the claim and flag registries from YAML and checks flag keys.
+`api/` is the only code allowed to write to the database. Today it can seed the registries, create an org, write a claim, and upload and extract documents ([ingestion.md](ingestion.md)). `domain/registry.py` loads the claim and flag registries from YAML and checks flag keys.
 
 ## Why
 One writer means the rules (known flags only, valid claim types, atomic commits) are enforced in one place. This is blueprint rule E-i1 and a Slice 0 gate item.

@@ -26,6 +26,7 @@ Local setup: [core/README.md](../../core/README.md).
 
 | Component | Status | Page |
 |---|---|---|
+| Ingestion: upload + text layer | built | [ingestion.md](components/ingestion.md) |
 | Writer: `api/` + registries | in progress | [writer.md](components/writer.md) |
 | Persistence: tables + migrations | built | [persistence.md](components/persistence.md) |
 | Contracts (vendored `slice0/`) | built | [contracts.md](components/contracts.md) |
