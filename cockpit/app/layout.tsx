@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
 
+// Every page shows live desk data: never pre-render at build time (CI has no API or token).
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: { default: "Desk · mAIndscout", template: "%s · mAIndscout desk" },
   robots: { index: false, follow: false },
