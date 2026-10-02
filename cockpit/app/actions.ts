@@ -29,28 +29,6 @@ export async function createJob(_: FormState, form: FormData): Promise<FormState
   redirect(`/jobs/${jobId}`);
 }
 
-export async function dropCvs(jobId: string, _: FormState, form: FormData): Promise<FormState> {
-  const files = filesOf(form);
-  if (!files.length) return { error: "Choose one or more CVs (PDF)." };
-  const done: string[] = [];
-  const failed: string[] = [];
-  for (const file of files) {
-    try {
-      const body = new FormData();
-      body.append("file", file);
-      await api<ProcessResult>(`/v1/jobs/${jobId}/documents`, { method: "POST", body });
-      done.push(file.name);
-    } catch (e) {
-      failed.push(`${file.name}: ${e instanceof ApiError ? e.message : "failed"}`);
-    }
-  }
-  revalidatePath(`/jobs/${jobId}`);
-  return {
-    message: `${done.length} of ${files.length} read and banded.`,
-    error: failed.length ? failed.join("; ") : undefined,
-  };
-}
-
 export async function overrideBand(jobId: string, candidateId: string, form: FormData): Promise<void> {
   await apiJson(`/v1/jobs/${jobId}/people/${candidateId}/triage`, {
     band: form.get("band"),
@@ -59,29 +37,101 @@ export async function overrideBand(jobId: string, candidateId: string, form: For
   revalidatePath(`/jobs/${jobId}`);
 }
 
+/** A repeated click (already approved, already resolved) is not an error worth a crash page: just refresh. */
+async function idempotent(call: () => Promise<unknown>): Promise<void> {
+  try {
+    await call();
+  } catch (e) {
+    if (!(e instanceof ApiError) || ![404, 409, 422].includes(e.status)) throw e;
+  }
+}
+
 export async function approveClaim(claimId: string, path: string): Promise<void> {
-  await api(`/v1/claims/${claimId}/approve`, { method: "POST" });
+  await idempotent(() => api(`/v1/claims/${claimId}/approve`, { method: "POST" }));
   revalidatePath(path);
 }
 
 export async function rejectClaim(claimId: string, path: string, code = "wrong"): Promise<void> {
-  await apiJson(`/v1/claims/${claimId}/reject`, { code });
+  await idempotent(() => apiJson(`/v1/claims/${claimId}/reject`, { code }));
   revalidatePath(path);
 }
 
 export async function resolveDecision(decisionId: string, action: string, claimId: string | null, path: string): Promise<void> {
-  await apiJson(`/v1/decisions/${decisionId}/resolve`, { action, claim_id: claimId });
+  await idempotent(() => apiJson(`/v1/decisions/${decisionId}/resolve`, { action, claim_id: claimId }));
   revalidatePath(path);
+}
+
+export type DropResult = { file: string; ok: boolean; name?: string | null; band?: string | null; reason?: string | null;
+  personId?: string | null; status?: string; error?: string };
+
+/** One CV onto a job, or into the unassigned pool when jobId is null. Called once per file for live progress. */
+export async function dropOneCv(jobId: string | null, form: FormData): Promise<DropResult> {
+  const file = form.get("file");
+  if (!(file instanceof File) || !file.size) return { file: "?", ok: false, error: "empty file" };
+  try {
+    const body = new FormData();
+    body.append("file", file);
+    const r = await api<ProcessResult>(jobId ? `/v1/jobs/${jobId}/documents` : "/v1/candidates", { method: "POST", body });
+    let name: string | null = null;
+    if (r.subject_id) {
+      try {
+        name = (await api<{ name: string | null }>(`/v1/candidates/${r.subject_id}`)).name;
+      } catch {}
+    }
+    return { file: file.name, ok: r.status === "committed", status: r.status, band: r.band, reason: r.reason, personId: r.subject_id, name };
+  } catch (e) {
+    return { file: file.name, ok: false, error: e instanceof ApiError ? e.message : "failed" };
+  }
+}
+
+export async function refreshAfterUpload(jobId: string | null): Promise<void> {
+  revalidatePath(jobId ? `/jobs/${jobId}` : "/people");
+  revalidatePath("/");
+}
+
+export async function putOnJob(candidateId: string, form: FormData): Promise<void> {
+  const jobId = String(form.get("job") || "");
+  if (!jobId) return;
+  await apiJson(`/v1/jobs/${jobId}/people/${candidateId}`, {});
+  revalidatePath(`/people/${candidateId}`);
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath("/people");
+}
+
+const FACT_KINDS = ["name", "email", "phone", "linkedin"] as const;
+
+/** A fact typed by the recruiter: born approved. Optionally replaces a claim and closes a note in the same go. */
+export async function addFact(candidateId: string, path: string, replaces: string | null, closeDecision: string | null,
+                              _: FormState, form: FormData): Promise<FormState> {
+  const kind = String(form.get("kind") || "name") as (typeof FACT_KINDS)[number];
+  const value = String(form.get("value") || "").trim();
+  if (!FACT_KINDS.includes(kind)) return { error: "Unknown kind of fact." };
+  if (!value) return { error: "Type a value." };
+  const body =
+    kind === "name"
+      ? { claim_type: "IdentityClaim", payload: { full_name: value, name_variants: [] } }
+      : { claim_type: "ContactClaim", payload: { kind, value, normalized: normaliseContact(kind, value) } };
+  try {
+    await apiJson("/v1/claims", { subject_type: "candidate", subject_id: candidateId, replaces, ...body });
+    if (closeDecision) await idempotent(() => apiJson(`/v1/decisions/${closeDecision}/resolve`, { action: "acknowledge" }));
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  return { message: "Saved as an approved fact." };
+}
+
+function normaliseContact(kind: string, value: string): string {
+  if (kind === "email") return value.toLowerCase();
+  if (kind === "phone") return (value.startsWith("+") ? "+" : "") + value.replace(/\D/g, "");
+  return value.toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, "").split("?")[0].replace(/\/$/, "");
 }
 
 export async function correctContact(candidateId: string, replaces: string, path: string, _: FormState, form: FormData): Promise<FormState> {
   const kind = String(form.get("kind") || "email");
   const value = String(form.get("value") || "").trim();
   if (!value) return { error: "Type the correct value." };
-  const normalized =
-    kind === "email" ? value.toLowerCase()
-    : kind === "phone" ? (value.startsWith("+") ? "+" : "") + value.replace(/\D/g, "")
-    : value.toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, "").split("?")[0].replace(/\/$/, "");
+  const normalized = normaliseContact(kind, value);
   try {
     await apiJson("/v1/claims", {
       subject_type: "candidate",

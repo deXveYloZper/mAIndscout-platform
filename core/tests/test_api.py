@@ -265,3 +265,17 @@ def test_erase_route_reports_clean_and_verify_agrees(client, monkeypatch):
 
 def test_verify_for_someone_never_erased_is_not_found(client):
     assert client.get(f"/v1/subjects/candidate/{uuid.uuid4()}/erase/verify").status_code == 404
+
+
+
+def test_a_cv_without_a_job_joins_the_pool_and_can_be_put_on_a_job_later(client):
+    r = client.post("/v1/candidates", files=pdf_file(CV_LINES, "pool.pdf"))
+    assert r.status_code == 201 and r.json()["band"] is None
+    cid = r.json()["subject_id"]
+    pool = client.get("/v1/candidates", params={"unassigned": True}).json()
+    assert [p["id"] for p in pool] == [cid]
+    job_id = make_job(client)
+    placed = client.post(f"/v1/jobs/{job_id}/people/{cid}").json()
+    assert placed["band"] == "do_not_submit" and placed["reused"] is True
+    assert client.get("/v1/candidates", params={"unassigned": True}).json() == []
+    assert client.get("/v1/candidates").json()[0]["jobs"][0]["band"] == "do_not_submit"

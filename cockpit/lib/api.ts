@@ -73,6 +73,7 @@ export type JobSummary = {
   hiring_company: string | null;
   state: string;
   bands: Record<Band, number>;
+  to_review?: number;
 };
 
 export type PersonOnJob = {
@@ -125,6 +126,16 @@ export type InboxItem = {
   right?: Side;
   claim?: Side;
   note?: string | null;
+  possibly?: { id: string; name: string | null }[];
+  document_id?: string | null;
+};
+
+export type PersonSummary = {
+  id: string;
+  name: string | null;
+  created_at: string;
+  jobs: { job_id: string; title: string; band: Band }[];
+  document_id: string | null;
 };
 
 export type ProcessResult = {
@@ -135,3 +146,14 @@ export type ProcessResult = {
   reason: string | null;
   span_failures: { client_key: string; detail: string }[];
 };
+
+/** Like api(), but a 404 shows the cockpit's "not found" page instead of an error. */
+export async function apiOr404<T>(path: string): Promise<T> {
+  const { notFound } = await import("next/navigation");
+  try {
+    return await api<T>(path);
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) notFound();
+    throw e;
+  }
+}

@@ -12,10 +12,11 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
 
 ## How
 - **All data comes from the API, server-side.** `lib/api.ts` adds the operator token and org id from `cockpit/.env.local`; the browser never sees them. Actions (`app/actions.ts`) are server actions that call the API and refresh the page.
-- **Jobs (`/`):** list with band counts; upload a job ad to create a job.
-- **Job (`/jobs/[id]`):** stale-date warning; drop several CVs at once; Priority open by default, Review later and Do not submit folded away; each person's reason in plain words; band override with a note; requirements marked "decides the band" when distinctive; process dates.
-- **Person (`/people/[id]`):** jobs and bands; name, contacts, career (with periods and overlap warnings), education, location, skills; every fact with its status, Approve and Reject, and its source snippet with a link to the original file.
-- **Inbox (`/inbox`):** default is a job's priority people; "Everyone" widens it. Cards: confirm a contact (approve as is, type the correct value, or reject), who-is-this note, revision diff (keep official or accept new), same job or two, contradiction (pick one).
+- **Jobs (`/`):** list with band counts and what waits for review; upload a job ad to create a job.
+- **People (`/people`):** everyone, or only those on no job (the pool); upload CVs without a job.
+- **Job (`/jobs/[id]`):** counts and review link in the header; where the job is; stale-date warning; drop several CVs at once, read one by one with a result row per file; Priority open by default, Review later and Do not submit folded away; each person's reason in plain words; band override with a note; requirements marked "decides the band" when distinctive; process dates.
+- **Person (`/people/[id]`):** jobs and bands; name, contacts, career (with periods and overlap warnings), education, location, skills; every fact with its status, Approve and Reject, and its source snippet with a link to the original file; "Put on job"; "Add or correct a fact" (saved as approved).
+- **Inbox (`/inbox`):** inside a job, default is its priority people ("Everyone on this job" widens it); without a job, everything, with a job picker. Cards: confirm a contact (approve as is, type the correct value, or reject), who-is-this note (named links, open the CV, type a missing name), revision diff (keep official or accept new), same job or two, contradiction (pick one).
 - **Forget this person** at the foot of the person page (type `forget`); see [erasure.md](erasure.md).
 - **Original files** are streamed through `/files/[id]`, which only accepts a document id.
 - Same palette and fonts as the public site; dense layout; works at phone width.
@@ -27,9 +28,9 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
 The recruiter.
 
 ## Tests
-`npm run typecheck` and `npm run build` (in CI). Checked by hand on 2026-10-02 against the running API with all 13 test files: job pages, inbox (Ovi's two emails, Yousuf's unreadable name), person page, approving a name, original-file download.
+`npm run typecheck` and `npm run build` (in CI). End to end: `npm run e2e` (Playwright, 17 tests, real files and model against a production build, fresh `maindscout_e2e` database; local only). Report: [../../slice-0/TEST-REPORT.md](../../slice-0/TEST-REPORT.md). Checked by hand on 2026-10-02 against the running API with all 13 test files: job pages, inbox (Ovi's two emails, Yousuf's unreadable name), person page, approving a name, original-file download.
 
 ## Known limits
-- No automated UI tests yet.
+- e2e is local only (needs the real files and the model key).
 - Uploads run in the request: about 15 seconds per CV while the page waits.
 - No sign-in: whoever can reach the cockpit acts as the operator. Run it only on a trusted machine or network until accounts exist.

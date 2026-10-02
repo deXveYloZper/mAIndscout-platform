@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { eraseCandidate } from "@/app/actions";
+import { addFact, eraseCandidate, putOnJob } from "@/app/actions";
 import { ClaimRow, Status } from "@/components/Claim";
 import { EraseForm } from "@/components/EraseForm";
-import { api, type PersonPage } from "@/lib/api";
+import { FactForm } from "@/components/FactForm";
+import { api, apiOr404, type JobSummary, type PersonPage } from "@/lib/api";
 import { BAND_LABEL, reasonWords } from "@/lib/format";
 
 export const metadata = { title: "Person" };
@@ -17,7 +18,8 @@ const SECTIONS: [string, string][] = [
 
 export default async function Person({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const person = await api<PersonPage>(`/v1/candidates/${id}`);
+  const [person, jobs] = await Promise.all([apiOr404<PersonPage>(`/v1/candidates/${id}`), api<JobSummary[]>("/v1/jobs")]);
+  const otherJobs = jobs.filter((j) => !person.jobs.some((p) => p.job_id === j.id));
   const path = `/people/${id}`;
   const skills = person.claims.SkillClaim ?? [];
 
@@ -29,6 +31,16 @@ export default async function Person({ params }: { params: Promise<{ id: string 
         {person.open_decisions.length > 0 && <> · <Link href="/inbox?band=all">{person.open_decisions.length} open in the inbox</Link></>}
       </p>
 
+      {otherJobs.length > 0 && (
+        <form action={putOnJob.bind(null, person.id)} className="row" style={{ marginTop: 12 }}>
+          <select name="job" aria-label="Job to put this person on" defaultValue="">
+            <option value="" disabled>Put on a job…</option>
+            {otherJobs.map((j) => <option key={j.id} value={j.id}>{j.title}</option>)}
+          </select>
+          <button className="btn small">Put on job</button>
+        </form>
+      )}
+      {person.jobs.length === 0 && <p className="sub">Not on any job yet (in the pool).</p>}
       {person.jobs.length > 0 && (
         <>
           <h2>Jobs</h2>
@@ -75,6 +87,12 @@ export default async function Person({ params }: { params: Promise<{ id: string 
           </li>
         ))}
       </ul>
+
+      <section className="panel">
+        <h3>Add or correct a fact</h3>
+        <p className="sub">What you type is saved as approved, with you as the source. A typed email, phone or LinkedIn can be used to recognise this person in later CVs.</p>
+        <FactForm action={addFact.bind(null, person.id, path, null, null)} defaultKind={person.name ? "email" : "name"} />
+      </section>
 
       <EraseForm action={eraseCandidate.bind(null, person.id)} />
     </>

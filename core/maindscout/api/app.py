@@ -259,6 +259,41 @@ def override_band(job_id: uuid.UUID, candidate_id: uuid.UUID, body: BandBody, or
     return {"band": pair.triage_band, "reason": pair.triage_reason, "overridden_by": pair.band_overridden_by}
 
 
+@app.get("/v1/candidates")
+def list_candidates(unassigned: bool = Query(False), org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    people = queries.list_people(session, org_id)
+    return [p for p in people if not p["jobs"]] if unassigned else people
+
+
+@app.post("/v1/candidates", status_code=201)
+async def upload_to_pool(file: UploadFile = File(...), org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                         blobs: BlobStore = Depends(get_blobs), llm: LLMClient = Depends(get_llm)):
+    """A CV with no job yet: read it into the unassigned pool. Put the person on a job later."""
+    data, media = await _read(file)
+    doc, _ = documents.upload_document(session, blobs, org_id=org_id, data=data, filename=file.filename,
+                                       media_type=media, doc_type_hint="cv")
+    if doc.doc_type != "cv":
+        raise HTTPException(409, f"This file was already uploaded as a {doc.doc_type}")
+    result = process.process_document(session, blobs, llm, org_id=org_id, document_id=doc.id)
+    session.commit()
+    return _result(result)
+
+
+@app.post("/v1/jobs/{job_id}/people/{candidate_id}")
+def put_on_job(job_id: uuid.UUID, candidate_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org),
+               session: Session = Depends(get_session), blobs: BlobStore = Depends(get_blobs), llm: LLMClient = Depends(get_llm)):
+    """Pair an existing person with a job and band them. No document is read again."""
+    from maindscout.db.models import DocumentSubject
+
+    doc_id = session.scalar(select(DocumentSubject.document_id).where(
+        DocumentSubject.subject_id == candidate_id, DocumentSubject.org_id == org_id).limit(1))
+    if doc_id is None:
+        raise LookupError(f"No documents for candidate {candidate_id}")
+    result = process.process_document(session, blobs, llm, org_id=org_id, document_id=doc_id, job_id=job_id)
+    session.commit()
+    return _result(result)
+
+
 @app.get("/v1/candidates/{candidate_id}")
 def get_candidate(candidate_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
     return queries.person_page(session, org_id, candidate_id)

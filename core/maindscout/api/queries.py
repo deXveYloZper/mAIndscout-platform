@@ -6,7 +6,7 @@ import uuid
 from collections import defaultdict
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import String, func, select
 from sqlalchemy.orm import Session
 
 from maindscout.db.models import (
@@ -16,6 +16,7 @@ from maindscout.db.models import (
     Decision,
     DecisionItem,
     Document,
+    DocumentSubject,
     Evidence,
     Job,
 )
@@ -76,9 +77,10 @@ def list_jobs(session: Session, org_id: uuid.UUID) -> list[dict[str, Any]]:
             .group_by(CandidateJob.job_id, CandidateJob.triage_band)):
         if band in BANDS:
             counts[job_id][band] = n
-    jobs = session.scalars(select(Job).where(Job.org_id == org_id).order_by(Job.created_at.desc()))
+    jobs = list(session.scalars(select(Job).where(Job.org_id == org_id).order_by(Job.created_at.desc())))
     return [{"id": str(j.id), "title": j.title, "hiring_company": j.hiring_company, "state": j.state,
-             "created_at": _iso(j.created_at), "bands": counts[j.id]} for j in jobs]
+             "created_at": _iso(j.created_at), "bands": counts[j.id],
+             "to_review": len(inbox(session, org_id, j.id, "priority"))} for j in jobs]
 
 
 def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str, Any]:
@@ -112,7 +114,9 @@ def person_page(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID) ->
     person = session.get(Candidate, candidate_id)
     if person is None or person.org_id != org_id:
         raise LookupError(f"No candidate {candidate_id}")
-    claims = list(session.scalars(select(Claim).where(Claim.subject_id == person.id).order_by(Claim.valid_from.desc().nulls_last(), Claim.created_at)))
+    # Stable order: newest period first, then by key. Claims from one run share a timestamp, so it cannot break ties.
+    claims = list(session.scalars(select(Claim).where(Claim.subject_id == person.id).order_by(
+        Claim.valid_from.desc().nulls_last(), Claim.created_at, Claim.natural_key, Claim.id)))
     ev = evidence_for(session, [c.id for c in claims])
     pairs = session.execute(select(CandidateJob, Job).join(Job, Job.id == CandidateJob.job_id).where(CandidateJob.candidate_id == person.id))
     documents = session.execute(
@@ -169,6 +173,13 @@ def inbox(session: Session, org_id: uuid.UUID, job_id: uuid.UUID | None = None, 
         sides = [_side(claims[i.claim_id], ev[i.claim_id]) for i in links[d.id]]
         entry = {"id": str(d.id), "kind": d.type, "blocking": d.type in BLOCKING, "created_at": _iso(d.created_at),
                  "subject": {"id": str(d.subject_id), "name": who.get(d.subject_id)}, "context": d.context}
+        if d.type == "identity_note":
+            others = [uuid.UUID(i) for i in d.context.get("candidate_ids", [])]
+            known = names(session, others)
+            entry["possibly"] = [{"id": str(i), "name": known.get(i)} for i in others]
+            doc = session.scalar(select(Document.id).join(Evidence, Evidence.document_id == Document.id)
+                                 .join(Claim, Claim.id == Evidence.claim_id).where(Claim.subject_id == d.subject_id).limit(1))
+            entry["document_id"] = str(doc) if doc else None
         if d.type == "revision_diff":
             old, new = d.context.get("old_view", {}), d.context.get("new_view", {})
             entry.update(claim_id=sides[0]["claim_id"], old_view=old, new_view=new,
@@ -188,3 +199,18 @@ def inbox(session: Session, org_id: uuid.UUID, job_id: uuid.UUID | None = None, 
 
     items.sort(key=lambda i: (not i["blocking"], i["created_at"] or ""))
     return items
+
+
+def list_people(session: Session, org_id: uuid.UUID) -> list[dict[str, Any]]:
+    """Everyone on the desk, newest first, with the jobs they are on. People on no job are the unassigned pool."""
+    people = list(session.scalars(select(Candidate).where(Candidate.org_id == org_id).order_by(Candidate.created_at.desc())))
+    who = names(session, [p.id for p in people])
+    pairs = defaultdict(list)
+    for pair, title in session.execute(select(CandidateJob, Job.title).join(Job, Job.id == CandidateJob.job_id).where(CandidateJob.org_id == org_id)):
+        pairs[pair.candidate_id].append({"job_id": str(pair.job_id), "title": title, "band": pair.triage_band})
+    docs = dict(session.execute(
+        select(DocumentSubject.subject_id, func.min(func.cast(DocumentSubject.document_id, String)))
+        .where(DocumentSubject.org_id == org_id, DocumentSubject.subject_type == "candidate")
+        .group_by(DocumentSubject.subject_id)).all())
+    return [{"id": str(p.id), "name": who.get(p.id), "created_at": _iso(p.created_at), "jobs": pairs.get(p.id, []),
+             "document_id": docs.get(p.id)} for p in people]

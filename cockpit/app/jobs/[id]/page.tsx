@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { dropCvs, overrideBand } from "@/app/actions";
+import { overrideBand } from "@/app/actions";
 import { Snippet } from "@/components/Claim";
-import { UploadForm } from "@/components/UploadForm";
-import { api, type Band, type JobPage, type PersonOnJob } from "@/lib/api";
+import { MultiUpload } from "@/components/MultiUpload";
+import { api, apiOr404, type Band, type InboxItem, type JobPage, type PersonOnJob } from "@/lib/api";
 import { BAND_LABEL, reasonWords } from "@/lib/format";
 
 export const metadata = { title: "Job" };
@@ -33,22 +33,29 @@ function People({ jobId, people }: { jobId: string; people: PersonOnJob[] }) {
 
 export default async function Job({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const job = await api<JobPage>(`/v1/jobs/${id}`);
-  const must = job.requirements.filter((r) => r.payload.category !== "process");
+  const [job, waiting] = await Promise.all([
+    apiOr404<JobPage>(`/v1/jobs/${id}`),
+    api<InboxItem[]>(`/v1/inbox?job_id=${id}&band=priority`),
+  ]);
+  const places = job.requirements.filter((r) => r.payload.category === "location" && r.payload.strength === "unknown");
+  const must = job.requirements.filter((r) => r.payload.category !== "process" && !places.includes(r));
   const dates = job.requirements.filter((r) => r.payload.category === "process");
 
   return (
     <>
       <h1>{job.title}</h1>
-      <p className="sub">{job.hiring_company ?? "Hiring company not stated"} · <Link href={`/inbox?job=${job.id}`}>Inbox for this job</Link></p>
+      <p className="sub">
+        {job.hiring_company ?? "Hiring company not stated"} · {job.people.priority.length} priority · {job.people.review_later.length} later · {job.people.do_not_submit.length} do not submit ·{" "}
+        <Link href={`/inbox?job=${job.id}`}>{waiting.length ? `${waiting.length} to review` : "inbox clear"}</Link>
+      </p>
+      {places.length > 0 && <p className="where">Where: {places.map((p) => p.payload.text_raw).join(" · ")}</p>}
       {job.process_stale && (
         <p className="warn">This posting&apos;s own process dates have passed. Confirm it is still open before submitting anyone.</p>
       )}
 
       <section className="panel">
         <h3>Drop CVs onto this job</h3>
-        <UploadForm action={dropCvs.bind(null, job.id)} multiple label="Read and band" busy="Reading CVs… (about 15 s each)"
-          hint="Every file is read. Each person is placed in a band against this job. A band is not a score." />
+        <MultiUpload jobId={job.id} />
       </section>
 
       <h2>{BAND_LABEL.priority} ({job.people.priority.length})</h2>

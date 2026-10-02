@@ -22,22 +22,25 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
       {jobs.length === 0 ? (
         <p className="empty">No jobs yet.</p>
       ) : (
+        <div className="tablewrap">
         <table>
           <thead>
-            <tr><th>Job</th><th>Hiring company</th><th className="num">Priority</th><th className="num">Later</th><th className="num">Do not submit</th></tr>
+            <tr><th>Job</th><th>Hiring company</th><th className="num">To review</th><th className="num">Priority</th><th className="num hide-narrow">Later</th><th className="num">Do not submit</th></tr>
           </thead>
           <tbody>
             {jobs.map((j) => (
               <tr key={j.id}>
                 <td><Link href={`/jobs/${j.id}`}>{j.title}</Link></td>
                 <td>{j.hiring_company ?? <span className="sub">not stated</span>}</td>
+                <td className="num">{j.to_review ? <Link href={`/inbox?job=${j.id}`}>{j.to_review}</Link> : "–"}</td>
                 <td className="num">{j.bands.priority}</td>
-                <td className="num">{j.bands.review_later}</td>
+                <td className="num hide-narrow">{j.bands.review_later}</td>
                 <td className="num">{j.bands.do_not_submit}</td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </>
   );

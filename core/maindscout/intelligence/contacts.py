@@ -72,7 +72,7 @@ def judge(kind: str, value: str, full_name: str | None, annotations: list[dict],
     if targets and norm not in targets:
         near = [t for t in targets if _similar(t, norm) or _close_local(t, norm)]
         if near or kind in ("email", "linkedin"):
-            return ContactVerdict(True, "subject", True, f"text shows {norm!r} but the file's link says {targets[0]!r}")
+            return ContactVerdict(True, "subject", True, f"The file's own link says {targets[0]}.")
 
     if kind in ("email", "linkedin") and full_name and not targets:
         local = norm.split("@")[0] if kind == "email" else norm.rsplit("/", 1)[-1]
@@ -83,7 +83,7 @@ def judge(kind: str, value: str, full_name: str | None, annotations: list[dict],
                 n not in local_tokens and any(_similar(n, lt) for lt in local_tokens) for n in name_tokens
             )
             if typo:
-                return ContactVerdict(True, "subject", True, "looks like a misspelling of the name")
+                return ContactVerdict(True, "subject", True, "It looks like a misspelling of the person's name.")
     return ContactVerdict(True, "subject", False)
 
 

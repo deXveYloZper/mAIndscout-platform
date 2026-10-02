@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { approveClaim, correctContact, rejectClaim, resolveDecision } from "@/app/actions";
+import { addFact, approveClaim, correctContact, rejectClaim, resolveDecision } from "@/app/actions";
 import { Snippet } from "@/components/Claim";
 import { ContactFix } from "@/components/ContactFix";
+import { FactForm } from "@/components/FactForm";
 import { api, type InboxItem, type JobSummary, type Side } from "@/lib/api";
 import { summary } from "@/lib/format";
 
@@ -61,12 +62,21 @@ function Card({ item, path }: { item: InboxItem; path: string }) {
 
       {item.kind === "identity_note" && (
         <>
-          <p>{item.context?.reason}.</p>
-          {item.context?.candidate_ids?.length > 0 && (
-            <p>Possibly: {item.context!.candidate_ids.map((cid: string) => <Link key={cid} href={`/people/${cid}`} style={{ marginRight: 8 }}>{cid.slice(0, 8)}</Link>)}</p>
+          <p>{item.context?.reason ? item.context.reason[0].toUpperCase() + item.context.reason.slice(1) : ""}.</p>
+          {item.possibly && item.possibly.length > 0 && (
+            <p>
+              Possibly the same as:{" "}
+              {item.possibly.map((p) => <Link key={p.id} href={`/people/${p.id}`} style={{ marginRight: 10 }}>{p.name ?? "name not read"}</Link>)}
+            </p>
           )}
-          <p className="sub">Kept as a separate person. A wrong merge is worse than a duplicate.</p>
-          <form action={act("acknowledge")}><button className="btn small">Understood</button></form>
+          <p className="sub">
+            Kept as a separate person: a wrong merge is worse than a duplicate.
+            {item.document_id && <> <a href={`/files/${item.document_id}`} target="_blank" rel="noreferrer">Open the CV</a>.</>}
+          </p>
+          {!item.subject.name && (
+            <FactForm action={addFact.bind(null, item.subject.id, path, null, item.id)} kinds={["name"]} label="Save name" />
+          )}
+          <form action={act("acknowledge")} style={{ marginTop: 8 }}><button className="btn small">Understood</button></form>
         </>
       )}
 
@@ -107,25 +117,35 @@ function Card({ item, path }: { item: InboxItem; path: string }) {
 }
 
 export default async function Inbox({ searchParams }: { searchParams: Promise<{ job?: string; band?: string }> }) {
-  const { job, band = "priority" } = await searchParams;
+  const params = await searchParams;
+  const job = params.job;
+  // With a job open, the default is its priority people (the handoff rule). Without one, show everything.
+  const band = job ? params.band ?? "priority" : "all";
   const qs = new URLSearchParams();
   if (job) qs.set("job_id", job);
   qs.set("band", band);
   const [items, jobs] = await Promise.all([api<InboxItem[]>(`/v1/inbox?${qs}`), api<JobSummary[]>("/v1/jobs")]);
   const jobName = jobs.find((j) => j.id === job)?.title;
-  const path = `/inbox?${new URLSearchParams({ ...(job ? { job } : {}), band })}`;
+  const path = "/inbox"; // revalidation works on the path; the query string is kept by the browser
   const link = (b: string) => `/inbox?${new URLSearchParams({ ...(job ? { job } : {}), band: b })}`;
 
   return (
     <>
-      <h1>Inbox{jobName ? `: ${jobName}` : ""}</h1>
+      <h1>Inbox{jobName ? `: ${jobName}` : ": all jobs"}</h1>
       <p className="sub">Only what the system may not decide itself. Identity and contact questions first, then oldest first.</p>
-      <nav className="tabs">
-        <Link href={link("priority")} aria-current={band === "priority" ? "page" : undefined}>Priority people</Link>
-        <Link href={link("all")} aria-current={band === "all" ? "page" : undefined}>Everyone</Link>
-        {job && <Link href="/inbox?band=all">All jobs</Link>}
-      </nav>
-      {!job && band === "priority" && <p className="sub">Pick a job to see its priority people, or choose Everyone.</p>}
+      <form className="row" action="/inbox" method="get">
+        <select name="job" defaultValue={job ?? ""} aria-label="Job" className="jobpick">
+          <option value="">All jobs, everyone</option>
+          {jobs.map((j) => <option key={j.id} value={j.id}>{j.title}</option>)}
+        </select>
+        <button className="btn small">Show</button>
+      </form>
+      {job && (
+        <nav className="tabs">
+          <Link href={link("priority")} aria-current={band === "priority" ? "page" : undefined}>Priority people</Link>
+          <Link href={link("all")} aria-current={band === "all" ? "page" : undefined}>Everyone on this job</Link>
+        </nav>
+      )}
       {items.length === 0 ? <p className="empty">Nothing waiting.</p> : items.map((i) => <Card key={i.id} item={i} path={path} />)}
     </>
   );

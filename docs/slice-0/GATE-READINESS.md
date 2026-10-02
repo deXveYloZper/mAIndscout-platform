@@ -6,7 +6,7 @@ Every item in [GATES.md](GATES.md) with its evidence. **This page does not decla
 
 | Gate item | State | Evidence |
 |---|---|---|
-| Reconcile tests in CI and green | Met, pending first CI read | `.github/workflows/tests.yml`; local: 8 passed |
+| Reconcile tests in CI and green | Met | `.github/workflows/tests.yml`; green on GitHub (the one red run was the cockpit build, fixed at the root) |
 | Unknown flag keys rejected on write | Met | `core/tests/test_writer.py`, `test_registry.py` |
 | `intelligence/` has no database session | Met | `core/tests/test_boundaries.py` |
 | `api/` is the only writer | Met | `core/tests/test_boundaries.py` |
@@ -19,7 +19,7 @@ Every item in [GATES.md](GATES.md) with its evidence. **This page does not decla
 
 | Gate item | State | Evidence |
 |---|---|---|
-| A job exists; a CV uploads onto it | Met | Cockpit job page; `tests/test_api.py` |
+| A job exists; a CV uploads onto it (or into the pool) | Met | Cockpit job and People pages; e2e 2, 3, 12; `tests/test_api.py` |
 | Each pair has a band and a reason | Met | Golden eval invariants (all 22 pairs) |
 | Job page groups people by band | Met | Cockpit; `tests/test_api.py` |
 | Inbox default is job + priority; do-not-submit hidden | Met | `tests/test_api.py::test_inbox_defaults…` |
@@ -48,7 +48,7 @@ Every item in [GATES.md](GATES.md) with its evidence. **This page does not decla
 ## Decisions the owner is asked to make
 1. Accept that four golden people are absent and are covered instead by the general invariants on 11 real CVs (your instruction of 2026-10-02: every CV must pass).
 2. Accept Ioannis as a correct `priority` for Catalyst (the gate text was written for five CVs without InSAR).
-3. Confirm the first CI run on GitHub is green.
+3. Read the test report: [TEST-REPORT.md](TEST-REPORT.md).
 
 ## Draft decision (copy to `docs/decisions/<date>-slice-0-gate.md` if you agree)
 
