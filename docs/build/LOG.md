@@ -2,6 +2,7 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-03 — **Slice 1 gate GREEN**, declared by the owner; Slice 2 (sourcing) chosen next — [decision](../decisions/2026-10-03-slice-1-gate.md)
 - 2026-10-03 — Slice 1 step 6: the five Slice 1 gate checks run in the golden eval on real files (all pass); gate readiness page with draft declaration — [readiness](../slice-1/GATE-READINESS.md)
 - 2026-10-02 — Slice 1 step 5: coverage floor (counts in words, never a percentage), reserved `score` snapshots with value forced NULL by the database — [coverage](components/coverage.md)
 - 2026-10-02 — Slice 1 step 4: pair states with reasons (seen / submitted / we passed / reopen), outcomes, pairs made permanent by a database trigger (erasure the only exception) — [ADR](../decisions/2026-10-02-pair-states.md)

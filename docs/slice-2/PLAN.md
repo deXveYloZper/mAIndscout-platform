@@ -1,6 +1,6 @@
 # Slice 2 — Sourcing feeder
 
-**Status: LOCKED.** Do not start until Slice 1’s gate is green.
+**Status: OPEN** since 2026-10-03 (Slice 1 gate green, [decision](../decisions/2026-10-03-slice-1-gate.md)).
 
 Sourcing is not a second product. It exists to refill a thin priority queue on a live job. Every sourced document takes Slice 0 ingest + Slice 0/1 triage. No-fits park. They do not get a review session.
 
