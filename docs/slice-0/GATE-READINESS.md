@@ -1,6 +1,6 @@
 # Slice 0 gate readiness (prepared 2026-10-02)
 
-Every item in [GATES.md](GATES.md) with its evidence. **This page does not declare the gate.** Only the owner does, by adding a decision in [../decisions/](../decisions/) (draft at the end).
+Every item in [GATES.md](GATES.md) with its evidence. **Outcome: the owner declared the gate GREEN on 2026-10-02** ([decision](../decisions/2026-10-02-slice-0-gate.md)). This page does not itself declare anything. Only the owner does, by adding a decision in [../decisions/](../decisions/) (draft at the end).
 
 ## Engineering
 

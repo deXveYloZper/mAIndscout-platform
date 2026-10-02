@@ -2,9 +2,9 @@
 
 Single page: what exists, what is next. A–D sign-off and accepted holes: [../decisions/2026-10-02-milestones-a-d-signoff.md](../decisions/2026-10-02-milestones-a-d-signoff.md). Slice gates are declared green by a human only, in [../decisions/](../decisions/).
 
-**Slice 0 gate:** all milestones built; evidence per gate item in [../slice-0/GATE-READINESS.md](../slice-0/GATE-READINESS.md); waiting for the owner's declaration.
+**Slice 0 gate: GREEN**, declared by the owner on 2026-10-02 ([decision](../decisions/2026-10-02-slice-0-gate.md)). Slice 1 may start.
 
-**Current slice:** 0, ingest + job-first triage ([handoff](../slice-0/HANDOFF.md), [gates](../slice-0/GATES.md))
+**Current slice:** 1, defendable match ([plan](../slice-1/PLAN.md)). Slice 0 (ingest + job-first triage) is closed ([handoff](../slice-0/HANDOFF.md), [gates](../slice-0/GATES.md))
 
 | Milestone | What | State |
 |---|---|---|
@@ -13,8 +13,8 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 | C | Upload + text layer | **signed off** 2026-10-02 (HTTP route moved to E) |
 | D | Extract, span check, commit, triage | **signed off** 2026-10-02 (HTTP route moved to E) |
 | E | HTTP API + cockpit | **signed off** 2026-10-02 ([record](../decisions/2026-10-02-milestone-e-signoff.md)) |
-| F | Erasure + verify | built 2026-10-02 (13 tests, checked by hand); awaiting human sign-off |
-| G | Golden folder | built 2026-10-02: `python -m maindscout eval` GREEN (114 pass, 0 fail, 13 not run); awaiting human sign-off |
+| F | Erasure + verify | **signed off** 2026-10-02 (with the gate) |
+| G | Golden folder | **signed off** 2026-10-02 (with the gate): eval GREEN |
 
 How to run everything locally: [connections/cockpit-api.md](connections/cockpit-api.md).
 

@@ -2,6 +2,7 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-02 — **Slice 0 gate GREEN**, declared by the owner; fresh eval GREEN with the new model key — [decision](../decisions/2026-10-02-slice-0-gate.md)
 - 2026-10-02 — Thorough Slice 0 testing: CI root cause fixed; 17 end-to-end tests; 14 UX fixes incl. unassigned pool, live upload progress, type-a-name, all-jobs inbox — [test report](../slice-0/TEST-REPORT.md)
 - 2026-10-02 — Milestone G: golden eval command and report; job ads now yield work-location facts; gate readiness page — [golden-eval](components/golden-eval.md), [readiness](../slice-0/GATE-READINESS.md)
 - 2026-10-02 — Milestone F: erasure with verify, suppression of re-ingest, cockpit control; triage counts a must-have word inside a longer skill; Milestone E signed off — [erasure](components/erasure.md)
