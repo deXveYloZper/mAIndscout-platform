@@ -39,6 +39,7 @@ The cockpit must never touch the database. Every action goes through one guarded
 | `POST /v1/claims` | Human-typed fact, born approved (`replaces` supersedes the claim it corrects) |
 | `POST /v1/decisions/{id}/resolve` | Answer a card (see [review.md](review.md)) |
 | `POST /v1/jobs/{id}/campaigns` · `GET /v1/jobs/{id}/campaigns` · `POST /v1/campaigns/{id}/stop` | Refill a thin priority queue from the desk; list; stop ([sourcing.md](sourcing.md)) |
+| `GET /v1/companies?q=` · `GET /v1/companies/{id}` · `POST /v1/companies/{id}/merge` | Companies the desk knows, a company with the people we know there, merge ([companies.md](companies.md)) |
 | `POST /v1/subjects/candidate/{id}/erase` · `GET …/erase/verify` | Forget a person; re-check (see [erasure.md](erasure.md)) |
 
 ## Depends on

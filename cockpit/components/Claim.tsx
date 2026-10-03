@@ -29,7 +29,12 @@ export function ClaimRow({ claim, path }: { claim: ClaimView; path: string }) {
   return (
     <li className={`claim ${claim.status}`}>
       <div className="claim-head">
-        <span className="what">{summary({ claim_type: claim.claim_type, payload: claim.approved_view ?? claim.payload })}</span>
+        <span className="what">
+          {summary({ claim_type: claim.claim_type, payload: claim.approved_view ?? claim.payload })}
+          {claim.claim_type === "CareerStepClaim" && claim.payload.company?.company_id && (
+            <a className="companylink" href={`/companies/${claim.payload.company.company_id}`} title="Who else we know there" aria-label="Company page">↗</a>
+          )}
+        </span>
         {when && <span className="when">{when}</span>}
         <Status status={claim.status} />
         {claim.status === "proposed" && (

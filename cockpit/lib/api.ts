@@ -116,7 +116,7 @@ export type Side = {
 
 export type InboxItem = {
   id: string;
-  kind: "revision_diff" | "duplicate_stint" | "contradiction" | "identity_note" | "ocr_contact";
+  kind: "revision_diff" | "duplicate_stint" | "contradiction" | "identity_note" | "ocr_contact" | "company_same";
   blocking: boolean;
   created_at: string;
   subject: { id: string; name: string | null };

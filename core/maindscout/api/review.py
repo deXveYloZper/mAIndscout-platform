@@ -191,6 +191,14 @@ def resolve_decision(session: Session, org_id: uuid.UUID, decision_id: uuid.UUID
         session.flush()
         return decision
 
+    elif decision.type == "company_same":
+        from maindscout.api import companies
+
+        if action == "same":
+            companies.merge(session, uuid.UUID(decision.context["existing"]["id"]), uuid.UUID(decision.context["new"]["id"]))
+        elif action != "different":
+            raise ReviewError("company_same takes same or different")
+
     elif decision.type == "identity_note":
         if action != "acknowledge":
             raise ReviewError("identity_note takes acknowledge (merging people is not part of Slice 0)")

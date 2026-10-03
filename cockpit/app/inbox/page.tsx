@@ -14,6 +14,7 @@ const KIND: Record<InboxItem["kind"], string> = {
   revision_diff: "A source disagrees with what we believe",
   duplicate_stint: "Same job, or two?",
   contradiction: "These cannot both be true",
+  company_same: "Same company?",
 };
 
 function SideBox({ side, title }: { side: Side; title: string }) {
@@ -99,6 +100,19 @@ function Card({ item, path }: { item: InboxItem; path: string }) {
           <div className="row" style={{ marginTop: 10 }}>
             <form action={act("same")}><button className="btn">Same job</button></form>
             <form action={act("two")}><button className="btn">Two jobs</button></form>
+          </div>
+        </>
+      )}
+
+      {item.kind === "company_same" && item.context && (
+        <>
+          <p>
+            A CV names <strong>{item.context.new.name}</strong>. The desk already knows <strong>{item.context.existing.name}</strong>. Are they the same company?
+          </p>
+          <p className="sub">Merging links everyone who worked at either. A wrong merge mixes two companies&apos; people, so only merge when you are sure.</p>
+          <div className="row" style={{ marginTop: 10 }}>
+            <form action={act("same")}><button className="btn">Same company</button></form>
+            <form action={act("different")}><button className="btn">Different companies</button></form>
           </div>
         </>
       )}

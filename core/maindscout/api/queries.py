@@ -165,6 +165,9 @@ def inbox(session: Session, org_id: uuid.UUID, job_id: uuid.UUID | None = None, 
 
     decisions = list(session.scalars(select(Decision).where(
         Decision.org_id == org_id, Decision.sealed_at.is_(None), Decision.subject_id.in_(scope))))
+    decisions += list(session.scalars(select(Decision).where(
+        Decision.org_id == org_id, Decision.sealed_at.is_(None), Decision.type == "company_same",
+        Decision.context["candidate_id"].astext.in_([str(c) for c in scope]))))
     links = defaultdict(list)
     for item in session.scalars(select(DecisionItem).where(DecisionItem.decision_id.in_([d.id for d in decisions] or [None]))):
         links[item.decision_id].append(item)
@@ -175,6 +178,8 @@ def inbox(session: Session, org_id: uuid.UUID, job_id: uuid.UUID | None = None, 
         sides = [_side(claims[i.claim_id], ev[i.claim_id]) for i in links[d.id]]
         entry = {"id": str(d.id), "kind": d.type, "blocking": d.type in BLOCKING, "created_at": _iso(d.created_at),
                  "subject": {"id": str(d.subject_id), "name": who.get(d.subject_id)}, "context": d.context}
+        if d.type == "company_same":
+            entry["subject"] = {"id": d.context.get("candidate_id"), "name": who.get(uuid.UUID(d.context["candidate_id"])) if d.context.get("candidate_id") else None}
         if d.type == "identity_note":
             others = [uuid.UUID(i) for i in d.context.get("candidate_ids", [])]
             known = names(session, others)

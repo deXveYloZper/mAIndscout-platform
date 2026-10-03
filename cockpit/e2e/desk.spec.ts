@@ -139,6 +139,16 @@ test("a thin job is refilled from the desk's own people, banded by the same rule
   await expect(page.locator(".history")).toContainText("sourced");
 });
 
+test("companies from CVs are shared records: who do we know there", async ({ page }) => {
+  await page.goto("/companies");
+  await expect(page.getByRole("heading", { name: "Companies" })).toBeVisible();
+  await page.getByLabel("Search companies").fill("bitpanda");
+  await page.getByRole("button", { name: "Search" }).click();
+  await page.getByRole("link", { name: /Bitpanda/i }).first().click();
+  await expect(page.getByText(/We know \d+ (person|people) who worked here/)).toBeVisible();
+  await expect(page.locator(".people li", { hasText: "Jure Domajnko" })).toBeVisible();
+});
+
 test("the jobs list shows both jobs with their piles and what waits for review", async ({ page }) => {
   await page.goto("/");
   const rows = page.locator("tbody tr");

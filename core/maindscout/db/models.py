@@ -50,7 +50,7 @@ VERIFIABILITY = ("registry", "public_record", "scholarly", "web", "unverifiable"
 TRIAGE_BANDS = ("priority", "review_later", "do_not_submit", "unassigned")
 PAIR_STATES = ("new", "seen", "submitted", "we_passed")
 RUN_STATUS = ("running", "committed", "failed")
-DECISION_TYPES = ("revision_diff", "duplicate_stint", "contradiction", "identity_note")
+DECISION_TYPES = ("revision_diff", "duplicate_stint", "contradiction", "identity_note", "company_same")
 
 
 class Base(DeclarativeBase):
@@ -171,13 +171,39 @@ class Candidate(Base):
     created_at: Mapped[datetime] = _created()
 
 
+class Company(Base):
+    """A real organisation, in the SHARED PUBLIC tier: no org_id (owner's decision 2026-10-03). Public facts about
+    it (I2) are reusable by every desk; who a desk knows there lives in that desk's own claims, never here."""
+
+    __tablename__ = "company"
+    id: Mapped[uuid.UUID] = _pk()
+    name: Mapped[str] = mapped_column(String, nullable=False)  # display name
+    normalized: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    website: Mapped[str | None] = mapped_column(String)
+    registry_ids: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    hq_country: Mapped[str | None] = mapped_column(String(2))
+    merged_into_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("company.id"))  # redirect, never rewrite
+    created_at: Mapped[datetime] = _created()
+
+
+class CompanyAlias(Base):
+    """Every normalised spelling that means this company (exact match only)."""
+
+    __tablename__ = "company_alias"
+    normalized: Mapped[str] = mapped_column(String, primary_key=True)
+    company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("company.id"), nullable=False)
+    source: Mapped[str] = mapped_column(String, nullable=False)  # cv | jd | human | registry
+    created_at: Mapped[datetime] = _created()
+
+
 class Job(Base):
     __tablename__ = "job"
     __table_args__ = (CheckConstraint(_in("state", ("open", "on_hold", "filled", "cancelled")), name="job_state"),)
     id: Mapped[uuid.UUID] = _pk()
     org_id: Mapped[uuid.UUID] = _org()
     title: Mapped[str] = mapped_column(String, nullable=False)
-    hiring_company: Mapped[str | None] = mapped_column(String)  # plain text in Slice 0; no company entity yet
+    hiring_company: Mapped[str | None] = mapped_column(String)  # as written in the ad
+    hiring_company_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("company.id"))
     state: Mapped[str] = mapped_column(String, nullable=False, default="open")
     source_document_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("document.id"))
     created_at: Mapped[datetime] = _created()

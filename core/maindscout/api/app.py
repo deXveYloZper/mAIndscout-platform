@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from maindscout.api import documents, erasure, process, queries, review, sourcing
+from maindscout.api import companies, documents, erasure, process, queries, review, sourcing
 from maindscout.db.models import Document, ExtractionArtifact, IntelligenceRun, Org
 from maindscout.db.session import make_engine, make_session_factory
 from maindscout.domain import registry as reg
@@ -447,3 +447,27 @@ def stop_campaign(campaign_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), 
     campaign = sourcing.stop(session, org_id, campaign_id, actor)
     session.commit()
     return sourcing.as_dict(campaign)
+
+
+@app.get("/v1/companies")
+def list_companies(q: str | None = Query(None), org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """Companies this desk has touched through people or jobs, most people first; `q` filters by name."""
+    return companies.search(session, org_id, q)
+
+
+@app.get("/v1/companies/{company_id}")
+def get_company(company_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """A company: its names, this desk's people who worked there (with title and period), and its jobs here."""
+    return companies.company_page(session, org_id, company_id)
+
+
+class MergeBody(BaseModel):
+    into: uuid.UUID
+
+
+@app.post("/v1/companies/{company_id}/merge")
+def merge_company(company_id: uuid.UUID, body: MergeBody, org_id: uuid.UUID = Depends(get_org),
+                  session: Session = Depends(get_session)):
+    keep = companies.merge(session, body.into, company_id)
+    session.commit()
+    return {"id": str(keep.id), "name": keep.name}

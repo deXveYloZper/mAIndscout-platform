@@ -10,7 +10,7 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 
 | Phase | What | State |
 |---|---|---|
-| I1 | Companies, linking, background tasks, cost ledger | in progress |
+| I1 | Companies, linking, background tasks, cost ledger | in progress: companies done; tasks and cost ledger next |
 | I2 | Company research (Grok, targeted facts) | |
 | I3 | Career profiles | |
 | I4 | Hiring profiles | |

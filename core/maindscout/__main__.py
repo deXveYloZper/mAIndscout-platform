@@ -4,6 +4,7 @@
     python -m maindscout serve [--port 8765] run the API
     python -m maindscout eval [--folder DIR] [--with-tests]   golden eval over real files (Milestone G)
     python -m maindscout reset-db NAME --org-id UUID   recreate a throwaway database (*_e2e/_test/_eval only)
+    python -m maindscout link-companies      resolve companies for existing career steps and jobs
 """
 
 from __future__ import annotations
@@ -82,12 +83,20 @@ def main() -> None:
     p_eval = sub.add_parser("eval")
     p_eval.add_argument("--folder", type=Path, default=None)
     p_eval.add_argument("--with-tests", action="store_true")
+    sub.add_parser("link-companies")
     p_reset = sub.add_parser("reset-db")
     p_reset.add_argument("name")
     p_reset.add_argument("--org-id", required=True)
     args = parser.parse_args()
     if args.cmd == "init":
         init(args.org)
+    elif args.cmd == "link-companies":
+        from maindscout.api import companies
+
+        with make_session_factory(make_engine())() as session:
+            for org in session.scalars(select(Org)):
+                print(org.name, companies.link_org(session, org.id))
+            session.commit()
     elif args.cmd == "reset-db":
         reset_db(args.name, args.org_id)
     elif args.cmd == "eval":

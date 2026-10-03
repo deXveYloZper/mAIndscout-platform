@@ -465,8 +465,15 @@ def _process_cv(session: Session, blobs: BlobStore, doc: Document, artifact: Ext
     authority = doc.source_authority
     run_keys: set[str] = set()
 
+    from maindscout.api import companies
+
     for s in outcome.staged:
         p = s.payload
+        if s.claim_type == "CareerStepClaim":
+            company, parsed = companies.resolve(session, p["company"]["raw_name"], "cv", doc.org_id, cid)
+            p = {**p, "company": {**p["company"], "company_id": str(company.id) if company else None}}
+            if parsed.kind == "self_employed" and p.get("employment_type") not in ("contract", "consulting", "side"):
+                p["employment_type"] = "contract"  # self-employment is not employment: read it as contracting
         key = natural_key(cid, s.claim_type, p, s.valid_from, s.valid_to)
         # Two entries in one document that share a key are still two entries: never fuse them.
         base, n = key, 1
@@ -514,7 +521,11 @@ def _process_jd(session: Session, doc: Document, artifact: ExtractionArtifact, r
         job = Job(org_id=doc.org_id, title=outcome.title or (doc.filename or "Untitled job").rsplit(".", 1)[0])
         session.add(job)
     if outcome.hiring_company:
+        from maindscout.api import companies
+
         job.hiring_company = outcome.hiring_company
+        company, _ = companies.resolve(session, outcome.hiring_company, "jd")
+        job.hiring_company_id = company.id if company else None
     job.source_document_id = doc.id
     session.flush()
 

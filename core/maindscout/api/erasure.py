@@ -110,7 +110,9 @@ def erase_candidate(session: Session, blobs: BlobStore, org_id: uuid.UUID, candi
             Claim.id.in_(claim_ids), Claim.claim_type == "ContactClaim", Claim.status != "rejected"))
         if c.payload.get("kind") in KEY_KINDS
     }
-    decision_ids = list(session.scalars(select(Decision.id).where(Decision.subject_id == candidate_id)))
+    decision_ids = list(session.scalars(select(Decision.id).where(or_(
+        Decision.subject_id == candidate_id,
+        Decision.context["candidate_id"].astext == str(candidate_id)))))  # e.g. "same company?" cards raised by their CV
     run_ids = list(session.scalars(select(IntelligenceRun.id).where(IntelligenceRun.document_id.in_(doc_ids))))
     storage = {d.id: d.storage_key for d in session.scalars(select(Document).where(Document.id.in_(doc_ids)))}
 
@@ -196,7 +198,7 @@ def verify_erasure(session: Session, blobs: BlobStore, org_id: uuid.UUID, candid
     checks = [
         ("candidate row", count(Candidate, Candidate.id == candidate_id)),
         ("claims", count(Claim, Claim.subject_id == candidate_id)),
-        ("decisions", count(Decision, Decision.subject_id == candidate_id)),
+        ("decisions", count(Decision, or_(Decision.subject_id == candidate_id, Decision.context["candidate_id"].astext == sid))),
         ("pairs", count(CandidateJob, CandidateJob.candidate_id == candidate_id)),
         ("breakdown snapshots", count(Score, Score.candidate_id == candidate_id)),
         ("document links", count(DocumentSubject, DocumentSubject.subject_id == candidate_id)),

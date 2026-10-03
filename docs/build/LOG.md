@@ -2,6 +2,7 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-03 — I1 part 1: companies as shared records (public tier), exact-match resolver, "Same company?" cards, links from career steps and jobs, company pages with who we know there — [companies](components/companies.md)
 - 2026-10-03 — Intelligence track proposed (candidate career strength, company intelligence, hiring profiles, matching v2, sourcing v2) to come before further slices; waiting for the owner's decisions — [plan](../intelligence/PLAN.md)
 - 2026-10-03 — Slice 2: sourcing feeder from the desk's own people (campaigns, cap / target / stop, same triage, "Find more people"); Slice 2 gate checks in the eval, all passing — [sourcing](components/sourcing.md)
 - 2026-10-03 — **Slice 1 gate GREEN**, declared by the owner; Slice 2 (sourcing) chosen next — [decision](../decisions/2026-10-03-slice-1-gate.md)
