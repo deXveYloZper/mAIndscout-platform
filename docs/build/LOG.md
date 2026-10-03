@@ -2,6 +2,7 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-03 — **I1 gate GREEN**, declared by the owner; I2 starts — [decision](../decisions/2026-10-03-i1-gate.md)
 - 2026-10-03 — I1 part 2: background task queue (SKIP LOCKED, retries, dedupe) with workers in `serve`; uploads read in the background with live progress; cost ledger, monthly budget and Costs page; erasure unlinks cost rows — [tasks-and-costs](components/tasks-and-costs.md)
 - 2026-10-03 — I1 part 1: companies as shared records (public tier), exact-match resolver, "Same company?" cards, links from career steps and jobs, company pages with who we know there — [companies](components/companies.md)
 - 2026-10-03 — Intelligence track proposed (candidate career strength, company intelligence, hiring profiles, matching v2, sourcing v2) to come before further slices; waiting for the owner's decisions — [plan](../intelligence/PLAN.md)
