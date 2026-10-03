@@ -1,6 +1,6 @@
 # Slice 2 — Sourcing feeder
 
-**Status: LOCKED.** Do not start until Slice 1’s gate is green.
+**Status: OPEN** since 2026-10-03 (Slice 1 gate green, [decision](../decisions/2026-10-03-slice-1-gate.md)).
 
 Sourcing is not a second product. It exists to refill a thin priority queue on a live job. Every sourced document takes Slice 0 ingest + Slice 0/1 triage. No-fits park. They do not get a review session.
 
@@ -11,6 +11,9 @@ Sourcing is not a second product. It exists to refill a thin priority queue on a
 On a job with fewer than N `priority` people (N operator-set; start at 5), the recruiter can start a bounded find: a query derived from the job’s must-have tokens, a cap, a stop condition.
 
 Results land as documents on that job. Same bands. Same Inbox rule.
+
+## Decisions
+- 2026-10-03: first adapter is the desk's own people graph (owner). GitHub profiles were considered as the next adapter.
 
 ## In scope
 

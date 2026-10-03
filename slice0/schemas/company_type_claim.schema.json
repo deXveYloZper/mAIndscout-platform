@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maindscout.local/schemas/company_type_claim.schema.json",
+  "title": "CompanyTypeClaim payload",
+  "description": "What kind of organisation: a product company, a consultancy, an outsourcer, an agency, public sector, non-profit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type"
+  ],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "product",
+        "consultancy",
+        "outsourcing",
+        "agency",
+        "public_sector",
+        "non_profit",
+        "other"
+      ]
+    }
+  }
+}

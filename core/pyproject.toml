@@ -1,0 +1,29 @@
+[project]
+name = "maindscout-core"
+version = "0.1.0"
+description = "mAIndscout platform core: api, domain, intelligence"
+requires-python = ">=3.12"
+dependencies = [
+  "sqlalchemy>=2.0",
+  "psycopg[binary]>=3.2",
+  "alembic>=1.13",
+  "pyyaml>=6.0",
+  "pypdf>=5.0",
+  "jsonschema>=4.21",
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
+  "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "reportlab>=4", "httpx>=0.27"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["maindscout*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

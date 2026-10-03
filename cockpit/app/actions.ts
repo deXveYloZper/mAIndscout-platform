@@ -1,0 +1,307 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { ApiError, api, apiJson, type ProcessResult } from "@/lib/api";
+
+export type FormState = { error?: string; message?: string };
+
+function fail(error: unknown): FormState {
+  return { error: error instanceof ApiError ? error.message : "Something went wrong. Try again." };
+}
+
+function filesOf(form: FormData): File[] {
+  return form.getAll("file").filter((f): f is File => f instanceof File && f.size > 0);
+}
+
+export async function createJob(_: FormState, form: FormData): Promise<FormState> {
+  const [file] = filesOf(form);
+  if (!file) return { error: "Choose the job advertisement (PDF)." };
+  let jobId: string | null = null;
+  try {
+    const body = new FormData();
+    body.append("file", file);
+    jobId = (await api<ProcessResult>("/v1/jobs", { method: "POST", body })).job_id;
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath("/");
+  redirect(`/jobs/${jobId}`);
+}
+
+export async function overrideBand(jobId: string, candidateId: string, form: FormData): Promise<void> {
+  await apiJson(`/v1/jobs/${jobId}/people/${candidateId}/triage`, {
+    band: form.get("band"),
+    reason: String(form.get("reason") || "") || null,
+  });
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+/** A repeated click (already approved, already resolved) is not an error worth a crash page: just refresh. */
+async function idempotent(call: () => Promise<unknown>): Promise<void> {
+  try {
+    await call();
+  } catch (e) {
+    if (!(e instanceof ApiError) || ![404, 409, 422].includes(e.status)) throw e;
+  }
+}
+
+export async function approveClaim(claimId: string, path: string): Promise<void> {
+  await idempotent(() => api(`/v1/claims/${claimId}/approve`, { method: "POST" }));
+  revalidatePath(path);
+}
+
+export async function rejectClaim(claimId: string, path: string, code = "wrong"): Promise<void> {
+  await idempotent(() => apiJson(`/v1/claims/${claimId}/reject`, { code }));
+  revalidatePath(path);
+}
+
+export async function resolveDecision(decisionId: string, action: string, claimId: string | null, path: string): Promise<void> {
+  await idempotent(() => apiJson(`/v1/decisions/${decisionId}/resolve`, { action, claim_id: claimId }));
+  revalidatePath(path);
+}
+
+export async function refreshAfterUpload(jobId: string | null): Promise<void> {
+  revalidatePath(jobId ? `/jobs/${jobId}` : "/people");
+  revalidatePath("/");
+}
+
+export async function putOnJob(candidateId: string, form: FormData): Promise<void> {
+  const jobId = String(form.get("job") || "");
+  if (!jobId) return;
+  await apiJson(`/v1/jobs/${jobId}/people/${candidateId}`, {});
+  revalidatePath(`/people/${candidateId}`);
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath("/people");
+}
+
+const FACT_KINDS = ["name", "email", "phone", "linkedin"] as const;
+
+/** A fact typed by the recruiter: born approved. Optionally replaces a claim and closes a note in the same go. */
+export async function addFact(candidateId: string, path: string, replaces: string | null, closeDecision: string | null,
+                              _: FormState, form: FormData): Promise<FormState> {
+  const kind = String(form.get("kind") || "name") as (typeof FACT_KINDS)[number];
+  const value = String(form.get("value") || "").trim();
+  if (!FACT_KINDS.includes(kind)) return { error: "Unknown kind of fact." };
+  if (!value) return { error: "Type a value." };
+  const body =
+    kind === "name"
+      ? { claim_type: "IdentityClaim", payload: { full_name: value, name_variants: [] } }
+      : { claim_type: "ContactClaim", payload: { kind, value, normalized: normaliseContact(kind, value) } };
+  try {
+    await apiJson("/v1/claims", { subject_type: "candidate", subject_id: candidateId, replaces, ...body });
+    if (closeDecision) await idempotent(() => apiJson(`/v1/decisions/${closeDecision}/resolve`, { action: "acknowledge" }));
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  return { message: "Saved as an approved fact." };
+}
+
+function normaliseContact(kind: string, value: string): string {
+  if (kind === "email") return value.toLowerCase();
+  if (kind === "phone") return (value.startsWith("+") ? "+" : "") + value.replace(/\D/g, "");
+  return value.toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, "").split("?")[0].replace(/\/$/, "");
+}
+
+export async function correctContact(candidateId: string, replaces: string, path: string, _: FormState, form: FormData): Promise<FormState> {
+  const kind = String(form.get("kind") || "email");
+  const value = String(form.get("value") || "").trim();
+  if (!value) return { error: "Type the correct value." };
+  const normalized = normaliseContact(kind, value);
+  try {
+    await apiJson("/v1/claims", {
+      subject_type: "candidate",
+      subject_id: candidateId,
+      claim_type: "ContactClaim",
+      payload: { kind, value, normalized },
+      replaces,
+    });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  return { message: "Saved as an approved contact." };
+}
+
+export async function eraseCandidate(candidateId: string, _: FormState, form: FormData): Promise<FormState> {
+  if (String(form.get("confirm") || "").trim().toLowerCase() !== "forget") {
+    return { error: 'Type "forget" to confirm. This cannot be undone.' };
+  }
+  let result: { clean: boolean; survivors: string[] };
+  try {
+    result = await apiJson(`/v1/subjects/candidate/${candidateId}/erase`, { reason: String(form.get("reason") || "") || null });
+  } catch (e) {
+    return fail(e);
+  }
+  if (!result.clean) {
+    return { error: `Erasure did NOT complete. Still found: ${result.survivors.join("; ")}` };
+  }
+  revalidatePath("/");
+  redirect("/?erased=1");
+}
+
+
+/** The recruiter knows the person has a skill the file did not show: record it as an approved fact.
+ *  Bands that depend on it are recomputed by the platform, and the change appears in the pair history. */
+export async function addSkill(candidateId: string, token: string, path: string): Promise<void> {
+  await apiJson("/v1/claims", {
+    subject_type: "candidate",
+    subject_id: candidateId,
+    claim_type: "SkillClaim",
+    payload: { raw_label: token, normalized_skill: token.toLowerCase() },
+  });
+  revalidatePath(path);
+}
+
+
+/** Move a person-job pair: seen, submitted (with a note) or we_passed (with a reason). Pairs are never deleted. */
+export async function setPairState(jobId: string, candidateId: string, path: string, _: FormState, form: FormData): Promise<FormState> {
+  try {
+    await apiJson(`/v1/jobs/${jobId}/people/${candidateId}/state`, {
+      state: String(form.get("state") || ""),
+      reason: String(form.get("reason") || "") || null,
+      note: String(form.get("note") || "") || null,
+    });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  revalidatePath(`/jobs/${jobId}`);
+  return { message: "Saved." };
+}
+
+
+/** Refill a thin priority queue from the desk's own people. Everyone found goes through the ordinary triage. */
+export async function startCampaign(jobId: string, _: FormState, form: FormData): Promise<FormState> {
+  const cap = Number(form.get("cap") || 25);
+  let c: { added: number; priority_added: number; spent: number; status: string; stop_reason: string | null };
+  try {
+    c = await apiJson(`/v1/jobs/${jobId}/campaigns`, { source: "desk", cap });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  const why = c.stop_reason === "cap" ? "stopped at the cap" : c.stop_reason === "target_reached" ? "priority target reached" : "no one else on the desk matches";
+  return { message: `Looked at ${c.spent}, added ${c.added} (${c.priority_added} priority); ${why}.` };
+}
+
+
+export type QueuedFile = { file: string; taskId?: string; error?: string };
+export type TaskView = { id: string; status: string; error: string | null; result: Record<string, any> | null; name?: string | null };
+
+/** Store one CV and queue its reading; returns at once. */
+export async function queueCv(jobId: string | null, form: FormData): Promise<QueuedFile> {
+  const file = form.get("file");
+  if (!(file instanceof File) || !file.size) return { file: "?", error: "empty file" };
+  try {
+    const body = new FormData();
+    body.append("file", file);
+    const path = jobId ? `/v1/jobs/${jobId}/documents?background=true` : "/v1/candidates?background=true";
+    const r = await api<{ task_id: string }>(path, { method: "POST", body });
+    return { file: file.name, taskId: r.task_id };
+  } catch (e) {
+    return { file: file.name, error: e instanceof ApiError ? e.message : "failed" };
+  }
+}
+
+/** Progress of queued reads, with the person's name once a read is done. */
+export async function checkTasks(ids: string[]): Promise<TaskView[]> {
+  if (!ids.length) return [];
+  const rows = await api<TaskView[]>(`/v1/tasks?ids=${ids.join(",")}`);
+  for (const row of rows) {
+    const sid = row.result?.subject_id;
+    if (row.status === "done" && sid && row.result?.subject_type === "candidate") {
+      try {
+        row.name = (await api<{ name: string | null }>(`/v1/candidates/${sid}`)).name;
+      } catch {}
+    }
+  }
+  return rows;
+}
+
+/** Queue fresh public research for a company (even if its facts are still fresh); the workers do the rest. */
+export async function researchCompany(companyId: string): Promise<void> {
+  await idempotent(() => api(`/v1/companies/${companyId}/research`, { method: "POST" }));
+  revalidatePath(`/companies/${companyId}`);
+}
+
+/** Un-archive a person the coverage rule archived; the rule then leaves them be. */
+export async function bringBack(candidateId: string, path: string): Promise<void> {
+  await idempotent(() => apiJson(`/v1/candidates/${candidateId}/bring-back`, {}));
+  revalidatePath(path);
+  revalidatePath("/people");
+}
+
+/** Open a job to countries beyond the desk's coverage (names or codes, comma separated). */
+export async function setJobCountries(jobId: string, _: FormState, form: FormData): Promise<FormState> {
+  const countries = String(form.get("countries") ?? "").split(",").map((c) => c.trim()).filter(Boolean);
+  try {
+    await api(`/v1/jobs/${jobId}/countries`, { method: "PUT", body: JSON.stringify({ countries }), headers: { "Content-Type": "application/json" } });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return { message: countries.length ? "Saved. People on this job were checked again." : "Cleared. People on this job were checked again." };
+}
+
+/** Correct how one career step was read (kind of work, level). Saved as approved; it replaces the machine's reading. */
+export async function correctStep(candidateId: string, path: string, careerClaimId: string, replaces: string | null,
+                                  keep: { domains: string[]; signals: string[] }, _: FormState, form: FormData): Promise<FormState> {
+  const role_family = String(form.get("role_family") || "");
+  const level = String(form.get("level") || "") || null;
+  if (!role_family) return { error: "Choose a kind of work." };
+  try {
+    await apiJson("/v1/claims", {
+      subject_type: "candidate", subject_id: candidateId, claim_type: "StepClassificationClaim", replaces,
+      payload: { career_claim_id: careerClaimId, role_family, level, domains: keep.domains, signals: keep.signals },
+    });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  return { message: "Saved. The profile was rebuilt." };
+}
+
+/** Paste the notes from the hiring manager call: requirements are read from them, each with its quote. */
+export async function addIntake(jobId: string, _: FormState, form: FormData): Promise<FormState> {
+  const text = String(form.get("text") ?? "").trim();
+  try {
+    const r = await apiJson<{ written: number; replaced: number; seen: number; rejected: { item: string; reason: string }[] }>(
+      `/v1/jobs/${jobId}/intake`, { text });
+    revalidatePath(`/jobs/${jobId}`);
+    const left = r.rejected.length ? ` Left out ${r.rejected.length}: ${r.rejected.map((x) => `${x.item} (${x.reason})`).join("; ")}.` : "";
+    return { message: `Read ${r.written} requirement${r.written === 1 ? "" : "s"} (${r.replaced} replacing what the ad said, ${r.seen} already there).${left}` };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** A requirement the recruiter types: saved as approved. */
+export async function addRequirement(jobId: string, _: FormState, form: FormData): Promise<FormState> {
+  const category = String(form.get("category") || "");
+  const text_raw = String(form.get("text_raw") || "").trim();
+  const list = (name: string) => form.getAll(name).map(String).filter(Boolean);
+  if (!text_raw) return { error: "Describe the requirement in a few words." };
+  const body: Record<string, unknown> = { category, strength: String(form.get("strength") || "must"), text_raw };
+  if (category === "role") Object.assign(body, { role_family: form.get("role_family") || null, level: form.get("level") || null,
+    min_years: form.get("min_years") ? Number(form.get("min_years")) : null });
+  if (category === "employer") body.employer_kinds = list("employer_kinds");
+  if (category === "domain") body.domains = list("domains");
+  if (category === "target_company") body.companies = text_raw.split(",").map((s) => s.trim()).filter(Boolean);
+  if (category === "employment") body.employment = form.get("employment") || "permanent";
+  if (category === "skill") body.normalized_token = text_raw.toLowerCase();
+  try {
+    await apiJson(`/v1/jobs/${jobId}/requirements`, body);
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return { message: "Added as an approved requirement." };
+}
+
+/** Change how much a requirement matters. */
+export async function setStrength(claimId: string, path: string, form: FormData): Promise<void> {
+  await idempotent(() => apiJson(`/v1/requirements/${claimId}/strength`, { strength: String(form.get("strength")) }));
+  revalidatePath(path);
+}

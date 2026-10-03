@@ -1,0 +1,63 @@
+# HTTP API (`/v1`)
+
+**Status:** built
+**Slice / milestone:** Slice 0 / Milestone E (part 1)
+**Code:** `core/maindscout/api/app.py`, `core/maindscout/settings.py`, `core/maindscout/__main__.py`
+
+## What
+The web interface the cockpit (and later the website) calls. FastAPI, served by `python -m maindscout serve` on `127.0.0.1:8765`.
+
+## Why
+The cockpit must never touch the database. Every action goes through one guarded surface that calls `api/` functions, so the trust rules hold however the UI changes.
+
+## How
+- **Access:** every route except `/v1/health` needs `Authorization: Bearer <OPERATOR_TOKEN>` and `X-Org-Id`. Single-operator token in Slice 0; compared in constant time. Unknown org gives 403. Data from another org is 404.
+- **One request, one transaction:** a route commits only when everything succeeded; any error discards the whole request.
+- **Errors:** not found 404, unsupported file 415, rule broken (bad band, invented payload field, unknown flag, already approved) 422, monthly budget reached 402, model provider down 502. Uploads over 20 MB are refused (413).
+- **Config** (`settings.env`): environment first, then `core/.env` (git-ignored): `OPERATOR_TOKEN`, `XAI_API_KEY`, `SUPPRESSION_KEY`, `DATABASE_URL`, `BLOB_DIR`, `COCKPIT_ORIGINS` (CORS, default `http://localhost:3001`).
+- **Setup:** `python -m maindscout init` migrates, seeds registries, creates the org if none, and prints the org id.
+
+## Routes
+| Route | Does |
+|---|---|
+| `POST /v1/documents` | Upload a file (`doc_type_hint` cv/jd/other); reused by hash |
+| `GET /v1/documents/{id}` · `/file` · `/text` | Metadata · original bytes · extracted text and links |
+| `POST /v1/documents/{id}/process` | Extract and commit (`job_id`, `force` optional) |
+| `GET /v1/runs/{id}` | Run manifest: model, prompt version, span failures, cost |
+| `GET /v1/jobs` · `POST /v1/jobs` | List jobs with band counts · create a job from its ad |
+| `GET /v1/jobs/{id}` | Requirements, stale warning, people grouped by band |
+| `POST /v1/jobs/{id}/documents` | Drop a CV onto the job (store, extract, band) |
+| `GET /v1/jobs/{id}/people?band=` | People on the job |
+| `POST /v1/jobs/{id}/people/{cid}/triage` | Human band override (sticks through reprocessing) |
+| `POST /v1/jobs/{id}/people/{cid}/state` | Move the pair: seen, submitted (note), we_passed (reason); there is no delete |
+| `GET /v1/candidates?unassigned=` · `POST /v1/candidates` | Everyone (or the pool) · read a CV into the pool, no job |
+| `POST /v1/jobs/{id}/people/{cid}` | Put an existing person on a job and band them (no re-read) |
+| `GET /v1/jobs/{id}/people/{cid}/gaps` | The gap table: every requirement as evidence / missing / conflict / question, plus the pair's history; never a number |
+| `GET /v1/candidates/{id}` · `/claims?status=` | Person page: facts with snippets, jobs, documents |
+| `GET /v1/inbox?job_id=&band=` | Review items; default band `priority`, `all` for everyone |
+| `POST /v1/claims/{id}/approve` · `/reject` | Human act on one claim |
+| `POST /v1/claims` | Human-typed fact, born approved (`replaces` supersedes the claim it corrects) |
+| `POST /v1/decisions/{id}/resolve` | Answer a card (see [review.md](review.md)) |
+| `POST /v1/jobs/{id}/campaigns` · `GET /v1/jobs/{id}/campaigns` · `POST /v1/campaigns/{id}/stop` | Refill a thin priority queue from the desk; list; stop ([sourcing.md](sourcing.md)) |
+| `GET /v1/companies?q=` · `GET /v1/companies/{id}` · `POST /v1/companies/{id}/merge` | Companies the desk knows, a company with the people we know there and its public facts, merge ([companies.md](companies.md)) |
+| `GET /v1/candidates/{id}` (profile) | The person page also carries `profile` and `classifications` ([career-profiles.md](career-profiles.md)) |
+| `POST /v1/jobs/{id}/intake` · `POST /v1/jobs/{id}/requirements` · `POST /v1/requirements/{id}/strength` | Intake notes, a requirement typed by the recruiter, change how much a requirement matters ([hiring-profiles.md](hiring-profiles.md)) |
+| `PUT /v1/jobs/{id}/countries` · `POST /v1/candidates/{id}/bring-back` | Open a job to more countries; un-archive a person ([coverage-gate.md](coverage-gate.md)) |
+| `POST /v1/companies/{id}/research` | Queue fresh public research now; `202` with a task id ([company-research.md](company-research.md)) |
+| `?background=true` on `POST /v1/jobs/{id}/documents` and `POST /v1/candidates` · `GET /v1/tasks?ids=` | Store now, read in the background (202 + task id); task progress |
+| `GET /v1/costs` | This month's spend by purpose and day against the budget |
+| `POST /v1/subjects/candidate/{id}/erase` · `GET …/erase/verify` | Forget a person; re-check (see [erasure.md](erasure.md)) |
+
+## Depends on
+[review.md](review.md), [process.md](process.md), [ingestion.md](ingestion.md), [persistence.md](persistence.md).
+
+## Used by
+The cockpit (next). Later the website ([connections/website.md](../connections/website.md)).
+
+## Tests
+`core/tests/test_api.py` (16 tests through the real app with a fake model). Smoke-tested on 2026-10-02 against a running server with Grok: job from the Catalyst ad, Ioannis dropped on it, band `priority`, reason `supported:insar`.
+
+## Known limits
+- Processing runs inside the request (about 10-20 s per CV with the model); no queue yet.
+- No multi-user accounts; `X-Actor` header names the person acting, default `operator`.
+- OpenAPI is generated by FastAPI at `/docs`; `slice0/api/openapi.yaml` is the original contract and is not regenerated.

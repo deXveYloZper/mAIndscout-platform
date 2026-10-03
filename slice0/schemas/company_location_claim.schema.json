@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maindscout.local/schemas/company_location_claim.schema.json",
+  "title": "CompanyLocationClaim payload",
+  "description": "Headquarters (and offices when stated).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "hq_raw"
+  ],
+  "properties": {
+    "hq_raw": {
+      "type": "string",
+      "minLength": 1
+    },
+    "hq_country": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[A-Z]{2}$"
+    },
+    "offices": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

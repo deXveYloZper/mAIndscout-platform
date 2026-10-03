@@ -7,3 +7,12 @@ node_modules/
 .next/
 *.log
 .DS_Store
+
+# Python / core
+*.egg-info/
+
+.blobs/
+
+# Golden eval reports (full report names real people)
+core/eval-reports/
+core/.blobs-e2e/
