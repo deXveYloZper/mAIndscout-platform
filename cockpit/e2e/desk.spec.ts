@@ -50,6 +50,8 @@ test("CVs dropped on a job are read one by one and each is banded", async ({ pag
   await expect(page.getByRole("status")).toContainText(/Reading \d+ of 4 done/, { timeout: 30_000 });
   const results = page.locator(".results li");
   await expect(results).toHaveCount(4, { timeout: 200_000 });
+  // Rows appear as soon as files are queued; wait until every read has finished before checking bands.
+  await expect(results.filter({ hasText: /reading…|waiting/ })).toHaveCount(0, { timeout: 200_000 });
   await expect(results.filter({ hasText: "Ioannis" })).toContainText("Priority");
   await expect(results.filter({ hasText: "Jure" })).toContainText("Do not submit");
   await expect(results.filter({ hasText: "Priority" })).toHaveCount(1);

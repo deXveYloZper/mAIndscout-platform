@@ -183,7 +183,14 @@ class Company(Base):
     registry_ids: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     hq_country: Mapped[str | None] = mapped_column(String(2))
     merged_into_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("company.id"))  # redirect, never rewrite
+    research_status: Mapped[str | None] = mapped_column(String)  # identified | not_identified | failed
+    researched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created()
+
+
+# Public company facts are claims under this reserved org, so they keep every trust rule (evidence, review,
+# registry checks) while being readable by every desk. Created by migration 0010.
+PUBLIC_ORG_ID = uuid.UUID("00000000-0000-0000-0000-00000000c0de")
 
 
 class CompanyAlias(Base):

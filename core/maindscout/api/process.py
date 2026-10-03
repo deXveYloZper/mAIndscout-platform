@@ -434,6 +434,36 @@ def _retire_earlier_reading(session: Session, doc: Document, run: IntelligenceRu
     return retired
 
 
+def _queue_research(session: Session, candidate_id, org_id) -> int:
+    """Queue company research for the stints that matter: the last 10 years, at least 6 months or still current.
+    Shared public work (no org); deduplicated per company; skipped while a company's facts are fresh."""
+    from maindscout.api import research, tasks
+    from maindscout.db.models import Company
+    from maindscout.settings import env
+
+    if (env("RESEARCH_AUTO", "true") or "").lower() in ("0", "false", "no", "off"):
+        return 0
+    horizon = date.today().replace(year=date.today().year - 10)
+    queued = 0
+    for c in _live_claims(session, org_id, "candidate", candidate_id, "CareerStepClaim"):
+        company_id = (c.payload.get("company") or {}).get("company_id")
+        if not company_id:
+            continue
+        end = c.valid_to or date.today()
+        long_enough = c.valid_to is None or (c.valid_from and (end - c.valid_from).days >= 180)
+        if end < horizon or not long_enough:
+            continue
+        company = session.get(Company, uuid.UUID(company_id))
+        if company is None or not research.due(company):
+            continue
+        tasks.enqueue(session, None, "research_company",
+                      {"company_id": company_id,
+                       "context": research.context_for_step(c.payload["company"]["raw_name"], c.payload.get("location_raw"))},
+                      priority=150, dedupe_key=f"research:{company_id}")
+        queued += 1
+    return queued
+
+
 def _span_failures(results) -> list[dict[str, str]]:
     return [{"client_key": r.client_key, "detail": r.detail or ""} for r in results if r.result == "fail"]
 
@@ -503,6 +533,7 @@ def _process_cv(session: Session, blobs: BlobStore, doc: Document, artifact: Ext
 
     if forced:
         _retire_earlier_reading(session, doc, run, set(claim_ids))
+    _queue_research(session, cid, doc.org_id)
     _flag_careers(session, doc.org_id, cid, run, new_careers, decisions)
     _contradictions(session, doc.org_id, cid, decisions)
 
@@ -532,6 +563,14 @@ def _process_jd(session: Session, doc: Document, artifact: ExtractionArtifact, r
         job.hiring_company = outcome.hiring_company
         company, _ = companies.resolve(session, outcome.hiring_company, "jd")
         job.hiring_company_id = company.id if company else None
+        if company is not None:
+            from maindscout.api import research, tasks
+            from maindscout.settings import env
+
+            if research.due(company) and (env("RESEARCH_AUTO", "true") or "").lower() not in ("0", "false", "no", "off"):
+                tasks.enqueue(session, None, "research_company",
+                              {"company_id": str(company.id), "context": f"hiring for '{job.title}' (from a job advertisement)"},
+                              priority=80, dedupe_key=f"research:{company.id}")
     job.source_document_id = doc.id
     session.flush()
 

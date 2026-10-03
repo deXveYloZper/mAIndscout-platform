@@ -170,3 +170,12 @@ table.gaps tr.conflict td:first-child { border-left: 2px solid var(--red); }
 .top { flex-wrap: wrap; gap: 8px; }
 .top nav { flex-wrap: wrap; gap: 14px; }
 @media (max-width: 720px) { .top { padding: 10px 16px; } }
+
+/* company facts */
+.facts { list-style: none; padding: 0; margin: 0; }
+.facts > li { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.facts .label { color: var(--cream-dim); display: inline-block; min-width: 110px; }
+.facts .src { display: block; font-size: 12px; color: var(--cream-dim); margin-top: 2px; overflow-wrap: anywhere; }
+.facts .src q { font-style: italic; }
+.facts .warn { color: var(--amber); font-size: 12px; margin-left: 8px; }
+.research-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 8px 0; }

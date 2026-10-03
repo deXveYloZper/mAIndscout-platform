@@ -124,7 +124,12 @@ def company_page(session: Session, org_id: uuid.UUID, company_id: uuid.UUID) -> 
         row = grouped.setdefault(st["candidate_id"], {"candidate_id": st["candidate_id"], "name": st["name"], "roles": [], "current": False})
         row["roles"].append({k: st[k] for k in ("title", "valid_from", "valid_to", "current")})
         row["current"] = row["current"] or st["current"]
+    from maindscout.api import research
+
     return {"id": str(company.id), "name": company.name, "website": company.website, "hq_country": company.hq_country,
+            "research_status": company.research_status,
+            "researched_at": company.researched_at.isoformat() if company.researched_at else None,
+            "facts": research.facts(session, company),
             "aliases": sorted(aliases), "people": list(grouped.values()), "people_count": len(grouped),
             "jobs": [{"id": str(j.id), "title": j.title} for j in jobs]}
 

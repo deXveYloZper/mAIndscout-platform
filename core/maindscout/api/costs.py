@@ -22,11 +22,16 @@ class BudgetExceeded(RuntimeError):
         super().__init__(f"Monthly budget reached: ${spent:.2f} of ${budget:.2f}. Raise MONTHLY_BUDGET_USD to continue.")
 
 
-def monthly_budget() -> float:
+DEFAULT_RESEARCH_BUDGET_USD = 10.0
+
+
+def monthly_budget(shared: bool = False) -> float:
+    """The desk's budget, or (shared=True) the budget for shared company research."""
+    name, default = ("RESEARCH_MONTHLY_BUDGET_USD", DEFAULT_RESEARCH_BUDGET_USD) if shared else ("MONTHLY_BUDGET_USD", DEFAULT_MONTHLY_BUDGET_USD)
     try:
-        return float(env("MONTHLY_BUDGET_USD", str(DEFAULT_MONTHLY_BUDGET_USD)))
+        return float(env(name, str(default)))
     except ValueError:
-        return DEFAULT_MONTHLY_BUDGET_USD
+        return default
 
 
 def _month_start() -> datetime:
@@ -42,7 +47,7 @@ def month_spent(session: Session, org_id: uuid.UUID | None) -> float:
 
 def ensure_budget(session: Session, org_id: uuid.UUID | None) -> None:
     """Call before any paid work. Raises BudgetExceeded when this month's spend has reached the budget."""
-    spent, budget = month_spent(session, org_id), monthly_budget()
+    spent, budget = month_spent(session, org_id), monthly_budget(shared=org_id is None)
     if spent >= budget:
         raise BudgetExceeded(spent, budget)
 
@@ -70,7 +75,7 @@ def summary(session: Session, org_id: uuid.UUID) -> dict[str, Any]:
     spent = month_spent(session, org_id)
     return {
         "month": start.strftime("%Y-%m"), "spent_usd": round(spent, 4), "budget_usd": monthly_budget(),
-        "shared_research_usd": round(month_spent(session, None), 4),
+        "shared_research_usd": round(month_spent(session, None), 4), "research_budget_usd": monthly_budget(shared=True),
         "by_purpose": [{"purpose": p, "calls": n, "usd": round(float(u or 0), 4), "input_tokens": int(i or 0),
                         "output_tokens": int(o or 0), "sources": int(src or 0)} for p, n, u, i, o, src in rows],
         "by_day": [{"day": d.date().isoformat(), "usd": round(float(u or 0), 4)} for d, u in days],

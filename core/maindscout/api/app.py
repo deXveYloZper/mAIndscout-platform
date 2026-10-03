@@ -80,8 +80,10 @@ def get_org(authorization: str | None = Header(default=None), x_org_id: str | No
         org_id = uuid.UUID(x_org_id or "")
     except ValueError:
         raise HTTPException(400, "X-Org-Id header must be an org id") from None
-    if session.get(Org, org_id) is None:
-        raise HTTPException(403, "Unknown org")
+    from maindscout.db.models import PUBLIC_ORG_ID
+
+    if org_id == PUBLIC_ORG_ID or session.get(Org, org_id) is None:
+        raise HTTPException(403, "Unknown org")  # the public-knowledge org is not a desk
     return org_id
 
 
@@ -502,3 +504,17 @@ def get_tasks(ids: str = Query(..., description="comma-separated task ids"), org
 def get_costs(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
     """This month's spend on model calls and searches, by purpose and day, against the budget."""
     return costs.summary(session, org_id)
+
+
+@app.post("/v1/companies/{company_id}/research", status_code=202)
+def research_company(company_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """Queue (re)research of a company's public facts now, even if they are still fresh."""
+    from maindscout.db.models import Company
+
+    company = companies.canonical(session, session.get(Company, company_id))
+    if company is None:
+        raise LookupError(f"No company {company_id}")
+    task = tasks.enqueue(session, None, "research_company", {"company_id": str(company.id), "context": "", "force": True},
+                         priority=60, dedupe_key=f"research:{company.id}")
+    session.commit()
+    return {"task_id": str(task.id), "status": task.status}

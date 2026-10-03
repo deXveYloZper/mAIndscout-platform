@@ -5,6 +5,8 @@
     python -m maindscout eval [--folder DIR] [--with-tests]   golden eval over real files (Milestone G)
     python -m maindscout reset-db NAME --org-id UUID   recreate a throwaway database (*_e2e/_test/_eval only)
     python -m maindscout link-companies      resolve companies for existing career steps and jobs
+    python -m maindscout research-backlog    queue company research for people and jobs already on the desk
+    python -m maindscout research-recheck    apply the current checks to stored company facts (free)
     python -m maindscout worker [--threads 2] run background tasks (serve also starts workers unless --no-workers)
 """
 
@@ -40,7 +42,9 @@ def init(org_name: str) -> None:
     command.upgrade(Config(str(Path(__file__).resolve().parents[1] / "alembic.ini")), "head")
     with make_session_factory(make_engine())() as session:
         writer.seed_registries(session)
-        org = session.scalar(select(Org).order_by(Org.created_at))
+        from maindscout.db.models import PUBLIC_ORG_ID
+
+        org = session.scalar(select(Org).where(Org.id != PUBLIC_ORG_ID).order_by(Org.created_at))
         if org is None:
             org = writer.create_org(session, org_name)
         session.commit()
@@ -88,6 +92,8 @@ def main() -> None:
     p_eval.add_argument("--folder", type=Path, default=None)
     p_eval.add_argument("--with-tests", action="store_true")
     sub.add_parser("link-companies")
+    sub.add_parser("research-backlog")
+    sub.add_parser("research-recheck")
     p_reset = sub.add_parser("reset-db")
     p_reset.add_argument("name")
     p_reset.add_argument("--org-id", required=True)
@@ -108,6 +114,32 @@ def main() -> None:
             for org in session.scalars(select(Org)):
                 print(org.name, companies.link_org(session, org.id))
             session.commit()
+    elif args.cmd == "research-backlog":
+        from maindscout.api import process, research, tasks
+        from maindscout.db.models import PUBLIC_ORG_ID, Candidate, Company, Job
+
+        with make_session_factory(make_engine())() as session:
+            queued = 0
+            for org in session.scalars(select(Org).where(Org.id != PUBLIC_ORG_ID)):
+                for cid in session.scalars(select(Candidate.id).where(Candidate.org_id == org.id)):
+                    queued += process._queue_research(session, cid, org.id)
+                for job in session.scalars(select(Job).where(Job.org_id == org.id, Job.hiring_company_id.is_not(None))):
+                    company = session.get(Company, job.hiring_company_id)
+                    if company is not None and research.due(company):
+                        tasks.enqueue(session, None, "research_company", {"company_id": str(company.id), "context": "named in a job advertisement"},
+                                      priority=80, dedupe_key=f"research:{company.id}")
+                        queued += 1
+            session.commit()
+            print(f"queued {queued} (repeats of the same company collapse into one task)")
+    elif args.cmd == "research-recheck":
+        from maindscout.api import research
+
+        with make_session_factory(make_engine())() as session:
+            dropped = research.recheck(session)
+            session.commit()
+            for d in dropped:
+                print(d["claim_type"], "-", d["reason"])
+            print(f"rejected {len(dropped)} stored fact(s)")
     elif args.cmd == "reset-db":
         reset_db(args.name, args.org_id)
     elif args.cmd == "eval":

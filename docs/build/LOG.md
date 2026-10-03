@@ -2,6 +2,7 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-03 — I2: targeted company research (Grok web search, fixed fact list, mechanical checks: page opened, numbers in quote, status / kind / stage supported by the quote; free `research-recheck`; never people, never tech stack), public company facts with sources and freshness, own research budget, company page facts and "Research now", `research-backlog` — [company-research](components/company-research.md)
 - 2026-10-03 — **I1 gate GREEN**, declared by the owner; I2 starts — [decision](../decisions/2026-10-03-i1-gate.md)
 - 2026-10-03 — I1 part 2: background task queue (SKIP LOCKED, retries, dedupe) with workers in `serve`; uploads read in the background with live progress; cost ledger, monthly budget and Costs page; erasure unlinks cost rows — [tasks-and-costs](components/tasks-and-costs.md)
 - 2026-10-03 — I1 part 1: companies as shared records (public tier), exact-match resolver, "Same company?" cards, links from career steps and jobs, company pages with who we know there — [companies](components/companies.md)

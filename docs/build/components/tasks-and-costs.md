@@ -29,4 +29,4 @@ The intelligence track adds many model and search calls per CV (plan section 4.8
 
 ## Known limits
 - Workers in the API process are fine for one desk; separate worker processes come with deployment.
-- The ledger records what the provider reports; search-source pricing is checked when company research lands (I2).
+- The ledger records what the provider reports (`cost_in_usd_ticks`, which includes web sources). Shared research has its own budget, `RESEARCH_MONTHLY_BUDGET_USD` (default 10) ([company-research.md](company-research.md)).

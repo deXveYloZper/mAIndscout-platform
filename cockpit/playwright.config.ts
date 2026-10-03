@@ -29,7 +29,8 @@ export default defineConfig({
       url: `http://127.0.0.1:${API_PORT}/v1/health`,
       reuseExistingServer: false,
       timeout: 120_000,
-      env: { OPERATOR_TOKEN: TOKEN, SUPPRESSION_KEY: "e2e-suppression-key", BLOB_DIR: ".blobs-e2e" },
+      // RESEARCH_AUTO off: e2e must not pay for real company research on every run.
+      env: { OPERATOR_TOKEN: TOKEN, SUPPRESSION_KEY: "e2e-suppression-key", BLOB_DIR: ".blobs-e2e", RESEARCH_AUTO: "false" },
     },
     {
       command: `npx next build && npx next start -p ${UI_PORT}`,

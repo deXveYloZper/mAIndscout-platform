@@ -77,3 +77,60 @@ types:
     default_review: individual
     payload_schema: null
     notes: "Slice 0 human-only. Pair collapse per 05 RA-03."
+
+  # --- Company facts (intelligence track I2). Public tier: stored under the reserved public-knowledge org. ---
+  CompanyDomainClaim:
+    class: observed
+    subject_types: [company]
+    natural_key: "company_id + domain"
+    volatility: stable
+    default_review: policy_eligible
+    payload_schema: schemas/company_domain_claim.schema.json
+
+  CompanyTypeClaim:
+    class: observed
+    subject_types: [company]
+    natural_key: "company_id + type"
+    volatility: stable
+    default_review: policy_eligible
+    payload_schema: schemas/company_type_claim.schema.json
+
+  CompanyFoundedClaim:
+    class: observed
+    subject_types: [company]
+    natural_key: "company_id + founded"
+    volatility: stable
+    default_review: policy_eligible
+    payload_schema: schemas/company_founded_claim.schema.json
+
+  FundingRoundClaim:
+    class: observed
+    subject_types: [company]
+    natural_key: "company_id + stage + date"
+    volatility: stable
+    default_review: individual
+    payload_schema: schemas/funding_round_claim.schema.json
+
+  TeamSizeClaim:
+    class: observed
+    subject_types: [company]
+    natural_key: "company_id + as_of"
+    volatility: volatile
+    default_review: policy_eligible
+    payload_schema: schemas/team_size_claim.schema.json
+
+  CompanyStatusClaim:
+    class: observed
+    subject_types: [company]
+    natural_key: "company_id + status"
+    volatility: volatile
+    default_review: individual
+    payload_schema: schemas/company_status_claim.schema.json
+
+  CompanyLocationClaim:
+    class: observed
+    subject_types: [company]
+    natural_key: "company_id + hq"
+    volatility: volatile
+    default_review: policy_eligible
+    payload_schema: schemas/company_location_claim.schema.json

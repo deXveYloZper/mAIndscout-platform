@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maindscout.local/schemas/funding_round_claim.schema.json",
+  "title": "FundingRoundClaim payload",
+  "description": "One funding round. Natural key = company + stage + date.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "stage"
+  ],
+  "properties": {
+    "stage": {
+      "type": "string",
+      "enum": [
+        "pre_seed",
+        "seed",
+        "series_a",
+        "series_b",
+        "series_c",
+        "series_d",
+        "series_e_plus",
+        "growth",
+        "debt",
+        "grant",
+        "ipo",
+        "acquisition",
+        "other"
+      ]
+    },
+    "date": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9]{4}(-[0-9]{2}(-[0-9]{2})?)?$",
+      "description": "YYYY, YYYY-MM or YYYY-MM-DD as found"
+    },
+    "amount_raw": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "amount_usd": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "investors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -219,3 +219,9 @@ export async function checkTasks(ids: string[]): Promise<TaskView[]> {
   }
   return rows;
 }
+
+/** Queue fresh public research for a company (even if its facts are still fresh); the workers do the rest. */
+export async function researchCompany(companyId: string): Promise<void> {
+  await idempotent(() => api(`/v1/companies/${companyId}/research`, { method: "POST" }));
+  revalidatePath(`/companies/${companyId}`);
+}
