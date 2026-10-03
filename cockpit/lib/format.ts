@@ -95,3 +95,22 @@ export const PASS_REASONS: [string, string][] = [
   ["duplicate", "Duplicate"],
   ["other", "Other"],
 ];
+
+// Career profiles (I3): the same lists as core/maindscout/domain/profile.py.
+export const FAMILY_LABEL: Record<string, string> = {
+  software_engineering: "software engineering", data_ml: "data / ML", devops_infrastructure: "DevOps / infrastructure",
+  security: "security", qa_testing: "QA / testing", embedded_hardware: "embedded / hardware", gis_remote_sensing: "GIS / remote sensing",
+  research_science: "research / science", engineering_management: "engineering management", product_management: "product management",
+  design: "design", it_support: "IT support", sales: "sales", marketing: "marketing", customer_success: "customer success",
+  operations: "operations", finance: "finance", hr_recruiting: "HR / recruiting", business_consulting: "business consulting",
+  hospitality: "hospitality", retail: "retail", education: "education", healthcare: "healthcare", other: "other",
+};
+export const LEVELS = ["intern", "junior", "mid", "senior", "lead", "principal", "manager", "head", "director", "executive", "founder"];
+export const DIMENSION_LABEL: [string, string][] = [
+  ["relevant_years", "Relevant experience"], ["seniority", "Seniority"], ["progression", "Progression"], ["stability", "Stability"],
+  ["employer_mix", "Employers"], ["domain_exposure", "Domains"], ["contractor", "Contracting"], ["early_joiner", "Early joiner"],
+  ["education", "Education"],
+];
+export const READING_WORDS: Record<string, string> = {
+  strong: "Strong career", solid: "Solid career", developing: "Developing career", unclear: "Unclear: too little is known",
+};

@@ -242,6 +242,23 @@ test("facts are approved and rejected one by one on the person page", async ({ p
   expect(res.headers()["content-type"]).toContain("application/pdf");
 });
 
+test("a person's career profile is built in the background: dimensions, questions, and each job correctable", async ({ page }) => {
+  await page.goto("/people");
+  const personUrl = (await page.locator("tbody tr").filter({ hasText: "Ioannis" }).getByRole("link", { name: /Ioannis/ }).getAttribute("href"))!;
+  // Classification is a real model call made by the workers; reload until the profile is there.
+  await expect(async () => {
+    await page.goto(personUrl);
+    await expect(page.locator(".profile .reading")).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 120_000, intervals: [3_000] });
+  await expect(page.getByRole("heading", { name: "Career profile" })).toBeVisible();
+  await expect(page.locator("table.dims")).toContainText("Relevant experience");
+  await expect(page.locator("table.dims")).toContainText("Stability");
+  await expect(page.locator(".profile")).toContainText("There is no overall score, by design");
+  await expect(page.locator(".profile")).not.toContainText(/\d+\s*%/);
+  await page.locator("summary", { hasText: "How each job was read" }).click();
+  await expect(page.getByLabel("Kind of work").first()).toBeVisible();
+});
+
 test("a typed contact is saved as an approved fact", async ({ page }) => {
   await openJob(page, /InSAR Processing Specialist/);
   await page.locator("summary", { hasText: /Do not submit \(\d+\)/ }).click();

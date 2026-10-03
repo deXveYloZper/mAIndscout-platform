@@ -60,6 +60,11 @@ def record(session: Session, org_id: uuid.UUID | None, purpose: str, cost: dict[
                       subject_type=subject_type, subject_id=subject_id, task_id=task_id)
     session.add(entry)
     session.flush()
+    # Remembered on the session: if the task fails afterwards and its work is rolled back, the money was still
+    # spent, so the task runner writes these rows again (see tasks.run_one).
+    session.info.setdefault("paid", []).append(dict(
+        org_id=org_id, purpose=purpose, model=entry.model, input_tokens=entry.input_tokens, output_tokens=entry.output_tokens,
+        sources=entry.sources, usd=entry.usd, subject_type=subject_type, subject_id=subject_id, task_id=task_id))
     return entry
 
 

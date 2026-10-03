@@ -188,6 +188,9 @@ def _settle(session: Session, company: Company, outcome: engine.ResearchOutcome)
         from maindscout.api import coverage
 
         coverage.reevaluate_company(session, company.id)
+    from maindscout.api import profiles
+
+    profiles.queue_for_company(session, company.id)  # employer kind, stage, founding date feed the profiles
 
 
 def run(session: Session, company_id: uuid.UUID, context: str, client: engine.SearchClient, force: bool = False,

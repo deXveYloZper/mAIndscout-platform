@@ -184,3 +184,13 @@ table.gaps tr.conflict td:first-child { border-left: 2px solid var(--red); }
 .bandtag.archived { color: var(--cream-dim); margin-left: 6px; }
 .archived-note { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 #countries { min-width: 220px; }
+
+/* career profile */
+.profile .reading { margin: 6px 0; }
+.profile .reading.strong strong { color: var(--amber); }
+.dims th { text-align: left; font-weight: 500; color: var(--cream-dim); white-space: nowrap; padding-right: 12px; }
+.dims td { padding: 4px 8px 4px 0; vertical-align: top; }
+.steps { list-style: none; padding: 0; }
+.steps > li { padding: 6px 0; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
+.stepfix select { max-width: 200px; }
+.questions li { margin: 2px 0; }

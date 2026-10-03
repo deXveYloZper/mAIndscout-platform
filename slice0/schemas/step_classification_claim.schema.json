@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maindscout.local/schemas/step_classification_claim.schema.json",
+  "title": "StepClassificationClaim payload",
+  "description": "What one career step was: the kind of work, the level, the industry it served, and signals stated on the CV. Inferred from the candidate's own CV; a recruiter can correct it. Natural key = career claim id.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "career_claim_id",
+    "role_family",
+    "level"
+  ],
+  "properties": {
+    "career_claim_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "role_family": {
+      "type": "string",
+      "enum": [
+        "software_engineering",
+        "data_ml",
+        "devops_infrastructure",
+        "security",
+        "qa_testing",
+        "embedded_hardware",
+        "gis_remote_sensing",
+        "research_science",
+        "engineering_management",
+        "product_management",
+        "design",
+        "it_support",
+        "sales",
+        "marketing",
+        "customer_success",
+        "operations",
+        "finance",
+        "hr_recruiting",
+        "business_consulting",
+        "hospitality",
+        "retail",
+        "education",
+        "healthcare",
+        "other"
+      ]
+    },
+    "level": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "intern",
+        "junior",
+        "mid",
+        "senior",
+        "lead",
+        "principal",
+        "manager",
+        "head",
+        "director",
+        "executive",
+        "founder",
+        null
+      ]
+    },
+    "domains": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 2
+      },
+      "maxItems": 3
+    },
+    "signals": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "founder",
+          "first_hire",
+          "people_manager",
+          "team_lead",
+          "promotion"
+        ]
+      }
+    }
+  }
+}

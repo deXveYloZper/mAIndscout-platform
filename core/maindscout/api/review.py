@@ -65,6 +65,10 @@ def retriage_after(session: Session, claim: Claim, act: str, actor: str) -> None
         retriage_candidate(session, claim.org_id, claim.subject_id, cause, actor)
         if claim.claim_type in ("LocationClaim", "CareerStepClaim"):
             coverage.evaluate(session, claim.org_id, claim.subject_id, cause, actor)
+        if claim.claim_type in ("CareerStepClaim", "StepClassificationClaim", "EducationClaim"):
+            from maindscout.api import profiles
+
+            profiles.build(session, claim.org_id, claim.subject_id)  # code only: a person's correction shows at once
     elif claim.subject_type == "job":
         retriage_job(session, claim.org_id, claim.subject_id, cause, actor)
         if (claim.payload.get("mobility") or {}).get("facet") == "residence":

@@ -104,6 +104,8 @@ def natural_key(subject_id, claim_type: str, p: dict, valid_from: str | None = N
         return f"{sid}|{_norm_name(p['place_raw'])}|{p['basis']}"
     if claim_type == "JobRequirementClaim":
         return f"{sid}|{p['category']}|{p.get('normalized_token') or _norm_name(p['text_raw'])}"
+    if claim_type == "StepClassificationClaim":
+        return f"{p['career_claim_id']}|class"
     raise ValueError(f"No natural key for {claim_type}")
 
 

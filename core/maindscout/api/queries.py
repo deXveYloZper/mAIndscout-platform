@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import String, func, select
 from sqlalchemy.orm import Session
 
-from maindscout.api import coverage
+from maindscout.api import coverage, profiles
 from maindscout.db.models import (
     Candidate,
     CandidateJob,
@@ -146,6 +146,8 @@ def person_page(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID) ->
         "merged_into_id": str(person.merged_into_id) if person.merged_into_id else None,
         "archived": {"at": _iso(person.archived_at), "reason": (person.archived_reason or {}).get("text")} if person.archived_at else None,
         "coverage_override": person.coverage_override,
+        "profile": profiles.as_view(profiles.latest(session, person.id)),
+        "classifications": profiles.labels_view(session, org_id, person.id),
         "claims": grouped,
         "jobs": [{"job_id": str(j.id), "title": j.title, "band": p.triage_band, "reason": p.triage_reason} for p, j in pairs],
         "documents": [{"id": str(d.id), "filename": d.filename, "needs_vision": d.needs_vision, "as_of": _iso(d.as_of)}

@@ -8,6 +8,7 @@
     python -m maindscout research-backlog    queue company research for people and jobs already on the desk
     python -m maindscout research-recheck    apply the current checks to stored company facts (free)
     python -m maindscout coverage-check      apply the coverage rule to everyone already on the desk (free)
+    python -m maindscout profiles-rebuild [--reclassify]  rebuild career profiles (reclassify: read step labels again, paid)
     python -m maindscout worker [--threads 2] run background tasks (serve also starts workers unless --no-workers)
 """
 
@@ -50,6 +51,13 @@ def init(org_name: str) -> None:
             org = writer.create_org(session, org_name)
         session.commit()
         print(f"org id: {org.id}  ({org.name})")
+
+
+def _seed() -> None:
+    """Claim and flag types from slice0/registry: new types (e.g. from a later phase) are known before any work runs."""
+    with make_session_factory(make_engine())() as session:
+        writer.seed_registries(session)
+        session.commit()
 
 
 def reset_db(name: str, org_id: str) -> None:
@@ -96,6 +104,8 @@ def main() -> None:
     sub.add_parser("research-backlog")
     sub.add_parser("research-recheck")
     sub.add_parser("coverage-check")
+    p_prof = sub.add_parser("profiles-rebuild")
+    p_prof.add_argument("--reclassify", action="store_true")
     p_reset = sub.add_parser("reset-db")
     p_reset.add_argument("name")
     p_reset.add_argument("--org-id", required=True)
@@ -106,6 +116,7 @@ def main() -> None:
         from maindscout.api import task_handlers  # noqa: F401 (registers task kinds)
         from maindscout.api.tasks import start_threads, work_forever
 
+        _seed()
         factory = make_session_factory(make_engine())
         start_threads(factory, max(args.threads - 1, 0))
         work_forever(factory, "worker-main")
@@ -160,6 +171,14 @@ def main() -> None:
                     archived, kept = archived + verdict.outside, kept + (not verdict.outside)
             session.commit()
             print(f"in coverage {kept}, archived {archived}")
+    elif args.cmd == "profiles-rebuild":
+        from maindscout.api import profiles
+
+        _seed()
+        with make_session_factory(make_engine())() as session:
+            print(profiles.rebuild_all(session, args.reclassify))
+            session.commit()
+        print("queued: the workers (serve, or `worker`) build them")
     elif args.cmd == "reset-db":
         reset_db(args.name, args.org_id)
     elif args.cmd == "eval":
@@ -175,6 +194,7 @@ def main() -> None:
             from maindscout.db.session import database_url
 
             os.environ["DATABASE_URL"] = database_url().rsplit("/", 1)[0] + "/" + args.database
+        _seed()
         if not args.no_workers:
             from maindscout.api import task_handlers  # noqa: F401 (registers task kinds)
             from maindscout.api.tasks import start_threads

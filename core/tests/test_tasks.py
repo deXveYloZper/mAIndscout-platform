@@ -121,3 +121,25 @@ def test_erasure_keeps_the_numbers_but_unlinks_the_person(client, fake, session,
     r = client.post(f"/v1/subjects/candidate/{cid}/erase", json={}).json()
     assert r["clean"] and r["counts"]["cost_entries_unlinked"] >= 1
     assert session.scalar(select(func.count()).select_from(CostEntry)) == before
+
+
+@tasks.handler("test_pays_then_fails")
+def _pays(session, task):
+    from maindscout.api import costs
+
+    costs.record(session, None, "test_paid", {"model": "m", "usd": 0.01}, task_id=task.id)
+    raise RuntimeError("after paying")
+
+
+def test_a_paid_call_stays_in_the_ledger_when_its_task_fails_afterwards(factory):
+    with factory() as s:
+        t = tasks.enqueue(s, None, "test_pays_then_fails", {}, max_attempts=1)
+        s.commit()
+        tid = t.id
+    tasks.run_one(factory)
+    with factory() as s:
+        rows = s.scalars(select(CostEntry).where(CostEntry.task_id == tid)).all()
+        assert [(r.purpose, float(r.usd)) for r in rows] == [("test_paid", 0.01)]
+        assert s.get(Task, tid).status == "failed"
+        s.execute(delete(CostEntry).where(CostEntry.task_id == tid))
+        s.commit()

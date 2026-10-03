@@ -25,7 +25,9 @@ The intelligence track adds many model and search calls per CV (plan section 4.8
 [http-api.md](http-api.md), [cockpit.md](cockpit.md), and every later intelligence task (I2-I6).
 
 ## Tests
-`core/tests/test_tasks.py` (8): runs once and keeps its result; retries with backoff then stops with the error; dedupe; two workers never take the same task; a background upload is read by a task; every read is in the ledger; the budget stops paid work; erasure unlinks cost rows. e2e: uploads progress in the background; Costs page.
+`core/tests/test_tasks.py` (9): runs once and keeps its result; retries with backoff then stops with the error; dedupe; two workers never take the same task; a background upload is read by a task; every read is in the ledger; the budget stops paid work; erasure unlinks cost rows; a paid call stays in the ledger when its task fails. e2e: uploads progress in the background; Costs page.
+
+Since I3: a paid call stays in the ledger even if its task fails afterwards (the runner writes the cost rows again after the rollback); `serve` and `worker` seed the claim and flag registries at start.
 
 ## Known limits
 - Workers in the API process are fine for one desk; separate worker processes come with deployment.

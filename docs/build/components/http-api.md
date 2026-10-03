@@ -40,6 +40,7 @@ The cockpit must never touch the database. Every action goes through one guarded
 | `POST /v1/decisions/{id}/resolve` | Answer a card (see [review.md](review.md)) |
 | `POST /v1/jobs/{id}/campaigns` · `GET /v1/jobs/{id}/campaigns` · `POST /v1/campaigns/{id}/stop` | Refill a thin priority queue from the desk; list; stop ([sourcing.md](sourcing.md)) |
 | `GET /v1/companies?q=` · `GET /v1/companies/{id}` · `POST /v1/companies/{id}/merge` | Companies the desk knows, a company with the people we know there and its public facts, merge ([companies.md](companies.md)) |
+| `GET /v1/candidates/{id}` (profile) | The person page also carries `profile` and `classifications` ([career-profiles.md](career-profiles.md)) |
 | `PUT /v1/jobs/{id}/countries` · `POST /v1/candidates/{id}/bring-back` | Open a job to more countries; un-archive a person ([coverage-gate.md](coverage-gate.md)) |
 | `POST /v1/companies/{id}/research` | Queue fresh public research now; `202` with a task id ([company-research.md](company-research.md)) |
 | `?background=true` on `POST /v1/jobs/{id}/documents` and `POST /v1/candidates` · `GET /v1/tasks?ids=` | Store now, read in the background (202 + task id); task progress |

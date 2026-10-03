@@ -107,9 +107,11 @@ def evaluate(session: Session, org_id, candidate_id, cause: dict[str, Any], acto
     else:
         if person.archived_at is not None:
             person.archived_at, person.archived_reason = None, None
+        from maindscout.api import profiles
         from maindscout.api.process import _queue_research
 
         _queue_research(session, candidate_id, org_id)
+        profiles.queue(session, org_id, candidate_id)
     session.flush()
     return verdict
 

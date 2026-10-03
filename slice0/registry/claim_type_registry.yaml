@@ -134,3 +134,14 @@ types:
     volatility: volatile
     default_review: policy_eligible
     payload_schema: schemas/company_location_claim.schema.json
+
+  StepClassificationClaim:
+    class: inferred
+    subject_types: [candidate]
+    natural_key: "career_claim_id + class"
+    volatility: stable
+    default_review: policy_eligible
+    payload_schema: schemas/step_classification_claim.schema.json
+    notes: >
+      I3. Role family, level, domain of one career step, read from the candidate's CV by a model; signals only
+      when quoted. Never technologies as domains. A recruiter correction replaces it (human_assertion).

@@ -244,3 +244,21 @@ export async function setJobCountries(jobId: string, _: FormState, form: FormDat
   revalidatePath(`/jobs/${jobId}`);
   return { message: countries.length ? "Saved. People on this job were checked again." : "Cleared. People on this job were checked again." };
 }
+
+/** Correct how one career step was read (kind of work, level). Saved as approved; it replaces the machine's reading. */
+export async function correctStep(candidateId: string, path: string, careerClaimId: string, replaces: string | null,
+                                  keep: { domains: string[]; signals: string[] }, _: FormState, form: FormData): Promise<FormState> {
+  const role_family = String(form.get("role_family") || "");
+  const level = String(form.get("level") || "") || null;
+  if (!role_family) return { error: "Choose a kind of work." };
+  try {
+    await apiJson("/v1/claims", {
+      subject_type: "candidate", subject_id: candidateId, claim_type: "StepClassificationClaim", replaces,
+      payload: { career_claim_id: careerClaimId, role_family, level, domains: keep.domains, signals: keep.signals },
+    });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  return { message: "Saved. The profile was rebuilt." };
+}

@@ -107,6 +107,8 @@ export type PersonPage = {
   open_decisions: string[];
   archived: { at: string; reason: string | null } | null;
   coverage_override: boolean;
+  profile: CareerProfile | null;
+  classifications: Record<string, StepLabel>;
 };
 
 export type Side = {
@@ -166,3 +168,17 @@ export async function apiOr404<T>(path: string): Promise<T> {
     throw e;
   }
 }
+
+export type ProfileDimension = { label: string; reason: string; evidence: string[]; [k: string]: unknown };
+export type CareerProfile = {
+  dimensions: Record<string, ProfileDimension>;
+  notable: { kind: string; text: string; evidence: string[] }[];
+  reading: { label: string; reason: string };
+  questions: string[];
+  summary: string;
+  rubric_version: string;
+  as_of: string;
+  computed_at: string | null;
+};
+export type StepLabel = { claim_id: string; status: string; career_claim_id: string; role_family: string; level: string | null;
+  domains: string[]; signals: string[] };

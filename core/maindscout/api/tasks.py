@@ -81,7 +81,12 @@ def run_one(factory, worker: str = "worker") -> bool:
             task.status, task.result, task.finished_at, task.error = "done", result, datetime.now(timezone.utc), None
             session.commit()
         except Exception as error:  # the task failed: roll its work back, record why, maybe retry
+            paid = list(session.info.pop("paid", []))
             session.rollback()
+            from maindscout.db.models import CostEntry
+
+            for row in paid:  # paid calls stay in the ledger even when the task's work is undone
+                session.add(CostEntry(**row))
             task = session.get(Task, task_id)
             task.error = f"{type(error).__name__}: {error}"[:2000]
             log.warning("task %s %s failed: %s", task.kind, task.id, task.error)

@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from sqlalchemy.orm import Session
 
-from maindscout.api import process, research
+from maindscout.api import process, profiles, research
 from maindscout.api.tasks import handler
 from maindscout.db.models import Task
 from maindscout.intelligence.llm import LLMClient, XaiClient
@@ -46,3 +46,9 @@ def research_company(session: Session, task: Task) -> dict[str, Any]:
     p = task.payload
     return research.run(session, uuid.UUID(p["company_id"]), p.get("context", ""), search_factory(),
                         force=bool(p.get("force")), task_id=task.id)
+
+
+@handler("profile_candidate")
+def profile_candidate(session: Session, task: Task) -> dict[str, Any]:
+    return profiles.run(session, task.org_id, uuid.UUID(task.payload["candidate_id"]), llm_factory, task_id=task.id,
+                        search_factory=search_factory)

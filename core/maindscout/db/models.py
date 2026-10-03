@@ -17,6 +17,7 @@ from sqlalchemy import (
     ForeignKey,
     Identity,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
@@ -463,6 +464,42 @@ class Score(Base):
     breakdown: Mapped[dict] = mapped_column(JSONB, nullable=False)
     claim_set_hash: Mapped[str] = mapped_column(String(32), nullable=False)
     engine_version: Mapped[str] = mapped_column(String, nullable=False)
+    computed_at: Mapped[datetime] = _created()
+
+
+class Institution(Base):
+    """A university or college, in the SHARED PUBLIC tier (no org_id), with its QS World University Rankings place
+    and the page and quote it came from (I3). Rank is merit evidence (owner, 2026-10-03)."""
+
+    __tablename__ = "institution"
+    id: Mapped[uuid.UUID] = _pk()
+    name: Mapped[str] = mapped_column(String, nullable=False)  # as first written on a CV
+    normalized: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    official_name: Mapped[str | None] = mapped_column(String)
+    country: Mapped[str | None] = mapped_column(String(2))
+    rank: Mapped[int | None] = mapped_column(Integer)
+    rank_text: Mapped[str | None] = mapped_column(String)
+    rank_band: Mapped[str | None] = mapped_column(String)
+    ranking: Mapped[str | None] = mapped_column(String)  # e.g. "QS World University Rankings 2026"
+    source_url: Mapped[str | None] = mapped_column(String)
+    quote: Mapped[str | None] = mapped_column(Text)
+    research_status: Mapped[str | None] = mapped_column(String)  # identified | not_identified | failed
+    researched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created()
+
+
+class CareerProfile(Base):
+    """I3: what a career shows, dimension by dimension (domain/profile.py). Append-only snapshots, one per change of
+    the facts behind it (inputs_hash). No number anywhere; erased with the person."""
+
+    __tablename__ = "career_profile"
+    __table_args__ = (Index("ix_career_profile_candidate", "candidate_id", "computed_at"),)
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate.id"), nullable=False)
+    profile: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    inputs_hash: Mapped[str] = mapped_column(String(32), nullable=False)
+    rubric_version: Mapped[str] = mapped_column(String, nullable=False)
     computed_at: Mapped[datetime] = _created()
 
 

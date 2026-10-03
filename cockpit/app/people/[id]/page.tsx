@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { addFact, bringBack, eraseCandidate, putOnJob } from "@/app/actions";
+import { CareerProfile } from "@/components/CareerProfile";
 import { ClaimRow, Status } from "@/components/Claim";
 import { EraseForm } from "@/components/EraseForm";
 import { FactForm } from "@/components/FactForm";
@@ -61,6 +62,11 @@ export default async function Person({ params }: { params: Promise<{ id: string 
             ))}
           </ul>
         </>
+      )}
+
+      {!person.archived && (
+        <CareerProfile candidateId={person.id} path={path} profile={person.profile} labels={person.classifications}
+          careers={(person.claims.CareerStepClaim ?? []).filter((c) => c.status === "proposed" || c.status === "approved")} />
       )}
 
       {SECTIONS.map(([type, title]) =>
