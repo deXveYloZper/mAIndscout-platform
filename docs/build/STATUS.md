@@ -6,6 +6,8 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 
 **Slice 1 gate: GREEN**, declared by the owner on 2026-10-03 ([decision](../decisions/2026-10-03-slice-1-gate.md)).
 
+**Next (proposed):** the [intelligence track](../intelligence/PLAN.md) before any further slice; waiting for the owner's decisions.
+
 **Current slice:** 2, sourcing feeder ([plan](../slice-2/PLAN.md))
 
 | Step | What | State |
