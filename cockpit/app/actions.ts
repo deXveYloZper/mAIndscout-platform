@@ -61,29 +61,6 @@ export async function resolveDecision(decisionId: string, action: string, claimI
   revalidatePath(path);
 }
 
-export type DropResult = { file: string; ok: boolean; name?: string | null; band?: string | null; reason?: string | null;
-  personId?: string | null; status?: string; error?: string };
-
-/** One CV onto a job, or into the unassigned pool when jobId is null. Called once per file for live progress. */
-export async function dropOneCv(jobId: string | null, form: FormData): Promise<DropResult> {
-  const file = form.get("file");
-  if (!(file instanceof File) || !file.size) return { file: "?", ok: false, error: "empty file" };
-  try {
-    const body = new FormData();
-    body.append("file", file);
-    const r = await api<ProcessResult>(jobId ? `/v1/jobs/${jobId}/documents` : "/v1/candidates", { method: "POST", body });
-    let name: string | null = null;
-    if (r.subject_id) {
-      try {
-        name = (await api<{ name: string | null }>(`/v1/candidates/${r.subject_id}`)).name;
-      } catch {}
-    }
-    return { file: file.name, ok: r.status === "committed", status: r.status, band: r.band, reason: r.reason, personId: r.subject_id, name };
-  } catch (e) {
-    return { file: file.name, ok: false, error: e instanceof ApiError ? e.message : "failed" };
-  }
-}
-
 export async function refreshAfterUpload(jobId: string | null): Promise<void> {
   revalidatePath(jobId ? `/jobs/${jobId}` : "/people");
   revalidatePath("/");
@@ -207,4 +184,38 @@ export async function startCampaign(jobId: string, _: FormState, form: FormData)
   revalidatePath(`/jobs/${jobId}`);
   const why = c.stop_reason === "cap" ? "stopped at the cap" : c.stop_reason === "target_reached" ? "priority target reached" : "no one else on the desk matches";
   return { message: `Looked at ${c.spent}, added ${c.added} (${c.priority_added} priority); ${why}.` };
+}
+
+
+export type QueuedFile = { file: string; taskId?: string; error?: string };
+export type TaskView = { id: string; status: string; error: string | null; result: Record<string, any> | null; name?: string | null };
+
+/** Store one CV and queue its reading; returns at once. */
+export async function queueCv(jobId: string | null, form: FormData): Promise<QueuedFile> {
+  const file = form.get("file");
+  if (!(file instanceof File) || !file.size) return { file: "?", error: "empty file" };
+  try {
+    const body = new FormData();
+    body.append("file", file);
+    const path = jobId ? `/v1/jobs/${jobId}/documents?background=true` : "/v1/candidates?background=true";
+    const r = await api<{ task_id: string }>(path, { method: "POST", body });
+    return { file: file.name, taskId: r.task_id };
+  } catch (e) {
+    return { file: file.name, error: e instanceof ApiError ? e.message : "failed" };
+  }
+}
+
+/** Progress of queued reads, with the person's name once a read is done. */
+export async function checkTasks(ids: string[]): Promise<TaskView[]> {
+  if (!ids.length) return [];
+  const rows = await api<TaskView[]>(`/v1/tasks?ids=${ids.join(",")}`);
+  for (const row of rows) {
+    const sid = row.result?.subject_id;
+    if (row.status === "done" && sid && row.result?.subject_type === "candidate") {
+      try {
+        row.name = (await api<{ name: string | null }>(`/v1/candidates/${sid}`)).name;
+      } catch {}
+    }
+  }
+  return rows;
 }

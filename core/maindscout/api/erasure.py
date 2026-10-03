@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from maindscout.db.models import (
     Candidate,
     CandidateJob,
+    CostEntry,
     Claim,
     ClaimObservation,
     Decision,
@@ -144,6 +145,8 @@ def erase_candidate(session: Session, blobs: BlobStore, org_id: uuid.UUID, candi
     run("runs", delete(IntelligenceRun).where(IntelligenceRun.id.in_(run_ids)))
     run("documents", delete(Document).where(Document.id.in_(doc_ids)))
     session.execute(update(Candidate).where(Candidate.merged_into_id == candidate_id).values(merged_into_id=None))
+    counts["cost_entries_unlinked"] = session.execute(update(CostEntry).where(
+        CostEntry.subject_id.in_([candidate_id, *doc_ids])).values(subject_id=None, subject_type=None)).rowcount or 0
     run("candidate", delete(Candidate).where(Candidate.id == candidate_id))
 
     # Pointers to this person inside other people's identity notes.
@@ -204,6 +207,7 @@ def verify_erasure(session: Session, blobs: BlobStore, org_id: uuid.UUID, candid
         ("document links", count(DocumentSubject, DocumentSubject.subject_id == candidate_id)),
         ("not-same records", count(NotSame, or_(NotSame.candidate_a == candidate_id, NotSame.candidate_b == candidate_id))),
         ("candidates redirected to this person", count(Candidate, Candidate.merged_into_id == candidate_id)),
+        ("cost entries still linked", count(CostEntry, CostEntry.subject_id.in_([candidate_id, *doc_ids]))),
     ]
     if doc_ids:
         checks += [

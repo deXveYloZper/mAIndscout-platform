@@ -367,6 +367,9 @@ def process_document(session: Session, blobs: BlobStore, client: LLMClient, *, o
         # Re-reading an ad updates the job it already created; it never makes a second job.
         job = session.scalar(select(Job).where(Job.source_document_id == doc.id, Job.org_id == org_id))
 
+    from maindscout.api import costs
+
+    costs.ensure_budget(session, org_id)
     run = IntelligenceRun(org_id=org_id, document_id=doc.id, version_manifest=_manifest(client), status="running")
     session.add(run)
     session.flush()
@@ -385,6 +388,9 @@ def process_document(session: Session, blobs: BlobStore, client: LLMClient, *, o
         session.flush()
         return ProcessResult(run.id, doc.id, "needs_human")
 
+    if result.cost:
+        costs.record(session, org_id, "read_jd" if doc.doc_type == "jd" else "read_cv", result.cost,
+                     subject_type="document", subject_id=doc.id)
     run.status, run.committed_at = "committed", datetime.now(timezone.utc)
     run.version_manifest = {**run.version_manifest, "span_failures": result.span_failures, "cost": result.cost,
                             "result": {"subject_type": result.subject_type, "subject_id": str(result.subject_id),

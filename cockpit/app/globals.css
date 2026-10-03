@@ -163,3 +163,10 @@ table.gaps tr.conflict td:first-child { border-left: 2px solid var(--red); }
 .campaigns li { font-size: 12px; padding: 3px 0; border-bottom: 1px solid var(--line); }
 .companylink { margin-left: 6px; text-decoration: none; color: var(--amber); }
 .roles { display: flex; flex-direction: column; gap: 2px; color: var(--cream-dim); }
+
+.meter { height: 8px; background: var(--bg-raise-2); border: 1px solid var(--line); margin: 6px 0; }
+.meter span { display: block; height: 100%; background: var(--amber); }
+/* The header wraps on narrow screens instead of pushing the page sideways. */
+.top { flex-wrap: wrap; gap: 8px; }
+.top nav { flex-wrap: wrap; gap: 14px; }
+@media (max-width: 720px) { .top { padding: 10px 16px; } }

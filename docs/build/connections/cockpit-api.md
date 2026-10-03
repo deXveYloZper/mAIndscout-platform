@@ -18,7 +18,7 @@ docker compose up -d
 cd core && python -m maindscout init && python -m maindscout serve
 cd cockpit && npm install && npm run dev
 ```
-Then open http://localhost:3001. Port 8765 is used because 8000 was taken on the development machine.
+Then open http://localhost:3001. `serve` also runs 2 background workers, which read uploaded CVs; without them uploads stay "waiting". Port 8765 is used because 8000 was taken on the development machine.
 
 ## When this changes
 Update [http-api.md](../components/http-api.md), [cockpit.md](../components/cockpit.md) and this page together.

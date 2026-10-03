@@ -13,7 +13,7 @@ The cockpit must never touch the database. Every action goes through one guarded
 ## How
 - **Access:** every route except `/v1/health` needs `Authorization: Bearer <OPERATOR_TOKEN>` and `X-Org-Id`. Single-operator token in Slice 0; compared in constant time. Unknown org gives 403. Data from another org is 404.
 - **One request, one transaction:** a route commits only when everything succeeded; any error discards the whole request.
-- **Errors:** not found 404, unsupported file 415, rule broken (bad band, invented payload field, unknown flag, already approved) 422, model provider down 502. Uploads over 20 MB are refused (413).
+- **Errors:** not found 404, unsupported file 415, rule broken (bad band, invented payload field, unknown flag, already approved) 422, monthly budget reached 402, model provider down 502. Uploads over 20 MB are refused (413).
 - **Config** (`settings.env`): environment first, then `core/.env` (git-ignored): `OPERATOR_TOKEN`, `XAI_API_KEY`, `SUPPRESSION_KEY`, `DATABASE_URL`, `BLOB_DIR`, `COCKPIT_ORIGINS` (CORS, default `http://localhost:3001`).
 - **Setup:** `python -m maindscout init` migrates, seeds registries, creates the org if none, and prints the org id.
 
@@ -40,6 +40,8 @@ The cockpit must never touch the database. Every action goes through one guarded
 | `POST /v1/decisions/{id}/resolve` | Answer a card (see [review.md](review.md)) |
 | `POST /v1/jobs/{id}/campaigns` · `GET /v1/jobs/{id}/campaigns` · `POST /v1/campaigns/{id}/stop` | Refill a thin priority queue from the desk; list; stop ([sourcing.md](sourcing.md)) |
 | `GET /v1/companies?q=` · `GET /v1/companies/{id}` · `POST /v1/companies/{id}/merge` | Companies the desk knows, a company with the people we know there, merge ([companies.md](companies.md)) |
+| `?background=true` on `POST /v1/jobs/{id}/documents` and `POST /v1/candidates` · `GET /v1/tasks?ids=` | Store now, read in the background (202 + task id); task progress |
+| `GET /v1/costs` | This month's spend by purpose and day against the budget |
 | `POST /v1/subjects/candidate/{id}/erase` · `GET …/erase/verify` | Forget a person; re-check (see [erasure.md](erasure.md)) |
 
 ## Depends on

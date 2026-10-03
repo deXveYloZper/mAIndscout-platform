@@ -13,6 +13,8 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
 ## How
 - **All data comes from the API, server-side.** `lib/api.ts` adds the operator token and org id from `cockpit/.env.local`; the browser never sees them. Actions (`app/actions.ts`) are server actions that call the API and refresh the page.
 - **Jobs (`/`):** list with band counts and what waits for review; upload a job ad to create a job.
+- **Uploads** are stored at once and read in the background; each file's row fills in when its read finishes (you can leave the page).
+- **Costs (`/costs`):** this month's spend against the budget, by purpose and day.
 - **Companies (`/companies`, `/companies/[id]`):** search; who we know at a company (one row per person, all roles); the company's jobs. Career rows on a person link to their company.
 - **People (`/people`):** everyone, or only those on no job (the pool); upload CVs without a job.
 - **Job (`/jobs/[id]`):** "Find more people" when priority is thin (cap, result, campaign history; [sourcing.md](sourcing.md)); counts and review link in the header; where the job is; mobility as three facts (must live in, visa sponsorship, relocation); requirements grouped by kind with years and education tags; stale-date warning; drop several CVs at once, read one by one with a result row per file; Priority open by default, Review later and Do not submit folded away; each person's reason in plain words; band override with a note; requirements marked "decides the band" when distinctive; process dates.

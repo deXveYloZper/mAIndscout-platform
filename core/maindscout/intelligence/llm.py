@@ -41,7 +41,8 @@ def load_env_key(name: str = "XAI_API_KEY") -> str | None:
 
 
 class XaiClient:
-    def __init__(self, api_key: str | None = None, model: str = DEFAULT_MODEL, timeout: float = 120, retries: int = 3):
+    def __init__(self, api_key: str | None = None, model: str = DEFAULT_MODEL, timeout: float = 60, retries: int = 3):
+        # 60 s per attempt: a stalled call fails fast and is retried instead of holding a read for minutes.
         self.api_key = api_key or load_env_key()
         if not self.api_key:
             raise LLMError("XAI_API_KEY is not set")

@@ -476,3 +476,53 @@ class Campaign(Base):
     created_by: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = _created()
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+# --- background work and its cost --------------------------------------------------------------
+
+TASK_STATUS = ("queued", "running", "done", "failed")
+
+
+class Task(Base):
+    """One unit of background work (read a CV, research a company, build a profile). Claimed with SKIP LOCKED."""
+
+    __tablename__ = "task"
+    __table_args__ = (
+        CheckConstraint(_in("status", TASK_STATUS), name="task_status"),
+        Index("ix_task_ready", "status", "priority", "created_at"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("org.id"))  # None for shared public work
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="queued")
+    priority: Mapped[int] = mapped_column(nullable=False, default=100)  # lower runs first
+    attempts: Mapped[int] = mapped_column(nullable=False, default=0)
+    max_attempts: Mapped[int] = mapped_column(nullable=False, default=3)
+    run_after: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    dedupe_key: Mapped[str | None] = mapped_column(String)
+    locked_by: Mapped[str | None] = mapped_column(String)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    result: Mapped[dict | None] = mapped_column(JSONB)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _created()
+
+
+class CostEntry(Base):
+    """Every paid call (model tokens, search sources): what it was for, what it cost, which subject it served."""
+
+    __tablename__ = "cost_ledger"
+    __table_args__ = (Index("ix_cost_org_time", "org_id", "created_at"),)
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("org.id"))  # None for shared public work
+    purpose: Mapped[str] = mapped_column(String, nullable=False)  # read_cv | read_jd | research_company | ...
+    model: Mapped[str] = mapped_column(String, nullable=False)
+    input_tokens: Mapped[int] = mapped_column(nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(nullable=False, default=0)
+    sources: Mapped[int] = mapped_column(nullable=False, default=0)  # web sources used, if any
+    usd: Mapped[float] = mapped_column(Numeric(10, 6), nullable=False, default=0)
+    subject_type: Mapped[str | None] = mapped_column(String)
+    subject_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))  # cleared by erasure
+    task_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_at: Mapped[datetime] = _created()

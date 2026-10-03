@@ -17,7 +17,8 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from maindscout.api import companies, documents, erasure, process, queries, review, sourcing
+from maindscout.api import companies, costs, documents, erasure, process, queries, review, sourcing, tasks
+from maindscout.api import task_handlers  # noqa: F401 (registers task kinds)
 from maindscout.db.models import Document, ExtractionArtifact, IntelligenceRun, Org
 from maindscout.db.session import make_engine, make_session_factory
 from maindscout.domain import registry as reg
@@ -91,6 +92,7 @@ ERRORS: list[tuple[type[Exception], int]] = [
     (erasure.ErasureConflict, 409),
     (pdf.UnsupportedMedia, 415),
     (LLMError, 502),
+    (costs.BudgetExceeded, 402),
     (review.ReviewError, 422),
     (sourcing.SourcingError, 422),
     (reg.InvalidPayloadError, 422),
@@ -226,7 +228,8 @@ def get_job(job_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Se
 
 
 @app.post("/v1/jobs/{job_id}/documents", status_code=201)
-async def upload_onto_job(job_id: uuid.UUID, file: UploadFile = File(...), org_id: uuid.UUID = Depends(get_org),
+async def upload_onto_job(job_id: uuid.UUID, file: UploadFile = File(...), background: bool = Query(False),
+                          org_id: uuid.UUID = Depends(get_org),
                           session: Session = Depends(get_session), blobs: BlobStore = Depends(get_blobs),
                           llm: LLMClient = Depends(get_llm)):
     """Drop a CV onto a job: store, read, extract, and band the person against this job."""
@@ -235,6 +238,11 @@ async def upload_onto_job(job_id: uuid.UUID, file: UploadFile = File(...), org_i
                                        media_type=media, doc_type_hint="cv")
     if doc.doc_type != "cv":
         raise HTTPException(409, f"This file was already uploaded as a {doc.doc_type}")
+    if background:
+        task = tasks.enqueue(session, org_id, "process_document", {"document_id": str(doc.id), "job_id": str(job_id)},
+                             priority=50, dedupe_key=f"process:{doc.id}:{job_id}")
+        session.commit()
+        return JSONResponse({"document_id": str(doc.id), "task_id": str(task.id), "status": "queued"}, status_code=202)
     result = process.process_document(session, blobs, llm, org_id=org_id, document_id=doc.id, job_id=job_id)
     session.commit()
     return _result(result)
@@ -289,7 +297,8 @@ def list_candidates(unassigned: bool = Query(False), org_id: uuid.UUID = Depends
 
 
 @app.post("/v1/candidates", status_code=201)
-async def upload_to_pool(file: UploadFile = File(...), org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+async def upload_to_pool(file: UploadFile = File(...), background: bool = Query(False), org_id: uuid.UUID = Depends(get_org),
+                         session: Session = Depends(get_session),
                          blobs: BlobStore = Depends(get_blobs), llm: LLMClient = Depends(get_llm)):
     """A CV with no job yet: read it into the unassigned pool. Put the person on a job later."""
     data, media = await _read(file)
@@ -297,6 +306,11 @@ async def upload_to_pool(file: UploadFile = File(...), org_id: uuid.UUID = Depen
                                        media_type=media, doc_type_hint="cv")
     if doc.doc_type != "cv":
         raise HTTPException(409, f"This file was already uploaded as a {doc.doc_type}")
+    if background:
+        task = tasks.enqueue(session, org_id, "process_document", {"document_id": str(doc.id)}, priority=50,
+                             dedupe_key=f"process:{doc.id}:pool")
+        session.commit()
+        return JSONResponse({"document_id": str(doc.id), "task_id": str(task.id), "status": "queued"}, status_code=202)
     result = process.process_document(session, blobs, llm, org_id=org_id, document_id=doc.id)
     session.commit()
     return _result(result)
@@ -471,3 +485,20 @@ def merge_company(company_id: uuid.UUID, body: MergeBody, org_id: uuid.UUID = De
     keep = companies.merge(session, body.into, company_id)
     session.commit()
     return {"id": str(keep.id), "name": keep.name}
+
+
+@app.get("/v1/tasks")
+def get_tasks(ids: str = Query(..., description="comma-separated task ids"), org_id: uuid.UUID = Depends(get_org),
+              session: Session = Depends(get_session)):
+    """Status of background tasks (for showing progress)."""
+    from maindscout.db.models import Task
+
+    wanted = [uuid.UUID(i) for i in ids.split(",") if i.strip()][:100]
+    rows = session.scalars(select(Task).where(Task.id.in_(wanted), Task.org_id == org_id))
+    return [tasks.as_dict(t) for t in rows]
+
+
+@app.get("/v1/costs")
+def get_costs(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """This month's spend on model calls and searches, by purpose and day, against the budget."""
+    return costs.summary(session, org_id)

@@ -26,6 +26,7 @@ Local setup: [core/README.md](../../core/README.md).
 
 | Component | Status | Page |
 |---|---|---|
+| Background tasks + cost ledger (I1) | built | [tasks-and-costs.md](components/tasks-and-costs.md) |
 | Companies: shared records, who we know there (I1) | built | [companies.md](components/companies.md) |
 | Sourcing feeder (Slice 2) | built (desk) | [sourcing.md](components/sourcing.md) |
 | Coverage floor + reserved score (Slice 1) | built | [coverage.md](components/coverage.md) |

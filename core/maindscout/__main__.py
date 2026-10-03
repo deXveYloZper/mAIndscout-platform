@@ -5,6 +5,7 @@
     python -m maindscout eval [--folder DIR] [--with-tests]   golden eval over real files (Milestone G)
     python -m maindscout reset-db NAME --org-id UUID   recreate a throwaway database (*_e2e/_test/_eval only)
     python -m maindscout link-companies      resolve companies for existing career steps and jobs
+    python -m maindscout worker [--threads 2] run background tasks (serve also starts workers unless --no-workers)
 """
 
 from __future__ import annotations
@@ -80,6 +81,9 @@ def main() -> None:
     p_serve = sub.add_parser("serve")
     p_serve.add_argument("--port", type=int, default=8765)
     p_serve.add_argument("--database", default=None, help="serve another database on the same server, e.g. maindscout_e2e")
+    p_serve.add_argument("--no-workers", action="store_true", help="do not run background workers in this process")
+    p_worker = sub.add_parser("worker")
+    p_worker.add_argument("--threads", type=int, default=2)
     p_eval = sub.add_parser("eval")
     p_eval.add_argument("--folder", type=Path, default=None)
     p_eval.add_argument("--with-tests", action="store_true")
@@ -90,6 +94,13 @@ def main() -> None:
     args = parser.parse_args()
     if args.cmd == "init":
         init(args.org)
+    elif args.cmd == "worker":
+        from maindscout.api import task_handlers  # noqa: F401 (registers task kinds)
+        from maindscout.api.tasks import start_threads, work_forever
+
+        factory = make_session_factory(make_engine())
+        start_threads(factory, max(args.threads - 1, 0))
+        work_forever(factory, "worker-main")
     elif args.cmd == "link-companies":
         from maindscout.api import companies
 
@@ -112,6 +123,11 @@ def main() -> None:
             from maindscout.db.session import database_url
 
             os.environ["DATABASE_URL"] = database_url().rsplit("/", 1)[0] + "/" + args.database
+        if not args.no_workers:
+            from maindscout.api import task_handlers  # noqa: F401 (registers task kinds)
+            from maindscout.api.tasks import start_threads
+
+            start_threads(make_session_factory(make_engine()), int(os.environ.get("WORKERS", "2")))
 
         uvicorn.run("maindscout.api.app:app", host="127.0.0.1", port=args.port)
 

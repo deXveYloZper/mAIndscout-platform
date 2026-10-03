@@ -47,7 +47,7 @@ test("CVs dropped on a job are read one by one and each is banded", async ({ pag
   await page.goto(catalystUrl);
   await page.locator('input[type="file"]').setInputFiles(CVS);
   await page.getByRole("button", { name: "Read and band 4 CVs" }).click();
-  await expect(page.getByRole("status")).toContainText("Reading", { timeout: 30_000 });
+  await expect(page.getByRole("status")).toContainText(/Reading \d+ of 4 done/, { timeout: 30_000 });
   const results = page.locator(".results li");
   await expect(results).toHaveCount(4, { timeout: 200_000 });
   await expect(results.filter({ hasText: "Ioannis" })).toContainText("Priority");
@@ -147,6 +147,14 @@ test("companies from CVs are shared records: who do we know there", async ({ pag
   await page.getByRole("link", { name: /Bitpanda/i }).first().click();
   await expect(page.getByText(/We know \d+ (person|people) who worked here/)).toBeVisible();
   await expect(page.locator(".people li", { hasText: "Jure Domajnko" })).toBeVisible();
+});
+
+test("costs are recorded and shown against the budget", async ({ page }) => {
+  await page.goto("/costs");
+  await expect(page.getByRole("heading", { name: "Costs" })).toBeVisible();
+  await expect(page.getByText("Reading CVs")).toBeVisible();
+  await expect(page.getByText("Reading job ads")).toBeVisible();
+  await expect(page.getByText(/of \$\d+\.\d{2} budget/)).toBeVisible();
 });
 
 test("the jobs list shows both jobs with their piles and what waits for review", async ({ page }) => {
