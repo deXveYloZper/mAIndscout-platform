@@ -171,3 +171,5 @@ Slice 2's gate is ready but not declared; it can be declared now or left open. S
 3. **Shared public company tier across future client orgs:** yes (compute falls fastest) or keep everything per org.
 4. **University tier source:** a public ranking you are comfortable with, or tiers you define; and agreement that prestige is shown to the recruiter but carries little or no automated weight at first (section 3.4).
 5. **Career-strength ADR:** accept the clarification of the vision's "refuses" list ([ADR](../decisions/2026-10-03-career-strength.md)).
+
+**Added 2026-10-03: coverage gate.** Every intelligence step from I3 on runs only for people in coverage: those who live and work in the EU / EEA, the UK, Switzerland, the US or Canada, or in a country a job explicitly accepts. Others are archived after one CV read. Large consultancies get light research only. [ADR](../decisions/2026-10-03-coverage-gate.md)

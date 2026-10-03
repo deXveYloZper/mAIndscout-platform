@@ -518,3 +518,29 @@ def research_company(company_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org)
                          priority=60, dedupe_key=f"research:{company.id}")
     session.commit()
     return {"task_id": str(task.id), "status": task.status}
+
+
+class CountriesBody(BaseModel):
+    countries: list[str]
+
+
+@app.put("/v1/jobs/{job_id}/countries")
+def set_job_countries(job_id: uuid.UUID, body: CountriesBody, org_id: uuid.UUID = Depends(get_org),
+                      session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Open a job to countries beyond the desk's coverage (codes or names). Its people are re-checked."""
+    from maindscout.api import coverage
+
+    coverage.set_open_countries(session, org_id, job_id, body.countries, actor)
+    session.commit()
+    return queries.job_page(session, org_id, job_id)
+
+
+@app.post("/v1/candidates/{candidate_id}/bring-back")
+def bring_back(candidate_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+               actor: str = Depends(get_actor)):
+    """Un-archive a person the coverage gate archived; the gate then leaves them be."""
+    from maindscout.api import coverage
+
+    coverage.bring_back(session, org_id, candidate_id, actor)
+    session.commit()
+    return queries.person_page(session, org_id, candidate_id)

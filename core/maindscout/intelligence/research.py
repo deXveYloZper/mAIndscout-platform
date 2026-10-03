@@ -20,7 +20,7 @@ from urllib.parse import urlparse
 
 from maindscout.intelligence.llm import DEFAULT_MODEL, TICKS_PER_USD, LLMError, load_env_key
 
-RESEARCH_PROMPT_VERSION = "2026-10-03.2"
+RESEARCH_PROMPT_VERSION = "2026-10-03.3"
 RESPONSES_URL = "https://api.x.ai/v1/responses"
 REGISTRY_HOSTS = ("company-information.service.gov.uk", "find-and-update.company-information.service.gov.uk",
                   "opencorporates.com", "handelsregister.de", "unternehmensregister.de", "northdata.com", "ajpes.si")
@@ -245,9 +245,25 @@ def check(data: dict, visited: list[str]) -> tuple[list[Fact], list[dict[str, st
     return kept, rejected
 
 
-def research_company(name: str, context: str, client: SearchClient) -> ResearchOutcome:
+# Light research: for large consultancies and outsourcers we only need what kind of company it is and where it is
+# based (owner, 2026-10-03): their funding and headcount tell a recruiter nothing.
+BASIC_FIELDS = ("identified", "website", "company_type", "hq")
+BASIC_SCHEMA = {"type": "object", "additionalProperties": False, "required": list(BASIC_FIELDS),
+                "properties": {k: SCHEMA["properties"][k] for k in BASIC_FIELDS}}
+BASIC_SYSTEM = (
+    "You research ONE company for a recruiting desk. Find ONLY two facts: its company type (product company, "
+    "consultancy, outsourcing provider, agency, public sector, non-profit: what it sells, never its legal form) and "
+    "its headquarters (city and country). Prefer the company's own website and official registries. Do not research "
+    "any person, technologies, funding or headcount. For every fact give the exact URL of the page you read it on and "
+    "a short EXACT quote from that page that contains the fact. If you cannot confirm that the company you found is "
+    "the one described, set identified=false. If a fact is not found, use null. Never guess."
+)
+
+
+def research_company(name: str, context: str, client: SearchClient, basic: bool = False) -> ResearchOutcome:
     """`context` describes the company only (place, industry hints, website): never a person."""
-    data, visited, cost = client.search_json(SYSTEM, f"Company: {name}\nWhat we know about it: {context or 'nothing more'}", SCHEMA, "company_facts")
+    system, schema = (BASIC_SYSTEM, BASIC_SCHEMA) if basic else (SYSTEM, SCHEMA)
+    data, visited, cost = client.search_json(system, f"Company: {name}\nWhat we know about it: {context or 'nothing more'}", schema, "company_facts")
     if not data.get("identified"):
         return ResearchOutcome(False, None, [], [{"fact": "company", "reason": "not confidently identified"}], visited, cost)
     facts, rejected = check(data, visited)

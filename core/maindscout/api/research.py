@@ -18,11 +18,27 @@ from sqlalchemy.orm import Session
 from maindscout.api import costs, writer
 from maindscout.api.companies import _ids_for, canonical
 from maindscout.db.models import PUBLIC_ORG_ID, Claim, ClaimObservation, Company, Evidence
+from maindscout.domain import geo
 from maindscout.intelligence import research as engine
 from maindscout.intelligence.extract import COUNTRY_ALIASES
 
 LIVE = ("proposed", "approved")
 REFRESH_AFTER = {"identified": timedelta(days=180), "not_identified": timedelta(days=30), "failed": timedelta(days=7)}
+BASIC_REFRESH = timedelta(days=365)
+# Large consultancies and outsourcers: light research only (kind and base). Normalized names (domain.companies).
+LIGHT_RESEARCH = frozenset({
+    "accenture", "capgemini", "cognizant", "cognizant technology solutions", "deloitte", "epam", "epam systems",
+    "infosys", "tata consultancy services", "tcs", "wipro", "hcl", "hcltech", "hcl technologies", "tech mahindra",
+    "ltimindtree", "lti", "mindtree", "mphasis", "ntt data", "dxc", "dxc technology", "atos", "sopra steria", "cgi",
+    "globant", "luxoft", "endava", "genpact", "ibm consulting", "kpmg", "pwc", "pricewaterhousecoopers", "ey",
+    "ernst young", "ernst and young", "persistent systems", "hexaware", "lt technology services", "virtusa", "softserve",
+    "sii", "alten", "akkodis", "kpit", "birlasoft", "zensar", "coforge", "unisys", "bearingpoint", "publicis sapient",
+})
+LIGHT_HEADCOUNT = 5000  # a consultancy / outsourcer at least this big switches to light research after its first look
+
+
+def depth(company: Company) -> str:
+    return "basic" if company.research_depth == "basic" or company.normalized in LIGHT_RESEARCH else "full"
 COMPANY_CLAIMS = ("CompanyDomainClaim", "CompanyTypeClaim", "CompanyFoundedClaim", "FundingRoundClaim", "TeamSizeClaim",
                   "CompanyStatusClaim", "CompanyLocationClaim")
 
@@ -32,7 +48,10 @@ def due(company: Company, now: datetime | None = None) -> bool:
     if company.researched_at is None:
         return True
     now = now or datetime.now(timezone.utc)
-    return now - company.researched_at > REFRESH_AFTER.get(company.research_status or "failed", timedelta(days=7))
+    window = REFRESH_AFTER.get(company.research_status or "failed", timedelta(days=7))
+    if company.research_status == "identified" and depth(company) == "basic":
+        window = BASIC_REFRESH
+    return now - company.researched_at > window
 
 
 def _date(text: str | None) -> str | None:
@@ -149,9 +168,26 @@ def apply(session: Session, company: Company, outcome: engine.ResearchOutcome) -
         session.flush()
         session.add(ClaimObservation(org_id=PUBLIC_ORG_ID, claim_id=claim.id, attribute_path=".", value=payload,
                                      evidence_id=evidence.id, source_authority=authority, origin=origin, observed_as_of=now.date()))
+    _settle(session, company, outcome)
     session.flush()
     return {"identified": outcome.identified, "facts_written": written, "facts_seen": len(outcome.facts),
             "rejected": len(outcome.rejected), "usd": outcome.cost.get("usd", 0)}
+
+
+def _settle(session: Session, company: Company, outcome: engine.ResearchOutcome) -> None:
+    """Record where the company is based (the coverage gate's fallback) and whether it needs only light research."""
+    for fact in outcome.facts:
+        if fact.kind == "hq" and not company.hq_country:
+            company.hq_country = _country(fact.value) or geo.country_in(fact.value)
+        if fact.kind == "company_type" and fact.value in ("consultancy", "outsourcing"):
+            size = next((f for f in outcome.facts if f.kind == "headcount"), None)
+            lo = _team(size.value)[0] if size else None
+            if lo is not None and lo >= LIGHT_HEADCOUNT:
+                company.research_depth = "basic"
+    if company.hq_country:
+        from maindscout.api import coverage
+
+        coverage.reevaluate_company(session, company.id)
 
 
 def run(session: Session, company_id: uuid.UUID, context: str, client: engine.SearchClient, force: bool = False,
@@ -163,7 +199,7 @@ def run(session: Session, company_id: uuid.UUID, context: str, client: engine.Se
         return {"skipped": "fresh", "research_status": company.research_status}
     costs.ensure_budget(session, None)
     try:
-        outcome = engine.research_company(company.name, context, client)
+        outcome = engine.research_company(company.name, context, client, basic=depth(company) == "basic")
     except Exception:
         company.research_status, company.researched_at = "failed", datetime.now(timezone.utc)
         session.flush()

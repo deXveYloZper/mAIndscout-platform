@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { addFact, eraseCandidate, putOnJob } from "@/app/actions";
+import { addFact, bringBack, eraseCandidate, putOnJob } from "@/app/actions";
 import { ClaimRow, Status } from "@/components/Claim";
 import { EraseForm } from "@/components/EraseForm";
 import { FactForm } from "@/components/FactForm";
@@ -30,6 +30,13 @@ export default async function Person({ params }: { params: Promise<{ id: string 
         Facts are proposed by the machine and official only once approved.
         {person.open_decisions.length > 0 && <> · <Link href="/inbox?band=all">{person.open_decisions.length} open in the inbox</Link></>}
       </p>
+      {person.archived && (
+        <div className="warn archived-note">
+          Archived: {person.archived.reason ?? "outside the desk's coverage"}. No company research or profiling is spent on archived people.
+          <form action={bringBack.bind(null, person.id, path)}><button className="btn small">Bring back</button></form>
+        </div>
+      )}
+      {person.coverage_override && !person.archived && <p className="hint">Brought back by a person: the coverage rule leaves them be.</p>}
 
       {otherJobs.length > 0 && (
         <form action={putOnJob.bind(null, person.id)} className="row" style={{ marginTop: 12 }}>

@@ -59,10 +59,18 @@ def _seal(decision: Decision, resolution: dict[str, Any], actor: str) -> None:
 def retriage_after(session: Session, claim: Claim, act: str, actor: str) -> None:
     """A human changed a fact: bands that may depend on it are recomputed, and each change is recorded."""
     cause = {"act": act, "claim_id": str(claim.id), "claim_type": claim.claim_type}
+    from maindscout.api import coverage
+
     if claim.subject_type == "candidate":
         retriage_candidate(session, claim.org_id, claim.subject_id, cause, actor)
+        if claim.claim_type in ("LocationClaim", "CareerStepClaim"):
+            coverage.evaluate(session, claim.org_id, claim.subject_id, cause, actor)
     elif claim.subject_type == "job":
         retriage_job(session, claim.org_id, claim.subject_id, cause, actor)
+        if (claim.payload.get("mobility") or {}).get("facet") == "residence":
+            from maindscout.db.models import Job
+
+            coverage.reevaluate_job(session, session.get(Job, claim.subject_id), cause, actor)
 
 
 def _open_decisions_for(session: Session, claim: Claim, type_: str) -> list[Decision]:

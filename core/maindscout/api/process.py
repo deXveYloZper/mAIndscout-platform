@@ -338,6 +338,9 @@ def _ensure_pair(session: Session, org_id, candidate_id, job: Job, cause: dict |
         session.add(pair)
         session.flush()
     retriage_pair(session, pair, cause or {"act": "document_processed"}, "system")
+    from maindscout.api import coverage
+
+    coverage.evaluate(session, org_id, candidate_id, cause or {"act": "document_processed"})
     return pair
 
 
@@ -533,7 +536,6 @@ def _process_cv(session: Session, blobs: BlobStore, doc: Document, artifact: Ext
 
     if forced:
         _retire_earlier_reading(session, doc, run, set(claim_ids))
-    _queue_research(session, cid, doc.org_id)
     _flag_careers(session, doc.org_id, cid, run, new_careers, decisions)
     _contradictions(session, doc.org_id, cid, decisions)
 
@@ -543,7 +545,13 @@ def _process_cv(session: Session, blobs: BlobStore, doc: Document, artifact: Ext
     if session.get(DocumentSubject, (doc.id, "candidate", cid)) is None:
         session.add(DocumentSubject(document_id=doc.id, subject_type="candidate", subject_id=cid, org_id=doc.org_id,
                                     established_by="extraction"))
+    # The coverage gate runs once the person is on their job (a job may accept more countries); it queues company
+    # research only for people in coverage.
     pair = _ensure_pair(session, doc.org_id, cid, job) if job else None
+    if pair is None:
+        from maindscout.api import coverage
+
+        coverage.evaluate(session, doc.org_id, cid, {"act": "document_processed"})
     session.flush()
     return ProcessResult(
         run.id, doc.id, "committed", "candidate", cid, job.id if job else None,
@@ -597,5 +605,9 @@ def _process_jd(session: Session, doc: Document, artifact: ExtractionArtifact, r
         session.add(DocumentSubject(document_id=doc.id, subject_type="job", subject_id=job.id, org_id=doc.org_id,
                                     established_by="extraction"))
     session.flush()
+    if forced:
+        from maindscout.api import coverage
+
+        coverage.reevaluate_job(session, job, {"act": "job_read_again"})  # the ad may name other countries now
     return ProcessResult(run.id, doc.id, "committed", "job", job.id, job.id, None, None, claim_ids, [],
                          _span_failures(outcome.span_results), outcome.cost)

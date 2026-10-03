@@ -61,6 +61,23 @@ test("CVs dropped on a job are read one by one and each is banded", async ({ pag
   await expect(page.locator("summary", { hasText: "Do not submit (3)" })).toBeVisible();
 });
 
+test("a job can be opened to more countries, and nobody here is archived", async ({ page }) => {
+  await page.goto(catalystUrl);
+  await expect(page.locator("summary", { hasText: "Archived: outside coverage (0)" })).toBeVisible();
+  const field = page.getByLabel("Also accept people living or working in");
+  await field.fill("Brazil, Atlantis");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Atlantis" })).toBeVisible();
+  await field.fill("Brazil");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Also accept people living or working in")).toHaveValue("Brazil");
+  await page.getByLabel("Also accept people living or working in").fill("");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Cleared" })).toBeVisible();
+});
+
 test("a person on a job opens as a gap table, with no overall score", async ({ page }) => {
   await page.goto(catalystUrl);
   await page.getByRole("link", { name: "Ioannis Gkanatsios" }).click();

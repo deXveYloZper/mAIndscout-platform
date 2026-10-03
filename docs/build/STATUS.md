@@ -12,6 +12,7 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 |---|---|---|
 | I1 | Companies, linking, background tasks, cost ledger | **gate GREEN** 2026-10-03 ([decision](../decisions/2026-10-03-i1-gate.md)) |
 | I2 | Company research (Grok, targeted facts) | built 2026-10-03; facts report for the owner's spot-check, waiting for the declaration |
+| — | Coverage gate (archive outside EU/EEA/UK/CH/US/CA; light research for big consultancies) | built 2026-10-03 ([ADR](../decisions/2026-10-03-coverage-gate.md)) |
 | I3 | Career profiles | |
 | I4 | Hiring profiles | |
 | I5 | Matching v2 | |

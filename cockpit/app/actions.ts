@@ -225,3 +225,22 @@ export async function researchCompany(companyId: string): Promise<void> {
   await idempotent(() => api(`/v1/companies/${companyId}/research`, { method: "POST" }));
   revalidatePath(`/companies/${companyId}`);
 }
+
+/** Un-archive a person the coverage rule archived; the rule then leaves them be. */
+export async function bringBack(candidateId: string, path: string): Promise<void> {
+  await idempotent(() => apiJson(`/v1/candidates/${candidateId}/bring-back`, {}));
+  revalidatePath(path);
+  revalidatePath("/people");
+}
+
+/** Open a job to countries beyond the desk's coverage (names or codes, comma separated). */
+export async function setJobCountries(jobId: string, _: FormState, form: FormData): Promise<FormState> {
+  const countries = String(form.get("countries") ?? "").split(",").map((c) => c.trim()).filter(Boolean);
+  try {
+    await api(`/v1/jobs/${jobId}/countries`, { method: "PUT", body: JSON.stringify({ countries }), headers: { "Content-Type": "application/json" } });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return { message: countries.length ? "Saved. People on this job were checked again." : "Cleared. People on this job were checked again." };
+}

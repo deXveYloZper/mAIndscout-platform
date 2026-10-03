@@ -32,6 +32,7 @@
       ],
       "default": "unknown"
     },
-    "location_raw": { "type": ["string", "null"] }
+    "location_raw": { "type": ["string", "null"] },
+    "location_country": { "type": ["string", "null"], "pattern": "^[A-Z]{2}$" }
   }
 }

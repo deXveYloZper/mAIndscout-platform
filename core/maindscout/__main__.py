@@ -7,6 +7,7 @@
     python -m maindscout link-companies      resolve companies for existing career steps and jobs
     python -m maindscout research-backlog    queue company research for people and jobs already on the desk
     python -m maindscout research-recheck    apply the current checks to stored company facts (free)
+    python -m maindscout coverage-check      apply the coverage rule to everyone already on the desk (free)
     python -m maindscout worker [--threads 2] run background tasks (serve also starts workers unless --no-workers)
 """
 
@@ -94,6 +95,7 @@ def main() -> None:
     sub.add_parser("link-companies")
     sub.add_parser("research-backlog")
     sub.add_parser("research-recheck")
+    sub.add_parser("coverage-check")
     p_reset = sub.add_parser("reset-db")
     p_reset.add_argument("name")
     p_reset.add_argument("--org-id", required=True)
@@ -140,6 +142,24 @@ def main() -> None:
             for d in dropped:
                 print(d["claim_type"], "-", d["reason"])
             print(f"rejected {len(dropped)} stored fact(s)")
+    elif args.cmd == "coverage-check":
+        from maindscout.api import coverage, research
+        from maindscout.db.models import PUBLIC_ORG_ID, Candidate, Claim, Company
+
+        with make_session_factory(make_engine())() as session:
+            # Companies researched before the gate existed: take their base from the stored head-office fact.
+            for company in session.scalars(select(Company).where(Company.hq_country.is_(None))):
+                hq = session.scalar(select(Claim).where(Claim.org_id == PUBLIC_ORG_ID, Claim.subject_id == company.id,
+                                                        Claim.claim_type == "CompanyLocationClaim", Claim.status.in_(("proposed", "approved"))))
+                if hq is not None and hq.payload.get("hq_country"):
+                    company.hq_country = hq.payload["hq_country"]
+            archived = kept = 0
+            for org in session.scalars(select(Org).where(Org.id != PUBLIC_ORG_ID)):
+                for cid in list(session.scalars(select(Candidate.id).where(Candidate.org_id == org.id, Candidate.merged_into_id.is_(None)))):
+                    verdict = coverage.evaluate(session, org.id, cid, {"act": "coverage_check"})
+                    archived, kept = archived + verdict.outside, kept + (not verdict.outside)
+            session.commit()
+            print(f"in coverage {kept}, archived {archived}")
     elif args.cmd == "reset-db":
         reset_db(args.name, args.org_id)
     elif args.cmd == "eval":

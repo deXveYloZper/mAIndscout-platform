@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { overrideBand, startCampaign } from "@/app/actions";
+import { overrideBand, setJobCountries, startCampaign } from "@/app/actions";
+import { CountriesForm } from "@/components/CountriesForm";
 import { FindMore } from "@/components/FindMore";
 import { Snippet } from "@/components/Claim";
 import { MultiUpload } from "@/components/MultiUpload";
@@ -135,6 +136,33 @@ export default async function Job({ params }: { params: Promise<{ id: string }> 
         <summary>{BAND_LABEL.do_not_submit} ({job.people.do_not_submit.length})</summary>
         <People jobId={job.id} people={job.people.do_not_submit} />
       </details>
+      <details className="band">
+        <summary>Archived: outside coverage ({job.archived.length})</summary>
+        <p className="hint">
+          They live or work outside the countries this desk and this job accept, so nothing more is spent on them. Open one to bring them back.
+        </p>
+        {job.archived.length === 0 ? <p className="empty">Nobody.</p> : (
+          <ul className="people">
+            {job.archived.map((a) => (
+              <li key={a.candidate_id}>
+                <Link href={`/people/${a.candidate_id}`}>{a.name ?? "name not read"}</Link>
+                <span className="sub">{a.reason}</span>
+                <span />
+              </li>
+            ))}
+          </ul>
+        )}
+      </details>
+
+      <section className="panel">
+        <h3>Countries this job accepts</h3>
+        <p className="sub">
+          The desk covers the EU / EEA, the UK, Switzerland, the US and Canada.
+          {job.coverage.from_ad.length > 0 && <> The ad also accepts: {job.coverage.from_ad.map((c) => job.coverage.names[c] ?? c).join(", ")}.</>}
+        </p>
+        <CountriesForm action={setJobCountries.bind(null, job.id)} opened={job.coverage.opened.map((c) => job.coverage.names[c] ?? c).join(", ")} />
+        <p className="hint">Decided by where people live and work now, never by nationality or where they are from.</p>
+      </section>
 
       {mobility.length > 0 && (
         <>

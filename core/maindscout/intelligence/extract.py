@@ -16,7 +16,7 @@ from typing import Any
 from maindscout.intelligence import contacts, spans
 from maindscout.intelligence.llm import LLMClient
 
-PROMPT_VERSION = "2026-10-02.6"
+PROMPT_VERSION = "2026-10-03.1"
 ONTOLOGY_VERSION = "slice0.1"
 RUBRIC_VERSION = "triage.1"
 
@@ -52,6 +52,8 @@ CV_SCHEMA = _obj(
                         "enum": ["full_time", "part_time", "contract", "consulting", "internship", "side", "unknown"],
                     },
                     "location": _NULLABLE_STR,
+                    "country_code": {"type": ["string", "null"],
+                                     "description": "ISO 3166-1 alpha-2 (upper case) of the country of `location`; null if no location is written"},
                     "start": {**_NULLABLE_STR, "description": "YYYY-MM or YYYY as written; null if not stated"},
                     "end": {**_NULLABLE_STR, "description": "YYYY-MM or YYYY as written; 'present' if current; null if not stated"},
                     "quote": _QUOTE,
@@ -376,6 +378,9 @@ def extract_cv(text: str, artifact_id: uuid.UUID, annotations: list[dict], clien
             "employment_type": item.get("employment_type", "unknown"),
             "location_raw": item.get("location"),
         }
+        code = (item.get("country_code") or "").upper()
+        if item.get("location") and re.fullmatch(r"[A-Z]{2}", code):
+            payload["location_country"] = code  # the country of the written place (e.g. Bangalore -> IN)
         run.accept(
             StagedClaim(key, "CareerStepClaim", payload, span, valid_from, valid_to, precision,
                         employment_type=item.get("employment_type", "unknown"))

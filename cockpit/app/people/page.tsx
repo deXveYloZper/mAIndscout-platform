@@ -32,7 +32,10 @@ export default async function People({ searchParams }: { searchParams: Promise<{
             <tbody>
               {people.map((p) => (
                 <tr key={p.id}>
-                  <td><Link href={`/people/${p.id}`}>{p.name ?? "name not read"}</Link></td>
+                  <td>
+                    <Link href={`/people/${p.id}`}>{p.name ?? "name not read"}</Link>
+                    {p.archived && <span className="bandtag archived" title={p.archived}> archived</span>}
+                  </td>
                   <td>
                     {p.jobs.length === 0 ? <span className="sub">in the pool</span> : (
                       <span className="joblist">

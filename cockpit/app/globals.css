@@ -179,3 +179,8 @@ table.gaps tr.conflict td:first-child { border-left: 2px solid var(--red); }
 .facts .src q { font-style: italic; }
 .facts .warn { color: var(--amber); font-size: 12px; margin-left: 8px; }
 .research-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+
+/* coverage gate */
+.bandtag.archived { color: var(--cream-dim); margin-left: 6px; }
+.archived-note { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+#countries { min-width: 220px; }

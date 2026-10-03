@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy import String, func, select
 from sqlalchemy.orm import Session
 
+from maindscout.api import coverage
 from maindscout.db.models import (
     Candidate,
     CandidateJob,
@@ -72,14 +73,18 @@ def claim_view(claim: Claim, evidence: list[dict[str, Any]]) -> dict[str, Any]:
 
 def list_jobs(session: Session, org_id: uuid.UUID) -> list[dict[str, Any]]:
     counts: dict[uuid.UUID, dict[str, int]] = defaultdict(lambda: {b: 0 for b in BANDS})
-    for job_id, band, n in session.execute(
-            select(CandidateJob.job_id, CandidateJob.triage_band, func.count()).where(CandidateJob.org_id == org_id)
-            .group_by(CandidateJob.job_id, CandidateJob.triage_band)):
-        if band in BANDS:
-            counts[job_id][band] = n
+    archived: dict[uuid.UUID, int] = defaultdict(int)
+    for job_id, band, gone, n in session.execute(
+            select(CandidateJob.job_id, CandidateJob.triage_band, Candidate.archived_at.is_not(None), func.count())
+            .join(Candidate, Candidate.id == CandidateJob.candidate_id).where(CandidateJob.org_id == org_id)
+            .group_by(CandidateJob.job_id, CandidateJob.triage_band, Candidate.archived_at.is_not(None))):
+        if gone:
+            archived[job_id] += n
+        elif band in BANDS:
+            counts[job_id][band] += n
     jobs = list(session.scalars(select(Job).where(Job.org_id == org_id).order_by(Job.created_at.desc())))
     return [{"id": str(j.id), "title": j.title, "hiring_company": j.hiring_company, "state": j.state,
-             "created_at": _iso(j.created_at), "bands": counts[j.id],
+             "created_at": _iso(j.created_at), "bands": counts[j.id], "archived": archived[j.id],
              "to_review": len(inbox(session, org_id, j.id, "priority"))} for j in jobs]
 
 
@@ -96,7 +101,14 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
         select(Decision.subject_id, func.count()).where(Decision.org_id == org_id, Decision.sealed_at.is_(None))
         .group_by(Decision.subject_id)).all())
     people: dict[str, list[dict[str, Any]]] = {b: [] for b in BANDS}
+    gone = {c.id: c.archived_reason for c in session.scalars(select(Candidate).where(
+        Candidate.id.in_([p.candidate_id for p in pairs] or [None]), Candidate.archived_at.is_not(None)))}
+    archived = []
     for p in pairs:
+        if p.candidate_id in gone:
+            archived.append({"candidate_id": str(p.candidate_id), "name": who.get(p.candidate_id),
+                             "reason": (gone[p.candidate_id] or {}).get("text")})
+            continue
         people.setdefault(p.triage_band, []).append({
             "candidate_id": str(p.candidate_id), "name": who.get(p.candidate_id), "band": p.triage_band,
             "reason": p.triage_reason, "overridden_by": p.band_overridden_by, "open_decisions": open_counts.get(p.candidate_id, 0),
@@ -109,6 +121,8 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
         "requirements": [claim_view(c, ev[c.id]) for c in reqs],
         "process_stale": any(c.flags.get("job_process_stale") for c in reqs),
         "people": people,
+        "archived": archived,
+        "coverage": coverage.summary(session, job),
     }
 
 
@@ -130,6 +144,8 @@ def person_page(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID) ->
     return {
         "id": str(person.id), "name": names(session, [person.id])[person.id],
         "merged_into_id": str(person.merged_into_id) if person.merged_into_id else None,
+        "archived": {"at": _iso(person.archived_at), "reason": (person.archived_reason or {}).get("text")} if person.archived_at else None,
+        "coverage_override": person.coverage_override,
         "claims": grouped,
         "jobs": [{"job_id": str(j.id), "title": j.title, "band": p.triage_band, "reason": p.triage_reason} for p, j in pairs],
         "documents": [{"id": str(d.id), "filename": d.filename, "needs_vision": d.needs_vision, "as_of": _iso(d.as_of)}
@@ -155,9 +171,11 @@ def inbox(session: Session, org_id: uuid.UUID, job_id: uuid.UUID | None = None, 
         q = select(CandidateJob.candidate_id).where(CandidateJob.job_id == job_id, CandidateJob.org_id == org_id)
         if band and band != "all":
             q = q.where(CandidateJob.triage_band == band)
-        scope = list(session.scalars(q))
+        scope = list(session.scalars(q.join(Candidate, Candidate.id == CandidateJob.candidate_id)
+                                     .where(Candidate.archived_at.is_(None))))
     else:
-        scope = list(session.scalars(select(Candidate.id).where(Candidate.org_id == org_id)))
+        # Archived people (outside coverage) ask nothing of the recruiter until someone brings them back.
+        scope = list(session.scalars(select(Candidate.id).where(Candidate.org_id == org_id, Candidate.archived_at.is_(None))))
     if not scope:
         return []
     who = names(session, scope)
@@ -220,6 +238,7 @@ def list_people(session: Session, org_id: uuid.UUID) -> list[dict[str, Any]]:
         .where(DocumentSubject.org_id == org_id, DocumentSubject.subject_type == "candidate")
         .group_by(DocumentSubject.subject_id)).all())
     return [{"id": str(p.id), "name": who.get(p.id), "created_at": _iso(p.created_at), "jobs": pairs.get(p.id, []),
+             "archived": (p.archived_reason or {}).get("text") if p.archived_at else None,
              "document_id": docs.get(p.id)} for p in people]
 
 

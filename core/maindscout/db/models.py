@@ -168,6 +168,11 @@ class Candidate(Base):
     org_id: Mapped[uuid.UUID] = _org()
     name_variants: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     merged_into_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("candidate.id"))  # redirect, never rewrite
+    # Coverage gate: archived = lives or works outside every country the desk and their jobs accept. No further
+    # paid intelligence runs for them. `coverage_override` = a person brought them back; the gate then leaves them be.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    archived_reason: Mapped[dict | None] = mapped_column(JSONB)
+    coverage_override: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     created_at: Mapped[datetime] = _created()
 
 
@@ -184,6 +189,7 @@ class Company(Base):
     hq_country: Mapped[str | None] = mapped_column(String(2))
     merged_into_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("company.id"))  # redirect, never rewrite
     research_status: Mapped[str | None] = mapped_column(String)  # identified | not_identified | failed
+    research_depth: Mapped[str] = mapped_column(String, nullable=False, default="full", server_default="full")  # full | basic
     researched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created()
 
@@ -213,6 +219,9 @@ class Job(Base):
     hiring_company_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("company.id"))
     state: Mapped[str] = mapped_column(String, nullable=False, default="open")
     source_document_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("document.id"))
+    # Countries this job accepts beyond the desk's coverage, opened by a recruiter (ISO codes). Countries the ad
+    # itself names ("live in or work from: Brazil") are read from its requirements, not stored here.
+    open_countries: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
     created_at: Mapped[datetime] = _created()
 
 

@@ -53,6 +53,10 @@ class DeskAdapter:
             skills = [c.payload["normalized_skill"] for c in claims if c.claim_type == "SkillClaim"]
             titles = [c.payload.get("title_raw", "") for c in claims if c.claim_type == "CareerStepClaim"]
             if any(supports(t, skills, titles) for t in tokens):
+                from maindscout.api import coverage
+
+                if not coverage.would_accept(session, org_id, person.id, job):
+                    continue  # archived as outside coverage, and this job does not accept their country either
                 found.append(person.id)
                 if len(found) >= limit:
                     break

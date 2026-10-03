@@ -73,6 +73,7 @@ export type JobSummary = {
   hiring_company: string | null;
   state: string;
   bands: Record<Band, number>;
+  archived?: number;
   to_review?: number;
 };
 
@@ -93,6 +94,8 @@ export type JobPage = JobSummary & {
   requirements: ClaimView[];
   process_stale: boolean;
   people: Record<Band, PersonOnJob[]>;
+  archived: { candidate_id: string; name: string | null; reason: string | null }[];
+  coverage: { desk: string[]; from_ad: string[]; opened: string[]; names: Record<string, string> };
 };
 
 export type PersonPage = {
@@ -102,6 +105,8 @@ export type PersonPage = {
   jobs: { job_id: string; title: string; band: Band; reason: string | null }[];
   documents: { id: string; filename: string | null; needs_vision: boolean; as_of: string | null }[];
   open_decisions: string[];
+  archived: { at: string; reason: string | null } | null;
+  coverage_override: boolean;
 };
 
 export type Side = {
@@ -139,6 +144,7 @@ export type PersonSummary = {
   created_at: string;
   jobs: { job_id: string; title: string; band: Band }[];
   document_id: string | null;
+  archived: string | null;
 };
 
 export type ProcessResult = {

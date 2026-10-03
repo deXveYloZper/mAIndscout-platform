@@ -30,6 +30,7 @@ Matching and sourcing need to know what kind of company someone worked at (plan 
   - "Research now" on the company page forces a run.
   - `RESEARCH_AUTO=false` turns automatic research off (the e2e run uses this).
   - `python -m maindscout research-backlog` queues research for people and jobs already on the desk.
+- **Light research** for large consultancies and outsourcers (kind and head office only, yearly), and only for people in coverage ([coverage-gate.md](coverage-gate.md)).
 - **Budget:** shared research has its own monthly budget, `RESEARCH_MONTHLY_BUDGET_USD` (default $10). Its cost is recorded without an org.
 
 ## Depends on
