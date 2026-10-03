@@ -6,7 +6,7 @@ import { HiringProfile } from "@/components/HiringProfile";
 import { Snippet } from "@/components/Claim";
 import { MultiUpload } from "@/components/MultiUpload";
 import { api, apiOr404, type Band, type InboxItem, type JobPage, type PersonOnJob } from "@/lib/api";
-import { BAND_LABEL, countryName, reasonWords, STATE_LABEL } from "@/lib/format";
+import { BAND_LABEL, countryName, reasonWords, STATE_LABEL, TIER_WORDS } from "@/lib/format";
 
 export const metadata = { title: "Job" };
 
@@ -37,6 +37,7 @@ function People({ jobId, people }: { jobId: string; people: PersonOnJob[] }) {
           <span>
             <Link href={`/jobs/${jobId}/people/${p.candidate_id}`}>{p.name ?? "name not read"}</Link>
             {p.state && p.state !== "new" && <span className={`statetag ${p.state}`}>{STATE_LABEL[p.state]}</span>}
+            {p.match_tier && p.match_tier !== "unclear" && <span className={`tiertag ${p.match_tier}`}>{TIER_WORDS[p.match_tier]}</span>}
             {p.coverage && !p.coverage.met && p.coverage.applicable > 0 && (
               <span className="thintag" title={p.coverage.words}>thin</span>
             )}

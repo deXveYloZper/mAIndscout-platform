@@ -192,3 +192,19 @@ def test_the_rank_is_researched_once_per_institution_and_shown_as_merit_evidence
 def test_institution_names_match_across_spellings():
     assert institutions.normalize("The University of Edinburgh") == institutions.normalize("University Of Edinburgh")
     assert institutions.normalize("Imperial College London") != institutions.normalize("King's College London")
+
+
+def test_a_built_profile_matches_the_person_to_their_jobs(client, fake, session):
+    job = make_job(client)
+    cid, org = cid_of(client, job), org_of(client)
+    r = client.post(f"/v1/jobs/{job}/requirements", json={"category": "role", "strength": "must", "text_raw": "Software engineer",
+                                                          "role_family": "software_engineering"})
+    assert r.status_code == 201
+    page = client.get(f"/v1/jobs/{job}/people/{cid}/gaps").json()
+    assert page["match"]["tier"] == "unlikely" and page["match"]["rules"][0]["id"] == "distinctive_must_missing"  # no InSAR
+    profiles.classify(session, org, cid, Labeller())
+    profiles.build(session, org, cid)
+    page = client.get(f"/v1/jobs/{job}/people/{cid}/gaps").json()
+    role = next(v for v in page["match"]["rows"] if v["kind"] == "role")
+    assert role["verdict"] == "strong" and "software engineering" in role["detail"]
+    assert "%" not in str(page["match"])

@@ -114,7 +114,7 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
             "candidate_id": str(p.candidate_id), "name": who.get(p.candidate_id), "band": p.triage_band,
             "reason": p.triage_reason, "overridden_by": p.band_overridden_by, "open_decisions": open_counts.get(p.candidate_id, 0),
             **_gap_summary(session, org_id, job, p.candidate_id),
-            "state": p.pair_state, "outcome": p.outcome,
+            "state": p.pair_state, "outcome": p.outcome, "match_tier": p.match_tier,
         })
     return {
         "id": str(job.id), "title": job.title, "hiring_company": job.hiring_company, "state": job.state,
@@ -281,7 +281,7 @@ def gap_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, candidate_i
         "job": {"id": str(job.id), "title": job.title, "hiring_company": job.hiring_company},
         "person": {"id": str(person.id), "name": names(session, [person.id])[person.id]},
         "band": pair.triage_band, "reason": pair.triage_reason, "overridden_by": pair.band_overridden_by,
-        "state": pair.pair_state, "outcome": pair.outcome,
+        "state": pair.pair_state, "outcome": pair.outcome, "match": pair.match,
         "counts": gaps.counts(rows),
         "coverage": _coverage(rows),
         "history": pair_history(session, pair.id),

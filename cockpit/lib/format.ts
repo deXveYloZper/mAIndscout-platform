@@ -46,6 +46,10 @@ export function reasonWords(reason: string | null): string {
       return "job has no distinctive must-haves yet";
     case "human_override":
       return `set by hand: ${rest}`;
+    case "match": {
+      const [tier, why] = rest.split(/:(.*)/s);
+      return `${TIER_WORDS[tier] ?? tier}${why ? `: ${why}` : ""}`;
+    }
     default:
       return reason;
   }
@@ -142,3 +146,11 @@ export const DOMAINS = [
   "cybersecurity", "ai / data", "agriculture / food", "manufacturing / industrial", "hr / recruiting", "legal",
   "research / academia", "non-profit", "other",
 ];
+
+// Matching v2 (I5)
+export const TIER_WORDS: Record<string, string> = {
+  strong: "strong match", possible: "possible match", unlikely: "unlikely match", unclear: "unclear: too little known",
+};
+export const VERDICT_LABEL: Record<string, string> = {
+  strong: "Met", partial: "Partly", gap: "Gap", against: "Not wanted", ask: "Ask", level_one_below: "Partly",
+};

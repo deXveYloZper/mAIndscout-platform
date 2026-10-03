@@ -2,6 +2,8 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-04 — I5: matching v2. Verdict per requirement from career and hiring profiles; tier by visible rules (today's InSAR rule first, not wanted, substitution, domain over seniority, contractor fit, must-have gaps, partly met, strong match); band follows the tier, token triage as fallback; match panel on the person-on-job page; `rematch` — [matching](components/matching.md)
+- 2026-10-04 — **I4 gate GREEN**, declared by the owner; I5 starts — [decision](../decisions/2026-10-04-i4-gate.md)
 - 2026-10-04 — I4: hiring profiles. The ad read again for role, employment and background asks; intake notes from the hiring manager read into requirements with quotes (the hiring manager beats the ad); strengths must / strong plus / nice / not wanted; recruiter adds and reweighs; hiring company facts and who we know at target companies; personality and culture never criteria — [hiring-profiles](components/hiring-profiles.md)
 - 2026-10-04 — **I3 gate GREEN**, declared by the owner; I4 starts — [decision](../decisions/2026-10-04-i3-gate.md)
 - 2026-10-04 — I3: career profiles. Each step classified once per CV (fixed families and industries, levels from titles by code), QS university rank (shared), rubric dimensions by code (related work counted together, stability per employer and contractor-aware, employer kind at joining), questions for the call, profile on the person page with corrections; paid calls stay in the ledger when a task fails; registries seeded at start — [career-profiles](components/career-profiles.md)

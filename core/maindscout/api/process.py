@@ -287,6 +287,21 @@ def _triage_now(session: Session, org_id, candidate_id, job: Job) -> triage.Tria
     return triage.triage(requirements, skills, titles)
 
 
+def _match_now(session: Session, org_id, candidate_id, job: Job):
+    """Matching v2: the career profile against the hiring profile; token triage is rule 1 and the fallback."""
+    from maindscout.api import profiles
+    from maindscout.api.queries import _gap_rows
+    from maindscout.domain import matching
+
+    coarse = _triage_now(session, org_id, candidate_id, job)
+    reqs = [{"id": str(c.id), "payload": c.approved_view or c.payload}
+            for c in _live_claims(session, org_id, "job", job.id, "JobRequirementClaim") if c.payload.get("category") != "process"]
+    snap = profiles.latest(session, candidate_id)
+    stints, _ = profiles.inputs(session, org_id, candidate_id) if snap else ([], [])
+    return matching.match(reqs, _gap_rows(session, org_id, job, candidate_id), snap.profile if snap else None, stints,
+                          (coarse.band, coarse.reason))
+
+
 def snapshot_pair(session: Session, pair: CandidateJob) -> Score | None:
     """Store what the machine considered for this pair (breakdown + coverage, never a value), only when it changed."""
     from maindscout.api.queries import _gap_rows
@@ -310,11 +325,19 @@ def retriage_pair(session: Session, pair: CandidateJob, cause: dict, actor: str 
     """Recompute the band from live facts. Records a history event when it changes. A band set by hand stays.
     Either way, a new breakdown snapshot is stored if the facts behind the pair changed."""
     snapshot_pair(session, pair)
-    if pair.band_overridden_by:
-        return None
     job = session.get(Job, pair.job_id)
-    result = _triage_now(session, pair.org_id, pair.candidate_id, job)
+    m = _match_now(session, pair.org_id, pair.candidate_id, job)
+    pair.match_tier, pair.match = m.tier, m.as_dict()  # kept up to date even when a person set the band
+    if pair.band_overridden_by:
+        session.flush()
+        return None
+    if m.band is None:  # unclear: the coarse band stands
+        coarse = _triage_now(session, pair.org_id, pair.candidate_id, job)
+        result = triage.Triage(coarse.band, coarse.reason)
+    else:
+        result = triage.Triage(m.band, m.reason)
     if (pair.triage_band, pair.triage_reason) == (result.band, result.reason):
+        session.flush()
         return None
     old = pair.triage_band
     if old != "unassigned":

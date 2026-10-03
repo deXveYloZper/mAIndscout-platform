@@ -2,7 +2,7 @@ import Link from "next/link";
 import { addSkill, overrideBand, setPairState } from "@/app/actions";
 import { StateControls } from "@/components/StateControls";
 import { apiOr404, type Band } from "@/lib/api";
-import { BAND_LABEL, reasonWords, STATE_LABEL } from "@/lib/format";
+import { BAND_LABEL, reasonWords, STATE_LABEL, TIER_WORDS, VERDICT_LABEL } from "@/lib/format";
 
 export const metadata = { title: "Person on job" };
 
@@ -29,7 +29,14 @@ const CAUSE_LABEL: Record<string, string> = {
   override: "set by hand",
   state: "status changed",
   sourced: "sourced from the desk",
+  career_profile_built: "career profile built",
+  hiring_profile_ad: "hiring profile read from the ad",
+  hiring_profile_intake: "intake notes read",
+  job_countries: "job countries changed",
 };
+
+type MatchRow = { requirement_id: string; requirement: string; kind: string; strength: string; verdict: string; detail: string };
+type MatchView = { tier: string; engine: string; rules: { id: string; text: string; detail: string }[]; rows: MatchRow[] };
 
 type GapPage = {
   job: { id: string; title: string; hiring_company: string | null };
@@ -42,6 +49,7 @@ type GapPage = {
   coverage: { applicable: number; official: number; needed: number; met: boolean; words: string };
   history: HistoryEvent[];
   rows: GapRow[];
+  match: MatchView | null;
 };
 
 const STATUS_LABEL: Record<GapRow["status"], string> = {
@@ -54,7 +62,8 @@ const STATUS_LABEL: Record<GapRow["status"], string> = {
 export default async function PersonOnJob({ params }: { params: Promise<{ id: string; cid: string }> }) {
   const { id, cid } = await params;
   const page = await apiOr404<GapPage>(`/v1/jobs/${id}/people/${cid}/gaps`);
-  const questions = page.rows.filter((r) => r.status === "question");
+  const verdicts = Object.fromEntries((page.match?.rows ?? []).map((v) => [v.requirement_id, v]));
+  const questions = page.rows.filter((r) => (verdicts[r.requirement_id]?.verdict ?? (r.status === "question" ? "ask" : "")) === "ask");
   const path = `/jobs/${page.job.id}/people/${page.person.id}`;
 
   return (
@@ -76,6 +85,17 @@ export default async function PersonOnJob({ params }: { params: Promise<{ id: st
         ))}
       </p>
       <p className="sub">Every requirement of the job against this person&apos;s file. There is no overall score, by design: read the rows.</p>
+      {page.match && (
+        <section className={`panel match ${page.match.tier}`}>
+          <h3>Match: {TIER_WORDS[page.match.tier] ?? page.match.tier}</h3>
+          <ul className="rules">
+            {page.match.rules.map((r, i) => (
+              <li key={i}><strong>{r.text}</strong>{r.detail ? <span className="sub"> ({r.detail})</span> : null}</li>
+            ))}
+          </ul>
+          <p className="hint">The tier comes from these rules, in order, applied to the verdicts below. Where someone lives or their right to work is never a reason for &quot;unlikely&quot;.</p>
+        </section>
+      )}
       <p className={`coverage ${page.coverage.met ? "met" : "thin"}`}>
         <strong>Official coverage:</strong> {page.coverage.words}.
         {!page.coverage.met && page.coverage.applicable > 0 && " Approve the facts behind the must-haves (on the full profile) before relying on this band."}
@@ -84,7 +104,7 @@ export default async function PersonOnJob({ params }: { params: Promise<{ id: st
       <div className="tablewrap">
         <table className="gaps">
           <thead>
-            <tr><th>Requirement</th><th>Status</th><th>Why</th><th>From the file</th></tr>
+            <tr><th>Requirement</th><th>Verdict</th><th>Why</th><th>From the file</th></tr>
           </thead>
           <tbody>
             {page.rows.map((r) => (
@@ -96,9 +116,13 @@ export default async function PersonOnJob({ params }: { params: Promise<{ id: st
                     {r.distinctive && <span className="tag key">decides the band</span>}
                   </div>
                 </td>
-                <td><span className={`gapstatus ${r.status}`}>{STATUS_LABEL[r.status]}</span></td>
                 <td>
-                  {r.detail}
+                  {verdicts[r.requirement_id] ? (
+                    <span className={`verdict ${verdicts[r.requirement_id].verdict}`}>{VERDICT_LABEL[verdicts[r.requirement_id].verdict] ?? verdicts[r.requirement_id].verdict}</span>
+                  ) : <span className={`gapstatus ${r.status}`}>{STATUS_LABEL[r.status]}</span>}
+                </td>
+                <td>
+                  {verdicts[r.requirement_id]?.detail ?? r.detail}
                   {r.status === "missing" && r.token && (
                     <div className="row" style={{ marginTop: 6 }}>
                       {r.token.split("/").filter(Boolean).map((t) => (
@@ -129,7 +153,7 @@ export default async function PersonOnJob({ params }: { params: Promise<{ id: st
         <section className="panel">
           <h3>To ask on the call ({questions.length})</h3>
           <ul className="questions">
-            {questions.map((q) => <li key={q.requirement_id}><strong>{q.requirement}:</strong> {q.detail}</li>)}
+            {questions.map((q) => <li key={q.requirement_id}><strong>{q.requirement}:</strong> {verdicts[q.requirement_id]?.detail ?? q.detail}</li>)}
           </ul>
         </section>
       )}

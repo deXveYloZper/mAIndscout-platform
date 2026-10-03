@@ -257,6 +257,9 @@ class CandidateJob(Base):
     band_overridden_by: Mapped[str | None] = mapped_column(String)
     pair_state: Mapped[str] = mapped_column(String, nullable=False, default="new")  # the recruiter's progress; see PAIR_STATES
     outcome: Mapped[dict | None] = mapped_column(JSONB)  # why it ended: {party, reason, note} for we_passed / submitted
+    # Matching v2 (I5): the tier and every verdict and rule behind it. Never a number.
+    match_tier: Mapped[str | None] = mapped_column(String)  # strong | possible | unlikely | unclear
+    match: Mapped[dict | None] = mapped_column(JSONB)
     merged_into_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("candidate_job.id"))
     version: Mapped[int] = mapped_column(nullable=False, default=1)
     created_at: Mapped[datetime] = _created()

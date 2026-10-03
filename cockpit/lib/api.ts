@@ -78,6 +78,7 @@ export type JobSummary = {
 };
 
 export type PersonOnJob = {
+  match_tier?: string | null;
   candidate_id: string;
   name: string | null;
   band: Band;

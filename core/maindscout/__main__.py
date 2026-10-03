@@ -9,6 +9,7 @@
     python -m maindscout research-recheck    apply the current checks to stored company facts (free)
     python -m maindscout coverage-check      apply the coverage rule to everyone already on the desk (free)
     python -m maindscout profiles-rebuild [--reclassify]  rebuild career profiles (reclassify: read step labels again, paid)
+    python -m maindscout rematch             match every person on every job again (free)
     python -m maindscout worker [--threads 2] run background tasks (serve also starts workers unless --no-workers)
 """
 
@@ -106,6 +107,7 @@ def main() -> None:
     sub.add_parser("coverage-check")
     p_prof = sub.add_parser("profiles-rebuild")
     p_prof.add_argument("--reclassify", action="store_true")
+    sub.add_parser("rematch")
     p_reset = sub.add_parser("reset-db")
     p_reset.add_argument("name")
     p_reset.add_argument("--org-id", required=True)
@@ -179,6 +181,16 @@ def main() -> None:
             print(profiles.rebuild_all(session, args.reclassify))
             session.commit()
         print("queued: the workers (serve, or `worker`) build them")
+    elif args.cmd == "rematch":
+        from maindscout.api.process import retriage_pair
+        from maindscout.db.models import CandidateJob
+
+        with make_session_factory(make_engine())() as session:
+            changed = 0
+            for pair in session.scalars(select(CandidateJob)):
+                changed += retriage_pair(session, pair, {"act": "rematch"}, "system") is not None
+            session.commit()
+            print(f"bands changed: {changed}")
     elif args.cmd == "reset-db":
         reset_db(args.name, args.org_id)
     elif args.cmd == "eval":

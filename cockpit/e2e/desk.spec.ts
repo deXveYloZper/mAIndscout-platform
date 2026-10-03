@@ -16,6 +16,12 @@ test.describe.configure({ mode: "serial" });
 
 let catalystUrl = "";
 
+/** Open a person from the job page, whichever band they are in (bands can move once career profiles arrive). */
+async function openPerson(page: Page, name: string) {
+  await page.locator("details.band").evaluateAll((els) => els.forEach((el) => ((el as HTMLDetailsElement).open = true)));
+  await page.getByRole("link", { name }).first().click();
+}
+
 async function openJob(page: Page, title: RegExp) {
   await page.goto("/");
   await page.getByRole("link", { name: title }).click();
@@ -56,9 +62,11 @@ test("CVs dropped on a job are read one by one and each is banded", async ({ pag
   await expect(results.filter({ hasText: "Jure" })).toContainText("Do not submit");
   await expect(results.filter({ hasText: "Priority" })).toHaveCount(1);
   await expect(results.filter({ hasText: "no evidence of insar (must-have)" })).toHaveCount(3);
-  // The page itself is refreshed with the new people.
-  await expect(page.getByRole("heading", { name: /Priority \(1\)/ })).toBeVisible();
+  // The page itself is refreshed with the new people. Once his career profile is built (in the background, a real
+  // model call), matching may move Ioannis between Priority and Review later; the InSAR rule keeps the other three out.
   await expect(page.locator("summary", { hasText: "Do not submit (3)" })).toBeVisible();
+  await page.locator("details.band").evaluateAll((els) => els.forEach((el) => ((el as HTMLDetailsElement).open = true)));
+  await expect(page.getByRole("link", { name: "Ioannis Gkanatsios" }).first()).toBeVisible();
 });
 
 test("a job can be opened to more countries, and nobody here is archived", async ({ page }) => {
@@ -80,10 +88,10 @@ test("a job can be opened to more countries, and nobody here is archived", async
 
 test("a person on a job opens as a gap table, with no overall score", async ({ page }) => {
   await page.goto(catalystUrl);
-  await page.getByRole("link", { name: "Ioannis Gkanatsios" }).click();
+  await openPerson(page, "Ioannis Gkanatsios");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Ioannis Gkanatsios");
   const insar = page.locator("table.gaps tr", { hasText: /InSAR/ }).first();
-  await expect(insar.locator(".gapstatus")).toHaveText("Evidence");
+  await expect(insar.locator(".verdict")).toHaveText("Met");
   await expect(insar).toContainText("decides the band");
   await expect(page.getByText("There is no overall score, by design")).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/\d+\s*%/);
@@ -98,9 +106,10 @@ test("recording a missing must-have as a fact moves the band, and the history sa
   await page.getByRole("link", { name: /Jure Domajnko/ }).click();
   await expect(page.locator(".bandtag").first()).toHaveText("Do not submit");
   await page.getByRole("button", { name: "They have insar" }).click();
-  await expect(page.locator(".bandtag").first()).toHaveText("Priority");
+  // The deciding fact is recorded, so the InSAR rule no longer decides. Matching may still keep a software engineer
+  // out of an earth-observation role for its other must-haves; either way the reason and the history say why.
+  await expect(page.locator("p.sub").filter({ hasText: "no evidence of insar" })).toHaveCount(0);
   const history = page.locator(".history li").last();
-  await expect(history).toContainText("Do not submit → Priority");
   await expect(history).toContainText("fact typed");
   // Put back for the rest of the day: a band set by hand stays.
   await page.getByLabel("Band", { exact: true }).selectOption("do_not_submit");
@@ -111,7 +120,7 @@ test("recording a missing must-have as a fact moves the band, and the history sa
 
 test("a pair moves seen, passed with a reason, reopened and submitted, all in the history", async ({ page }) => {
   await page.goto(catalystUrl);
-  await page.getByRole("link", { name: "Ioannis Gkanatsios" }).click();
+  await openPerson(page, "Ioannis Gkanatsios");
   await expect(page.locator(".statetag").first()).toHaveText("new");
   await page.getByRole("button", { name: "Mark seen" }).click();
   await expect(page.locator(".statetag").first()).toHaveText("seen");
@@ -167,7 +176,8 @@ test("a thin job is refilled from the desk's own people, banded by the same rule
   await page.getByRole("button", { name: "Find more people" }).click();
   await expect(page.getByRole("status")).toContainText(/Looked at \d+, added \d+/, { timeout: 60_000 });
   await expect(page.locator(".campaigns li").first()).toContainText("desk");
-  // People found on the desk now sit on this job in the usual piles, with the usual reasons.
+  // People found on the desk now sit on this job in the usual piles, with the usual reasons (any band).
+  await page.locator("details.band").evaluateAll((els) => els.forEach((el) => ((el as HTMLDetailsElement).open = true)));
   await expect(page.locator(".people li").first()).toBeVisible();
   await page.locator(".people li a").first().click();
   await expect(page.locator(".history")).toContainText("sourced");
@@ -196,7 +206,10 @@ test("the jobs list shows both jobs with their piles and what waits for review",
   const rows = page.locator("tbody tr");
   await expect(rows).toHaveCount(2);
   const catalyst = rows.filter({ hasText: "InSAR" });
-  await expect(catalyst.locator("td").nth(3)).toHaveText("1"); // priority
+  // Ioannis is in Priority or Review later (matching may move him once his profile is built); three are out.
+  const priority = Number(await catalyst.locator("td").nth(3).textContent());
+  const later = Number(await catalyst.locator("td").nth(4).textContent());
+  expect(priority + later).toBe(1);
   await expect(catalyst.locator("td").nth(5)).toHaveText("3"); // do not submit
 });
 
@@ -289,12 +302,13 @@ test("a typed contact is saved as an approved fact", async ({ page }) => {
 
 test("a recruiter can move someone to another band, with a reason that shows", async ({ page }) => {
   await page.goto(catalystUrl);
+  const before = Number((await page.getByRole("heading", { name: /^Priority \(\d+\)/ }).textContent())!.match(/\d+/)![0]);
   await page.locator("summary", { hasText: /Do not submit \(\d+\)/ }).click();
   const row = page.locator(".people li", { hasText: "Jure Domajnko" });
   await row.getByLabel("Band", { exact: true }).selectOption("priority");
   await row.getByLabel("Reason for changing the band").fill("knows radar from side project");
   await row.getByRole("button", { name: "Set" }).click();
-  await expect(page.getByRole("heading", { name: /Priority \(2\)/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: new RegExp(`^Priority \\(${before + 1}\\)`) })).toBeVisible();
   await expect(page.locator(".people li", { hasText: "Jure Domajnko" })).toContainText("set by hand: knows radar from side project");
 });
 

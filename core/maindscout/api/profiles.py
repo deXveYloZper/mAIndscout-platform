@@ -243,6 +243,9 @@ def build(session: Session, org_id, candidate_id, as_of: date | None = None) -> 
                              computed_at=datetime.now(timezone.utc))
     session.add(snapshot)
     session.flush()
+    from maindscout.api.process import retriage_candidate
+
+    retriage_candidate(session, org_id, candidate_id, {"act": "career_profile_built", "profile_id": str(snapshot.id)}, "system")
     return snapshot
 
 
