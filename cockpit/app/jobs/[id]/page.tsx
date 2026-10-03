@@ -1,11 +1,18 @@
 import Link from "next/link";
-import { overrideBand } from "@/app/actions";
+import { overrideBand, startCampaign } from "@/app/actions";
+import { FindMore } from "@/components/FindMore";
 import { Snippet } from "@/components/Claim";
 import { MultiUpload } from "@/components/MultiUpload";
 import { api, apiOr404, type Band, type InboxItem, type JobPage, type PersonOnJob } from "@/lib/api";
 import { BAND_LABEL, countryName, reasonWords, STATE_LABEL } from "@/lib/format";
 
 export const metadata = { title: "Job" };
+
+type Campaign = { id: string; source: string; query: { tokens: string[] }; cap: number; spent: number; added: number;
+  priority_added: number; status: string; stop_reason: string | null; created_at: string };
+type CampaignList = { priority: number; default_target: number; campaigns: Campaign[] };
+
+const STOP_WORDS: Record<string, string> = { cap: "stopped at cap", target_reached: "target reached", human: "stopped by hand" };
 
 const REQUIREMENT_GROUPS: [string, string][] = [
   ["skill", "Skills"],
@@ -65,10 +72,16 @@ function People({ jobId, people }: { jobId: string; people: PersonOnJob[] }) {
 
 export default async function Job({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [job, waiting] = await Promise.all([
+  const [job, waiting, sourcing] = await Promise.all([
     apiOr404<JobPage>(`/v1/jobs/${id}`),
     api<InboxItem[]>(`/v1/inbox?job_id=${id}&band=priority`),
+    api<CampaignList>(`/v1/jobs/${id}/campaigns`),
   ]);
+  const thin = sourcing.priority < sourcing.default_target;
+  const tokens = job.requirements
+    .filter((r) => r.payload.category === "skill" && r.payload.distinctive && r.payload.normalized_token)
+    .map((r) => r.payload.normalized_token)
+    .join(", ");
   const places = job.requirements.filter((r) => r.payload.category === "location" && r.payload.strength === "unknown" && !r.payload.mobility);
   const mobility = job.requirements.filter((r) => r.payload.mobility);
   const must = job.requirements.filter((r) => r.payload.category !== "process" && !places.includes(r) && !mobility.includes(r));
@@ -92,6 +105,24 @@ export default async function Job({ params }: { params: Promise<{ id: string }> 
         <h3>Drop CVs onto this job</h3>
         <MultiUpload jobId={job.id} />
       </section>
+
+      {(thin || sourcing.campaigns.length > 0) && (
+        <section className="panel">
+          <h3>Find more people {thin ? `(priority is thin: ${sourcing.priority} of ${sourcing.default_target})` : ""}</h3>
+          {thin ? <FindMore action={startCampaign.bind(null, job.id)} tokens={tokens} /> : <p className="sub">Priority has {sourcing.priority}; sourcing is for a thin queue.</p>}
+          <p className="hint">Searches the desk&apos;s own people only. Everyone found is banded by the same rules as an uploaded CV; being found never changes a band.</p>
+          {sourcing.campaigns.length > 0 && (
+            <ul className="campaigns">
+              {sourcing.campaigns.map((c) => (
+                <li key={c.id}>
+                  <span className="sub">{c.created_at.slice(0, 16).replace("T", " ")}</span> · desk · {c.query.tokens.join(", ")} ·
+                  looked at {c.spent}/{c.cap} · added {c.added} ({c.priority_added} priority) · {c.status === "exhausted" ? "no more matches" : STOP_WORDS[c.stop_reason ?? ""] ?? c.status}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       <h2>{BAND_LABEL.priority} ({job.people.priority.length})</h2>
       <People jobId={job.id} people={job.people.priority} />

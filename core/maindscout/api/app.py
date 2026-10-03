@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from maindscout.api import documents, erasure, process, queries, review
+from maindscout.api import documents, erasure, process, queries, review, sourcing
 from maindscout.db.models import Document, ExtractionArtifact, IntelligenceRun, Org
 from maindscout.db.session import make_engine, make_session_factory
 from maindscout.domain import registry as reg
@@ -92,6 +92,7 @@ ERRORS: list[tuple[type[Exception], int]] = [
     (pdf.UnsupportedMedia, 415),
     (LLMError, 502),
     (review.ReviewError, 422),
+    (sourcing.SourcingError, 422),
     (reg.InvalidPayloadError, 422),
     (reg.UnknownFlagError, 422),
     (reg.UnknownClaimTypeError, 422),
@@ -413,3 +414,36 @@ def verify_erase(candidate_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), 
         raise LookupError("This person has not been erased")
     survivors = erasure.verify_erasure(session, blobs, org_id, candidate_id, [])
     return {"clean": not survivors, "survivors": survivors}
+
+
+class CampaignBody(BaseModel):
+    source: str = "desk"
+    cap: int = sourcing.DEFAULT_CAP
+    target: int = sourcing.DEFAULT_TARGET
+
+
+@app.post("/v1/jobs/{job_id}/campaigns", status_code=201)
+def start_campaign(job_id: uuid.UUID, body: CampaignBody | None = None, org_id: uuid.UUID = Depends(get_org),
+                   session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Refill a thin priority queue: a bounded find whose people go through the same triage as uploads."""
+    body = body or CampaignBody()
+    campaign = sourcing.start(session, org_id, job_id, actor, body.source, body.cap, body.target)
+    session.commit()
+    return sourcing.as_dict(campaign)
+
+
+@app.get("/v1/jobs/{job_id}/campaigns")
+def list_campaigns(job_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    from maindscout.db.models import Campaign
+
+    rows = session.scalars(select(Campaign).where(Campaign.job_id == job_id, Campaign.org_id == org_id).order_by(Campaign.created_at.desc()))
+    return {"priority": sourcing.priority_count(session, job_id), "default_target": sourcing.DEFAULT_TARGET,
+            "campaigns": [sourcing.as_dict(c) for c in rows]}
+
+
+@app.post("/v1/campaigns/{campaign_id}/stop")
+def stop_campaign(campaign_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                  actor: str = Depends(get_actor)):
+    campaign = sourcing.stop(session, org_id, campaign_id, actor)
+    session.commit()
+    return sourcing.as_dict(campaign)

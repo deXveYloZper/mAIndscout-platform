@@ -38,6 +38,7 @@ The cockpit must never touch the database. Every action goes through one guarded
 | `POST /v1/claims/{id}/approve` · `/reject` | Human act on one claim |
 | `POST /v1/claims` | Human-typed fact, born approved (`replaces` supersedes the claim it corrects) |
 | `POST /v1/decisions/{id}/resolve` | Answer a card (see [review.md](review.md)) |
+| `POST /v1/jobs/{id}/campaigns` · `GET /v1/jobs/{id}/campaigns` · `POST /v1/campaigns/{id}/stop` | Refill a thin priority queue from the desk; list; stop ([sourcing.md](sourcing.md)) |
 | `POST /v1/subjects/candidate/{id}/erase` · `GET …/erase/verify` | Forget a person; re-check (see [erasure.md](erasure.md)) |
 
 ## Depends on

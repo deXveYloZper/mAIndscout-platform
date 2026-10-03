@@ -422,3 +422,31 @@ class Score(Base):
     claim_set_hash: Mapped[str] = mapped_column(String(32), nullable=False)
     engine_version: Mapped[str] = mapped_column(String, nullable=False)
     computed_at: Mapped[datetime] = _created()
+
+
+# --- sourcing -----------------------------------------------------------------------------------
+
+CAMPAIGN_STATUS = ("running", "stopped", "exhausted")
+
+
+class Campaign(Base):
+    """A bounded find for a job whose priority queue is thin (Slice 2). Holds counts only, never names:
+    which people were added is recorded on their pairs' history (cause act=sourced, campaign_id)."""
+
+    __tablename__ = "campaign"
+    __table_args__ = (CheckConstraint(_in("status", CAMPAIGN_STATUS), name="campaign_status"),)
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("job.id"), nullable=False)
+    source: Mapped[str] = mapped_column(String, nullable=False)  # desk (later: github, ...)
+    query: Mapped[dict] = mapped_column(JSONB, nullable=False)  # {"tokens": [...]} derived from must-haves
+    cap: Mapped[int] = mapped_column(nullable=False)  # most people this campaign may look at
+    target_priority: Mapped[int] = mapped_column(nullable=False)  # stop once priority reaches this
+    spent: Mapped[int] = mapped_column(nullable=False, default=0)  # people looked at so far
+    added: Mapped[int] = mapped_column(nullable=False, default=0)  # people put on the job
+    priority_added: Mapped[int] = mapped_column(nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="running")
+    stop_reason: Mapped[str | None] = mapped_column(String)  # cap | target_reached | human
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = _created()
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

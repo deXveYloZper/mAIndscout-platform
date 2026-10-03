@@ -126,6 +126,19 @@ test("a stale advertisement warns before anyone is submitted", async ({ page }) 
   await expect(mobility).toContainText("Relocation assistance: not offered");
 });
 
+test("a thin job is refilled from the desk's own people, banded by the same rules", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("link", { name: /AI Product Engineer/ }).click();
+  await expect(page.getByText(/priority is thin: 0 of 5/)).toBeVisible();
+  await page.getByRole("button", { name: "Find more people" }).click();
+  await expect(page.getByRole("status")).toContainText(/Looked at \d+, added \d+/, { timeout: 60_000 });
+  await expect(page.locator(".campaigns li").first()).toContainText("desk");
+  // People found on the desk now sit on this job in the usual piles, with the usual reasons.
+  await expect(page.locator(".people li").first()).toBeVisible();
+  await page.locator(".people li a").first().click();
+  await expect(page.locator(".history")).toContainText("sourced");
+});
+
 test("the jobs list shows both jobs with their piles and what waits for review", async ({ page }) => {
   await page.goto("/");
   const rows = page.locator("tbody tr");

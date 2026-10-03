@@ -28,6 +28,7 @@ const CAUSE_LABEL: Record<string, string> = {
   reject: "fact rejected",
   override: "set by hand",
   state: "status changed",
+  sourced: "sourced from the desk",
 };
 
 type GapPage = {

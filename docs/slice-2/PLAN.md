@@ -12,6 +12,9 @@ On a job with fewer than N `priority` people (N operator-set; start at 5), the r
 
 Results land as documents on that job. Same bands. Same Inbox rule.
 
+## Decisions
+- 2026-10-03: first adapter is the desk's own people graph (owner). GitHub profiles were considered as the next adapter.
+
 ## In scope
 
 - One source adapter to start (the desk’s own people graph, or one licensed external search — pick one)

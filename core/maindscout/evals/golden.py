@@ -501,6 +501,66 @@ def slice1_checks(w: World, org_id: uuid.UUID) -> list[Check]:
     return out
 
 
+# --- Slice 2 gate (docs/slice-2/PLAN.md) ----------------------------------------------------------
+
+
+def _clone_job(w: World, org_id: uuid.UUID, jid: uuid.UUID, label: str) -> Job:
+    """A copy of a real job with the same live requirements and nobody on it, so the desk can be searched."""
+    from maindscout.api import process, writer
+
+    s = w.session
+    original = s.get(Job, jid)
+    clone = Job(org_id=org_id, title=f"{original.title} ({label})", hiring_company=original.hiring_company)
+    s.add(clone)
+    s.flush()
+    for c in claims_of(w, jid, "JobRequirementClaim"):
+        writer.add_claim(s, org_id=org_id, subject_type="job", subject_id=clone.id, claim_type="JobRequirementClaim",
+                         payload=dict(c.payload), flags=dict(c.flags), status="proposed",
+                         natural_key=process.natural_key(clone.id, "JobRequirementClaim", c.payload))
+    return clone
+
+
+def slice2_checks(w: World, org_id: uuid.UUID) -> list[Check]:
+    from maindscout.api import sourcing
+
+    s, case, out = w.session, "slice-2-gate", []
+
+    def add(name: str, ok: bool, detail: str) -> None:
+        out.append(Check(case, name, PASS if ok else FAIL, detail))
+
+    catalyst = next((jid for n, jid in w.jobs.items() if "catalyst" in n.lower()), None)
+    procure = next((jid for n, jid in w.jobs.items() if "catalyst" not in n.lower()), None)
+    if not catalyst or not procure:
+        return [Check(case, "jobs", NOT_RUN, "both golden job ads are needed")]
+
+    # Distinctive tokens do not pull generalists into priority; sourced people get the same band as uploaded ones.
+    clone = _clone_job(w, org_id, catalyst, "sourcing check")
+    c = sourcing.start(s, org_id, clone.id, "eval", cap=25, target=5)
+    found = list(s.scalars(select(CandidateJob).where(CandidateJob.job_id == clone.id)))
+    generalists = [p for p in found if p.triage_band == "priority" and not (p.triage_reason or "").startswith("supported:")]
+    add("distinctive tokens do not pull software generalists into priority", not generalists,
+        f"query {c.query['tokens']}; looked at {c.spent}, added {c.added}, {c.priority_added} priority, all with evidence")
+    mismatched = []
+    for pair in found:
+        upload = s.scalar(select(CandidateJob).where(CandidateJob.job_id == catalyst, CandidateJob.candidate_id == pair.candidate_id))
+        if upload and (upload.triage_band, upload.triage_reason) != (pair.triage_band, pair.triage_reason):
+            mismatched.append(str(pair.candidate_id))
+    add("a sourced person is banded exactly like the same person uploaded", not mismatched and bool(found),
+        f"{len(found)} sourced, same band and reason as on the original job" if not mismatched else f"differs for {mismatched}")
+
+    # A campaign stops at its cap.
+    capped = sourcing.start(s, org_id, _clone_job(w, org_id, procure, "cap check").id, "eval", cap=1, target=50)
+    add("a campaign stops at its cap", (capped.spent, capped.status, capped.stop_reason) == (1, "stopped", "cap"),
+        f"looked at {capped.spent} of cap {capped.cap}; {capped.status} ({capped.stop_reason})")
+
+    # There is no mail path.
+    from maindscout.api.app import app
+    paths = [getattr(r, "path", "") for r in app.routes]
+    mail = [x for x in paths if any(word in x.lower() for word in ("mail", "send", "outreach", "message"))]
+    add("no mail send path", not mail, f"{len(paths)} routes, none send mail" if not mail else f"found {mail}")
+    return out
+
+
 # --- running ---------------------------------------------------------------------------------------
 
 
@@ -564,6 +624,7 @@ def evaluate(folder: Path, client: LLMClient, blob_dir: Path) -> tuple[list[Chec
         checks.append(Check("all", "one person per CV (no merges)", PASS if session.scalar(
             select(text("count(*)")).select_from(Candidate)) == len(cvs) else FAIL, f"{len(cvs)} CVs"))
         checks += slice1_checks(w, org.id)
+        checks += slice2_checks(w, org.id)
         meta = {"files": [f.name for f in files], "cvs": [f.name for f in cvs], "cost_usd": round(cost, 4),
                 "model": client.model, "date": datetime.now().isoformat(timespec="seconds")}
         session.rollback()

@@ -193,3 +193,18 @@ export async function setPairState(jobId: string, candidateId: string, path: str
   revalidatePath(`/jobs/${jobId}`);
   return { message: "Saved." };
 }
+
+
+/** Refill a thin priority queue from the desk's own people. Everyone found goes through the ordinary triage. */
+export async function startCampaign(jobId: string, _: FormState, form: FormData): Promise<FormState> {
+  const cap = Number(form.get("cap") || 25);
+  let c: { added: number; priority_added: number; spent: number; status: string; stop_reason: string | null };
+  try {
+    c = await apiJson(`/v1/jobs/${jobId}/campaigns`, { source: "desk", cap });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  const why = c.stop_reason === "cap" ? "stopped at the cap" : c.stop_reason === "target_reached" ? "priority target reached" : "no one else on the desk matches";
+  return { message: `Looked at ${c.spent}, added ${c.added} (${c.priority_added} priority); ${why}.` };
+}
