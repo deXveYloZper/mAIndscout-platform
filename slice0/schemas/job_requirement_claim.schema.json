@@ -2,20 +2,53 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://maindscout.local/schemas/job_requirement_claim.schema.json",
   "title": "JobRequirementClaim payload (Slice 1)",
-  "description": "One requirement on a job. Distinctive must-have tokens drive coarse triage. Mobility (residence / visa / relocation) is always three separate rows, never one location score. Slice 1 adds optional fields only (ADR 2026-10-02-richer-requirements); every Slice 0 payload stays valid.",
+  "description": "One requirement on a job. Distinctive must-have tokens drive coarse triage. Mobility (residence / visa / relocation) is always three separate rows, never one location score. Slice 1 adds optional fields only (ADR 2026-10-02-richer-requirements); every Slice 0 payload stays valid. I4 (hiring profile) adds categories role / employer / domain / target_company / employment, strengths strong_plus and anti, and their optional fields.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["text_raw", "category", "strength"],
+  "required": [
+    "text_raw",
+    "category",
+    "strength"
+  ],
   "properties": {
-    "text_raw": { "type": "string", "minLength": 1 },
-    "normalized_token": { "type": ["string", "null"] },
+    "text_raw": {
+      "type": "string",
+      "minLength": 1
+    },
+    "normalized_token": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "category": {
       "type": "string",
-      "enum": ["skill", "education", "location", "seniority", "process", "authorization", "language", "other"]
+      "enum": [
+        "skill",
+        "education",
+        "location",
+        "seniority",
+        "process",
+        "authorization",
+        "language",
+        "other",
+        "role",
+        "employer",
+        "domain",
+        "target_company",
+        "employment"
+      ]
     },
     "strength": {
       "type": "string",
-      "enum": ["must", "nice", "deal_breaker", "unknown"]
+      "enum": [
+        "must",
+        "nice",
+        "deal_breaker",
+        "unknown",
+        "strong_plus",
+        "anti"
+      ]
     },
     "distinctive": {
       "type": "boolean",
@@ -24,33 +57,249 @@
     "mobility": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["facet"],
+      "required": [
+        "facet"
+      ],
       "description": "Exactly one mobility facet per row.",
       "properties": {
-        "facet": { "type": "string", "enum": ["residence", "visa_sponsorship", "relocation_assistance"] },
+        "facet": {
+          "type": "string",
+          "enum": [
+            "residence",
+            "visa_sponsorship",
+            "relocation_assistance"
+          ]
+        },
         "countries": {
-          "type": ["array", "null"],
-          "items": { "type": "string", "pattern": "^[A-Z]{2}$" },
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z]{2}$"
+          },
           "description": "residence: where the person must live or work from (ISO 3166-1 alpha-2)."
         },
         "offered": {
-          "type": ["boolean", "null"],
+          "type": [
+            "boolean",
+            "null"
+          ],
           "description": "visa_sponsorship / relocation_assistance: true offered, false not offered, null not stated."
         }
       }
     },
     "min_years": {
-      "type": ["number", "null"],
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "seniority: minimum years of experience, only when a number is written."
     },
     "education_level": {
-      "type": ["string", "null"],
-      "enum": ["bachelor", "master", "doctorate", "associate", "diploma", "other", null]
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "bachelor",
+        "master",
+        "doctorate",
+        "associate",
+        "diploma",
+        "other",
+        null
+      ]
     },
     "language": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "language: the spoken or written language required (e.g. German)."
+    },
+    "role_family": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "software_engineering",
+        "data_ml",
+        "devops_infrastructure",
+        "security",
+        "qa_testing",
+        "embedded_hardware",
+        "gis_remote_sensing",
+        "research_science",
+        "engineering_management",
+        "product_management",
+        "design",
+        "it_support",
+        "sales",
+        "marketing",
+        "customer_success",
+        "operations",
+        "finance",
+        "hr_recruiting",
+        "business_consulting",
+        "hospitality",
+        "retail",
+        "education",
+        "healthcare",
+        "other",
+        null
+      ],
+      "description": "role: the kind of work (same list as career profiles)."
+    },
+    "level": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "intern",
+        "junior",
+        "mid",
+        "senior",
+        "lead",
+        "principal",
+        "manager",
+        "head",
+        "director",
+        "executive",
+        "founder",
+        null
+      ],
+      "description": "role: the level asked for."
+    },
+    "employer_kinds": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string",
+        "enum": [
+          "startup",
+          "scaleup",
+          "large",
+          "consultancy",
+          "agency",
+          "public_sector",
+          "non_profit"
+        ]
+      },
+      "description": "employer: kinds of employer the person should (or, with anti, should not) come from."
+    },
+    "domains": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string",
+        "enum": [
+          "fintech",
+          "payments",
+          "banking",
+          "insurance",
+          "crypto / web3",
+          "e-commerce",
+          "retail",
+          "telecommunications",
+          "media / entertainment",
+          "gaming / gambling",
+          "healthcare",
+          "pharma / biotech",
+          "energy / utilities",
+          "environment / water",
+          "climate / sustainability",
+          "aerospace / defence",
+          "space / earth observation",
+          "automotive / mobility",
+          "logistics / supply chain",
+          "procurement",
+          "construction / property",
+          "public sector",
+          "education",
+          "travel / hospitality",
+          "marketing / advertising",
+          "it services / consulting",
+          "enterprise software",
+          "cybersecurity",
+          "ai / data",
+          "agriculture / food",
+          "manufacturing / industrial",
+          "hr / recruiting",
+          "legal",
+          "research / academia",
+          "non-profit",
+          "other"
+        ]
+      },
+      "description": "domain: industries (same list as career profiles)."
+    },
+    "companies": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "company_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "description": "target_company: companies to source from (or, with anti, not from)."
+    },
+    "employment": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "permanent",
+        "contract",
+        "either",
+        null
+      ]
+    },
+    "source": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "ad",
+        "intake",
+        "recruiter",
+        null
+      ],
+      "description": "where this requirement came from."
+    },
+    "note": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "e.g. 'can substitute for start-up experience'."
     }
   }
 }

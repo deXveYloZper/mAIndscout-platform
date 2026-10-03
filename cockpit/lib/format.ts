@@ -114,3 +114,31 @@ export const DIMENSION_LABEL: [string, string][] = [
 export const READING_WORDS: Record<string, string> = {
   strong: "Strong career", solid: "Solid career", developing: "Developing career", unclear: "Unclear: too little is known",
 };
+
+// Hiring profiles (I4)
+export const STRENGTH_GROUPS: [string, string[]][] = [
+  ["Must", ["must", "deal_breaker"]],
+  ["Strong plus", ["strong_plus"]],
+  ["Nice to have", ["nice"]],
+  ["Not wanted", ["anti"]],
+  ["Not graded yet", ["unknown"]],
+];
+export const STRENGTHS: [string, string][] = [["must", "must"], ["strong_plus", "strong plus"], ["nice", "nice to have"], ["anti", "not wanted"]];
+export const KIND_LABEL: Record<string, string> = {
+  role: "role", employer: "background", domain: "industry", target_company: "target companies", employment: "employment",
+  skill: "skill", seniority: "experience", education: "education", language: "language", authorization: "authorisation",
+  other: "other",
+};
+export const EMPLOYER_KIND_LABEL: Record<string, string> = {
+  startup: "start-up", scaleup: "scale-up", large: "large company", consultancy: "consultancy / outsourcer", agency: "agency",
+  public_sector: "public sector", non_profit: "non-profit",
+};
+export const DOMAINS = [
+  "fintech", "payments", "banking", "insurance", "crypto / web3", "e-commerce", "retail", "telecommunications",
+  "media / entertainment", "gaming / gambling", "healthcare", "pharma / biotech", "energy / utilities",
+  "environment / water", "climate / sustainability", "aerospace / defence", "space / earth observation",
+  "automotive / mobility", "logistics / supply chain", "procurement", "construction / property", "public sector",
+  "education", "travel / hospitality", "marketing / advertising", "it services / consulting", "enterprise software",
+  "cybersecurity", "ai / data", "agriculture / food", "manufacturing / industrial", "hr / recruiting", "legal",
+  "research / academia", "non-profit", "other",
+];

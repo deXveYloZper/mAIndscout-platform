@@ -226,6 +226,19 @@ class Job(Base):
     created_at: Mapped[datetime] = _created()
 
 
+class JobIntake(Base):
+    """I4: a recruiter's notes from the call with the hiring manager, kept as written; requirements read from them
+    point back here with their quote."""
+
+    __tablename__ = "job_intake"
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("job.id"), nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = _created()
+
+
 class CandidateJob(Base):
     """A pair is permanent: created once, moved, never deleted. The band is not a score."""
 

@@ -194,3 +194,13 @@ table.gaps tr.conflict td:first-child { border-left: 2px solid var(--red); }
 .steps > li { padding: 6px 0; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
 .stepfix select { max-width: 200px; }
 .questions li { margin: 2px 0; }
+
+/* hiring profile */
+.hiring .company-line { margin-bottom: 8px; }
+.reqdetail { color: var(--cream-dim); }
+.reqdetail .note { font-style: italic; }
+.reqacts { gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+.intake textarea { width: 100%; max-width: 640px; display: block; margin: 6px 0; font: inherit; background: var(--bg-raise-2); color: inherit; border: 1px solid var(--line); padding: 6px; }
+.notes { white-space: pre-wrap; color: var(--cream-dim); }
+.addreq .row { margin-bottom: 6px; flex-wrap: wrap; }
+.addreq fieldset { border: 0; padding: 0; gap: 10px; }

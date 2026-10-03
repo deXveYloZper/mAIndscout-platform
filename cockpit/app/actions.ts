@@ -262,3 +262,46 @@ export async function correctStep(candidateId: string, path: string, careerClaim
   revalidatePath(path);
   return { message: "Saved. The profile was rebuilt." };
 }
+
+/** Paste the notes from the hiring manager call: requirements are read from them, each with its quote. */
+export async function addIntake(jobId: string, _: FormState, form: FormData): Promise<FormState> {
+  const text = String(form.get("text") ?? "").trim();
+  try {
+    const r = await apiJson<{ written: number; replaced: number; seen: number; rejected: { item: string; reason: string }[] }>(
+      `/v1/jobs/${jobId}/intake`, { text });
+    revalidatePath(`/jobs/${jobId}`);
+    const left = r.rejected.length ? ` Left out ${r.rejected.length}: ${r.rejected.map((x) => `${x.item} (${x.reason})`).join("; ")}.` : "";
+    return { message: `Read ${r.written} requirement${r.written === 1 ? "" : "s"} (${r.replaced} replacing what the ad said, ${r.seen} already there).${left}` };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** A requirement the recruiter types: saved as approved. */
+export async function addRequirement(jobId: string, _: FormState, form: FormData): Promise<FormState> {
+  const category = String(form.get("category") || "");
+  const text_raw = String(form.get("text_raw") || "").trim();
+  const list = (name: string) => form.getAll(name).map(String).filter(Boolean);
+  if (!text_raw) return { error: "Describe the requirement in a few words." };
+  const body: Record<string, unknown> = { category, strength: String(form.get("strength") || "must"), text_raw };
+  if (category === "role") Object.assign(body, { role_family: form.get("role_family") || null, level: form.get("level") || null,
+    min_years: form.get("min_years") ? Number(form.get("min_years")) : null });
+  if (category === "employer") body.employer_kinds = list("employer_kinds");
+  if (category === "domain") body.domains = list("domains");
+  if (category === "target_company") body.companies = text_raw.split(",").map((s) => s.trim()).filter(Boolean);
+  if (category === "employment") body.employment = form.get("employment") || "permanent";
+  if (category === "skill") body.normalized_token = text_raw.toLowerCase();
+  try {
+    await apiJson(`/v1/jobs/${jobId}/requirements`, body);
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return { message: "Added as an approved requirement." };
+}
+
+/** Change how much a requirement matters. */
+export async function setStrength(claimId: string, path: string, form: FormData): Promise<void> {
+  await idempotent(() => apiJson(`/v1/requirements/${claimId}/strength`, { strength: String(form.get("strength")) }));
+  revalidatePath(path);
+}

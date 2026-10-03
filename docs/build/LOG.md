@@ -2,6 +2,7 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-04 — **I3 gate GREEN**, declared by the owner; I4 starts — [decision](../decisions/2026-10-04-i3-gate.md)
 - 2026-10-04 — I3: career profiles. Each step classified once per CV (fixed families and industries, levels from titles by code), QS university rank (shared), rubric dimensions by code (related work counted together, stability per employer and contractor-aware, employer kind at joining), questions for the call, profile on the person page with corrections; paid calls stay in the ledger when a task fails; registries seeded at start — [career-profiles](components/career-profiles.md)
 - 2026-10-03 — **I2 gate GREEN**, declared by the owner; I3 starts — [decision](../decisions/2026-10-03-i2-gate.md)
 - 2026-10-03 — Coverage gate (owner's rule): people living or working outside the EU / EEA, UK, Switzerland, US and Canada are archived after one read, with no further spend; jobs open more countries (from the ad or by hand); bring back; light research for big consultancies — [coverage-gate](components/coverage-gate.md), [ADR](../decisions/2026-10-03-coverage-gate.md)

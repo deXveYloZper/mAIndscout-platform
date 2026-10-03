@@ -9,8 +9,9 @@ from typing import Any
 from sqlalchemy import String, func, select
 from sqlalchemy.orm import Session
 
-from maindscout.api import coverage, profiles
+from maindscout.api import coverage, hiring, profiles
 from maindscout.db.models import (
+    Company,
     Candidate,
     CandidateJob,
     Claim,
@@ -123,6 +124,8 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
         "people": people,
         "archived": archived,
         "coverage": coverage.summary(session, job),
+        "hiring": {"company": hiring.company_summary(session, session.get(Company, job.hiring_company_id) if job.hiring_company_id else None),
+                   "intakes": hiring.intakes(session, job.id), "targets": hiring.targets(session, org_id, reqs)},
     }
 
 

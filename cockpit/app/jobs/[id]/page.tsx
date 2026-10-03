@@ -2,6 +2,7 @@ import Link from "next/link";
 import { overrideBand, setJobCountries, startCampaign } from "@/app/actions";
 import { CountriesForm } from "@/components/CountriesForm";
 import { FindMore } from "@/components/FindMore";
+import { HiringProfile } from "@/components/HiringProfile";
 import { Snippet } from "@/components/Claim";
 import { MultiUpload } from "@/components/MultiUpload";
 import { api, apiOr404, type Band, type InboxItem, type JobPage, type PersonOnJob } from "@/lib/api";
@@ -15,15 +16,6 @@ type CampaignList = { priority: number; default_target: number; campaigns: Campa
 
 const STOP_WORDS: Record<string, string> = { cap: "stopped at cap", target_reached: "target reached", human: "stopped by hand" };
 
-const REQUIREMENT_GROUPS: [string, string][] = [
-  ["skill", "Skills"],
-  ["seniority", "Experience"],
-  ["education", "Education"],
-  ["language", "Languages"],
-  ["authorization", "Authorisation"],
-  ["location", "Location"],
-  ["other", "Other"],
-];
 
 const FACET_LABEL: Record<string, string> = {
   residence: "Must live in or work from",
@@ -86,8 +78,6 @@ export default async function Job({ params }: { params: Promise<{ id: string }> 
   const places = job.requirements.filter((r) => r.payload.category === "location" && r.payload.strength === "unknown" && !r.payload.mobility);
   const mobility = job.requirements.filter((r) => r.payload.mobility);
   const must = job.requirements.filter((r) => r.payload.category !== "process" && !places.includes(r) && !mobility.includes(r));
-  const groups = REQUIREMENT_GROUPS.map(([cat, title]) => [title, must.filter((r) => r.payload.category === cat)] as const)
-    .filter(([, items]) => items.length > 0);
   const dates = job.requirements.filter((r) => r.payload.category === "process");
 
   return (
@@ -179,24 +169,7 @@ export default async function Job({ params }: { params: Promise<{ id: string }> 
         </>
       )}
 
-      <h2>Requirements</h2>
-      {groups.map(([title, items]) => (
-        <section key={title}>
-          <h3 className="group">{title}</h3>
-          <ul className="reqs">
-            {items.map((r) => (
-              <li key={r.id}>
-                <span className="tag">{r.payload.strength}</span>
-                {r.payload.distinctive && <span className="tag key" title="Zero evidence of this puts a person in Do not submit">decides the band</span>}
-                {r.payload.min_years != null && <span className="tag">{r.payload.min_years}+ years</span>}
-                {r.payload.education_level && <span className="tag">{r.payload.education_level}</span>}
-                {r.payload.text_raw}
-                <details><summary>source</summary><Snippet ev={r.evidence[0]} /></details>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
+      <HiringProfile job={job} requirements={must} />
       {dates.length > 0 && (
         <>
           <h2>Process dates</h2>

@@ -103,6 +103,10 @@ def natural_key(subject_id, claim_type: str, p: dict, valid_from: str | None = N
     if claim_type == "LocationClaim":
         return f"{sid}|{_norm_name(p['place_raw'])}|{p['basis']}"
     if claim_type == "JobRequirementClaim":
+        if p["category"] in ("role", "employer", "domain", "target_company", "employment"):
+            from maindscout.api.hiring import key_for
+
+            return key_for(sid, p)
         return f"{sid}|{p['category']}|{p.get('normalized_token') or _norm_name(p['text_raw'])}"
     if claim_type == "StepClassificationClaim":
         return f"{p['career_claim_id']}|class"
@@ -611,5 +615,8 @@ def _process_jd(session: Session, doc: Document, artifact: ExtractionArtifact, r
         from maindscout.api import coverage
 
         coverage.reevaluate_job(session, job, {"act": "job_read_again"})  # the ad may name other countries now
+    from maindscout.api import hiring
+
+    hiring.queue(session, job)  # role, employment, background asks: one more read of the ad, in the background
     return ProcessResult(run.id, doc.id, "committed", "job", job.id, job.id, None, None, claim_ids, [],
                          _span_failures(outcome.span_results), outcome.cost)

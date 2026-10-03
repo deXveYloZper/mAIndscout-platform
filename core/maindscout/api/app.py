@@ -544,3 +544,61 @@ def bring_back(candidate_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), se
     coverage.bring_back(session, org_id, candidate_id, actor)
     session.commit()
     return queries.person_page(session, org_id, candidate_id)
+
+
+class IntakeBody(BaseModel):
+    text: str
+
+
+@app.post("/v1/jobs/{job_id}/intake")
+def add_intake(job_id: uuid.UUID, body: IntakeBody, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+               actor: str = Depends(get_actor), llm: LLMClient = Depends(get_llm)):
+    """Paste notes from the call with the hiring manager: requirements are read from them, each with its quote."""
+    from maindscout.api import hiring
+
+    result = hiring.add_intake(session, org_id, job_id, body.text, actor, llm)
+    session.commit()
+    return {**result, "job": queries.job_page(session, org_id, job_id)}
+
+
+class RequirementBody(BaseModel):
+    category: str
+    strength: str
+    text_raw: str
+    role_family: str | None = None
+    level: str | None = None
+    min_years: float | None = None
+    employer_kinds: list[str] | None = None
+    domains: list[str] | None = None
+    companies: list[str] | None = None
+    employment: str | None = None
+    normalized_token: str | None = None
+    note: str | None = None
+
+
+@app.post("/v1/jobs/{job_id}/requirements", status_code=201)
+def add_requirement(job_id: uuid.UUID, body: RequirementBody, org_id: uuid.UUID = Depends(get_org),
+                    session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """A requirement the recruiter types (approved at once)."""
+    from maindscout.api import hiring
+
+    fields = body.model_dump()
+    fields["companies"] = [{"name": n} for n in body.companies or []] or None
+    claim = hiring.add_requirement(session, org_id, job_id, fields, actor)
+    session.commit()
+    return {"id": str(claim.id)}
+
+
+class StrengthBody(BaseModel):
+    strength: str
+
+
+@app.post("/v1/requirements/{claim_id}/strength")
+def set_strength(claim_id: uuid.UUID, body: StrengthBody, org_id: uuid.UUID = Depends(get_org),
+                 session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Change how much a requirement matters; the old reading is kept as superseded."""
+    from maindscout.api import hiring
+
+    claim = hiring.set_strength(session, org_id, claim_id, body.strength, actor)
+    session.commit()
+    return {"id": str(claim.id), "strength": claim.payload["strength"]}

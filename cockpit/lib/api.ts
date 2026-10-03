@@ -96,6 +96,12 @@ export type JobPage = JobSummary & {
   people: Record<Band, PersonOnJob[]>;
   archived: { candidate_id: string; name: string | null; reason: string | null }[];
   coverage: { desk: string[]; from_ad: string[]; opened: string[]; names: Record<string, string> };
+  hiring: {
+    company: { id: string; name: string; kind?: string | null; stage?: string | null; team?: string | null; founded?: string | null;
+      hq?: string | null; domains?: string[]; status?: string | null } | null;
+    intakes: { id: string; text: string; by: string; at: string | null }[];
+    targets: Record<string, number>;
+  };
 };
 
 export type PersonPage = {
