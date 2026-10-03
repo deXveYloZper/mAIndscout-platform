@@ -6,7 +6,16 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 
 **Slice 1 gate: GREEN**, declared by the owner on 2026-10-03 ([decision](../decisions/2026-10-03-slice-1-gate.md)).
 
-**Next (proposed):** the [intelligence track](../intelligence/PLAN.md) before any further slice; waiting for the owner's decisions.
+**Now:** the [intelligence track](../intelligence/PLAN.md), accepted 2026-10-03 ([decisions](../decisions/2026-10-03-intelligence-track.md)).
+
+| Phase | What | State |
+|---|---|---|
+| I1 | Companies, linking, background tasks, cost ledger | in progress |
+| I2 | Company research (Grok, targeted facts) | |
+| I3 | Career profiles | |
+| I4 | Hiring profiles | |
+| I5 | Matching v2 | |
+| I6 | Sourcing v2 | |
 
 **Current slice:** 2, sourcing feeder ([plan](../slice-2/PLAN.md))
 
