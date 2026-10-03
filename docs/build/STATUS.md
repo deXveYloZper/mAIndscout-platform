@@ -14,7 +14,7 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 | I2 | Company research (Grok, targeted facts) | **gate GREEN** 2026-10-03 ([decision](../decisions/2026-10-03-i2-gate.md)) |
 | — | Coverage gate (archive outside EU/EEA/UK/CH/US/CA; light research for big consultancies) | built 2026-10-03 ([ADR](../decisions/2026-10-03-coverage-gate.md)) |
 | I3 | Career profiles | **gate GREEN** 2026-10-04 ([decision](../decisions/2026-10-04-i3-gate.md)) |
-| I4 | Hiring profiles | in progress: backend, intake notes and job page built; e2e run, docs page and owner review left |
+| I4 | Hiring profiles | built 2026-10-04; hiring profiles report for the owner's review, waiting for the declaration |
 | I5 | Matching v2 | |
 | I6 | Sourcing v2 | |
 

@@ -163,3 +163,34 @@ def test_employment_needs_a_quote_about_employment_and_the_intake_corrects_its_v
     assert hiring._write(session, j, [perm], "intake", ev)["replaced"] == 1
     live = [r for r in reqs(session, job) if r.payload["category"] == "employment"]
     assert [r.payload["employment"] for r in live] == ["permanent"]
+
+
+def test_employment_words_are_recognised():
+    assert engine.EMPLOYMENT_WORDS.search("Permanent role, not contract.")
+    assert engine.EMPLOYMENT_WORDS.search("full-time employment")
+    assert not engine.EMPLOYMENT_WORDS.search("Applications close soon")
+
+
+class OneItem:
+    model = "fake"
+
+    def __init__(self, it):
+        self.it = it
+
+    def complete_json(self, system, user, schema, name):
+        return LLMResult({"items": [self.it]}, self.model, 1, 1, 0.0)
+
+
+def test_an_intake_role_without_level_or_years_is_a_concrete_ask_not_the_jobs_role():
+    text = "0-to-1 product delivery is a strong plus."
+    it = item("role", "strong_plus", "0-to-1 product delivery", "0-to-1 product delivery is a strong plus", role_family="product_management")
+    out = engine.read(text, OneItem(it), "intake")
+    assert [i.kind for i in out.items] == ["other"]
+
+
+def test_a_background_left_empty_by_the_model_is_read_from_the_quote():
+    text = "Early-stage start-up experience is a strong plus. No candidates from big consultancies."
+    it = item("employer", "strong_plus", "early-stage start-up experience", "Early-stage start-up experience is a strong plus")
+    assert engine.read(text, OneItem(it), "intake").items[0].fields["employer_kinds"] == ["startup"]
+    it = item("employer", "anti", "not from consultancies", "No candidates from big consultancies")
+    assert engine.read(text, OneItem(it), "intake").items[0].fields["employer_kinds"] == ["consultancy"]

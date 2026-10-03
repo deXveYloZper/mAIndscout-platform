@@ -2,6 +2,7 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-04 — I4: hiring profiles. The ad read again for role, employment and background asks; intake notes from the hiring manager read into requirements with quotes (the hiring manager beats the ad); strengths must / strong plus / nice / not wanted; recruiter adds and reweighs; hiring company facts and who we know at target companies; personality and culture never criteria — [hiring-profiles](components/hiring-profiles.md)
 - 2026-10-04 — **I3 gate GREEN**, declared by the owner; I4 starts — [decision](../decisions/2026-10-04-i3-gate.md)
 - 2026-10-04 — I3: career profiles. Each step classified once per CV (fixed families and industries, levels from titles by code), QS university rank (shared), rubric dimensions by code (related work counted together, stability per employer and contractor-aware, employer kind at joining), questions for the call, profile on the person page with corrections; paid calls stay in the ledger when a task fails; registries seeded at start — [career-profiles](components/career-profiles.md)
 - 2026-10-03 — **I2 gate GREEN**, declared by the owner; I3 starts — [decision](../decisions/2026-10-03-i2-gate.md)

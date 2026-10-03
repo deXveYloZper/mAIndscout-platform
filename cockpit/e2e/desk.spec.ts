@@ -145,6 +145,21 @@ test("a stale advertisement warns before anyone is submitted", async ({ page }) 
   await expect(mobility).toContainText("Relocation assistance: not offered");
 });
 
+test("intake notes from the hiring manager become a hiring profile, each with its quote", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("link", { name: /AI Product Engineer/ }).click();
+  await expect(page.getByRole("heading", { name: "Hiring profile" })).toBeVisible();
+  await page.getByLabel("Notes from the call with the hiring manager").fill(
+    "Early-stage start-up experience is a strong plus. Procurement domain experience is a strong plus and can " +
+    "substitute for start-up experience. Must be a great culture fit. Permanent role, not contract.");
+  await page.getByRole("button", { name: "Read the notes" }).click();
+  await expect(page.getByRole("status").filter({ hasText: /Read \d+ requirement/ })).toBeVisible({ timeout: 90_000 });
+  await expect(page.locator(".hiring")).toContainText("from the intake notes");
+  await expect(page.locator(".hiring h3.group", { hasText: "Strong plus" })).toBeVisible();
+  // Personality, culture or fit never becomes a requirement.
+  await expect(page.locator(".hiring ul.reqs").filter({ hasText: /culture/i })).toHaveCount(0);
+});
+
 test("a thin job is refilled from the desk's own people, banded by the same rules", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("link", { name: /AI Product Engineer/ }).click();

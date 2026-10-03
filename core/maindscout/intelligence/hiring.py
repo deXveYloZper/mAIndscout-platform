@@ -14,7 +14,7 @@ from typing import Any
 from maindscout.domain.profile import DOMAINS, LEVELS, ROLE_FAMILIES
 from maindscout.intelligence.llm import LLMClient
 
-HIRING_PROMPT_VERSION = "2026-10-04.2"
+HIRING_PROMPT_VERSION = "2026-10-04.3"
 EMPLOYER_KINDS = ["startup", "scaleup", "large", "consultancy", "agency", "public_sector", "non_profit"]
 STRENGTHS = ["must", "strong_plus", "nice", "anti"]
 KINDS = ["role", "employer", "domain", "target_company", "employment", "skill", "other"]
@@ -58,15 +58,22 @@ SYSTEM_INTAKE = (
     "sector, non-profit), domain (industry experience, from the list), target_company (companies to source from, or "
     "with anti, not from), employment (permanent / contract / either), skill (a technical skill, with a lowercase "
     "token), other (anything else concrete, e.g. '0-to-1 product delivery'). Give a role item only when the notes "
-    "state what kind of work, level or years the person needs; the job's title mentioned in passing is not one. Strength exactly as the notes put it: "
+    "state what kind of work, level or years the person needs; the job's title mentioned in passing is not one, and never give any item that only names the job. Strength exactly as the notes put it: "
     "must, strong_plus ('strong plus', 'really wants', 'highly desirable'), nice ('nice to have', 'bonus'), anti ('no', "
     "'not', 'avoid'). If the notes say one thing can substitute for another, put that in note. Location and right to "
     "work are handled elsewhere: leave them out. Every item quotes the notes exactly. Never items about personality, "
     "attitude, culture or fit. Never guess."
 )
 
-EMPLOYMENT_WORDS = re.compile(r"(permanent|full[- ]time|part[- ]time|contract|contractor|freelance|fixed[- ]term|temporary|"
-                              r"employment|employee|perm|b2b|interim)", re.I)
+EMPLOYMENT_WORDS = re.compile(r"\b(permanent|full[- ]time|part[- ]time|contract|contractor|freelance|fixed[- ]term|temporary|"
+                              r"employment|employee|perm|b2b|interim)\b", re.I)
+EMPLOYER_WORDS = {
+    "startup": re.compile(r"\bstart-?ups?\b|\bearly[- ]stage\b", re.I),
+    "scaleup": re.compile(r"\bscale-?ups?\b|\bhigh[- ]growth\b", re.I),
+    "large": re.compile(r"\b(large|big) (companies|company|corporates?|enterprises?)\b|\bcorporates?\b", re.I),
+    "consultancy": re.compile(r"\bconsultanc(y|ies)\b|\boutsourc", re.I),
+    "agency": re.compile(r"\bagenc(y|ies)\b", re.I),
+}
 # Dropped whatever the model says: these are not evidence-based hiring criteria (owner's rule).
 NOT_CRITERIA = re.compile(r"\b(culture|cultural fit|personality|vibe|attitude|team player|charism|likeable|good fit|fit in)\b", re.I)
 
@@ -117,6 +124,10 @@ def read(text: str, client: LLMClient, source: str) -> HiringOutcome:
             rejected.append({"item": raw.get("text", "")[:80], "reason": why})
             continue
         fields: dict[str, Any] = {}
+        if kind == "role" and source == "intake" and raw.get("level") is None and raw.get("min_years") is None:
+            # From notes, a "role" with no level and no years is a concrete ask (e.g. "0-to-1 product delivery"),
+            # not the job's role: it must never replace the role the ad states.
+            kind = "other"
         if kind == "role":
             if not raw.get("role_family"):
                 rejected.append({"item": raw.get("text", "")[:80], "reason": "a role needs a kind of work"})
@@ -126,7 +137,10 @@ def read(text: str, client: LLMClient, source: str) -> HiringOutcome:
             if years is not None and re.search(rf"\b{int(years)}\b", quote):  # a number of years must be written
                 fields["min_years"] = years
         elif kind == "employer":
-            fields = {"employer_kinds": [k for k in raw.get("employer_kinds") or [] if k in EMPLOYER_KINDS]}
+            kinds = [k for k in raw.get("employer_kinds") or [] if k in EMPLOYER_KINDS]
+            if not kinds:  # the model left it empty: read it from the quote's own words
+                kinds = [k for k, rx in EMPLOYER_WORDS.items() if rx.search(quote)]
+            fields = {"employer_kinds": kinds}
         elif kind == "domain":
             fields = {"domains": [d for d in raw.get("domains") or [] if d in DOMAINS]}
         elif kind == "target_company":

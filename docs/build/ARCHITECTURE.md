@@ -31,6 +31,7 @@ Local setup: [core/README.md](../../core/README.md).
 | Company research: targeted public facts with sources (I2) | built | [company-research.md](components/company-research.md) |
 | Coverage gate: archive people outside the desk's countries; light research for big consultancies | built | [coverage-gate.md](components/coverage-gate.md) |
 | Career profiles: classify steps, rubric dimensions, QS rank, questions for the call (I3) | built | [career-profiles.md](components/career-profiles.md) |
+| Hiring profiles: ad + intake notes + recruiter edits, by strength; hiring company; target companies (I4) | built | [hiring-profiles.md](components/hiring-profiles.md) |
 | Sourcing feeder (Slice 2) | built (desk) | [sourcing.md](components/sourcing.md) |
 | Coverage floor + reserved score (Slice 1) | built | [coverage.md](components/coverage.md) |
 | Gap table (Slice 1) | built | [gap-table.md](components/gap-table.md) |
