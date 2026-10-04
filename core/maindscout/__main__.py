@@ -42,8 +42,22 @@ def _ensure_suppression_key() -> None:
     print(f"SUPPRESSION_KEY created in {ENV_FILE}. Back it up with the database.")
 
 
+def _ensure_mailbox_key() -> None:
+    """Connected mailboxes' tokens are encrypted with this key (Fernet). Lose it and mailboxes must be reconnected."""
+    from cryptography.fernet import Fernet
+
+    from maindscout.settings import ENV_FILE, env
+
+    if env("MAILBOX_KEY"):
+        return
+    with open(ENV_FILE, "a", encoding="utf-8") as f:
+        f.write("\nMAILBOX_KEY=" + Fernet.generate_key().decode() + "\n")
+    print(f"MAILBOX_KEY created in {ENV_FILE}. Back it up with the database.")
+
+
 def init(org_name: str) -> None:
     _ensure_suppression_key()
+    _ensure_mailbox_key()
     command.upgrade(Config(str(Path(__file__).resolve().parents[1] / "alembic.ini")), "head")
     with make_session_factory(make_engine())() as session:
         writer.seed_registries(session)
@@ -61,6 +75,28 @@ def _seed() -> None:
     with make_session_factory(make_engine())() as session:
         writer.seed_registries(session)
         session.commit()
+
+
+def _start_mailbox_clock(factory, every: int = 300) -> None:
+    """Every few minutes, queue a look at each connected mailbox (sent drafts, replies, follow-ups due)."""
+    import threading
+    import time
+
+    from maindscout.api import tasks
+    from maindscout.db.models import Mailbox
+
+    def loop() -> None:
+        while True:
+            try:
+                with factory() as session:
+                    for box in session.scalars(select(Mailbox).where(Mailbox.status == "connected")):
+                        tasks.enqueue(session, box.org_id, "mailbox_sync", {}, priority=60, dedupe_key=f"mailsync:{box.org_id}")
+                    session.commit()
+            except Exception:  # noqa: BLE001 - the clock must keep ticking
+                pass
+            time.sleep(every)
+
+    threading.Thread(target=loop, name="mailbox-clock", daemon=True).start()
 
 
 def reset_db(name: str, org_id: str) -> None:
@@ -233,7 +269,9 @@ def main() -> None:
             from maindscout.api import task_handlers  # noqa: F401 (registers task kinds)
             from maindscout.api.tasks import start_threads
 
-            start_threads(make_session_factory(make_engine()), int(os.environ.get("WORKERS", "2")))
+            factory = make_session_factory(make_engine())
+            start_threads(factory, int(os.environ.get("WORKERS", "2")))
+            _start_mailbox_clock(factory)
 
         uvicorn.run("maindscout.api.app:app", host="127.0.0.1", port=args.port)
 

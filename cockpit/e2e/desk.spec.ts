@@ -344,6 +344,31 @@ test("relationship memory: a logged call, last contacted, and a tag that becomes
   await expect(page.locator("tbody tr")).toContainText("Ioannis");
 });
 
+test("a message is drafted from approved facts, edited, and sent by the recruiter, never by the desk", async ({ page }) => {
+  await page.goto("/mailbox");
+  await expect(page.getByRole("button", { name: /Connect Gmail/ })).toBeVisible();
+  await page.goto("/people");
+  await page.locator("tbody tr").filter({ hasText: "Ioannis" }).getByRole("link", { name: /Ioannis/ }).click();
+  const box = page.locator("section.messages");
+  await expect(box).toContainText("Nothing is sent from here");
+  await box.getByLabel("What kind of message").selectOption("candidate_outreach");
+  await box.getByRole("button", { name: "Draft" }).click();
+  await expect(box.getByRole("status")).toContainText("Drafted below");
+  const card = box.locator(".message").first();
+  await expect(card).toContainText("First contact");
+  await expect(card).toContainText("draft here");
+  const body = await card.getByLabel("Message").inputValue();
+  expect(body).not.toMatch(/\b(priority|review later|do not submit|score|band|tier)\b|\d+\s*%/i);
+  await card.getByLabel("Message").fill(body + "\n\nP.S. Happy to talk this week.");
+  await card.getByRole("button", { name: "Save edits" }).click();
+  await expect(card.getByRole("status")).toContainText("Saved.");
+  await expect(card.getByRole("button", { name: /Put in my/ })).toHaveCount(0); // no mailbox connected
+  await card.getByRole("button", { name: "I sent it myself" }).click();
+  await expect(box.locator(".message").first()).toContainText("sent");
+  await expect(box.locator(".message").first()).toContainText("follow-up drafted");
+  await expect(page.locator("section.relationship .timeline")).toContainText(/email/i);
+});
+
 test("the Refresh page lists who to re-contact and which clients to reconnect with", async ({ page }) => {
   await page.goto("/refresh");
   await expect(page.getByRole("heading", { name: "Refresh" })).toBeVisible();

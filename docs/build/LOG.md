@@ -2,6 +2,7 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-05 — Slice 4 step 5: messages. Drafts from approved facts, the public job and the call only (internal words refused); put in your Gmail or Outlook drafts, never sent by the desk; sent and replies noticed and logged; follow-ups drafted after 4 days, stopped by any reply — [messages](components/messages.md), [mailbox setup](connections/mailbox-setup.md)
 - 2026-10-05 — Slice 4 step 4: import from CSV (preview; ticked rows become approved facts; 100 candidates / 25 clients free per account; beyond that a quote at compute cost x 1.9; outside last-contacted kept as a note only; erased people refused) and free CSV export — [imports](components/imports.md)
 - 2026-10-05 — Slice 4 step 3: freshness. People stale after 6 months without contact or verification, clients after 12; Refresh page with who to re-contact (priority, strong matches, talent pools, strong careers first, with why) and clients to reconnect with; stale tags — [freshness](components/freshness.md)
 - 2026-10-05 — Slice 4 step 2: full pipeline (new → seen → contacted → screened → submitted → interviewing → offer → placed; passed / withdrawn / client rejected, each with its reason); a client rejection blocks the person at that client (refused, not sourced, matched unlikely, lift with a note); client answers on the company timeline; stage counts — [pipeline](components/pipeline.md)

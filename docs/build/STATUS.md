@@ -31,7 +31,9 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 | 2 | Full pipeline, submissions, client feedback and block | built 2026-10-05 ([pipeline](components/pipeline.md)) |
 | 3 | Freshness | built 2026-10-05 ([freshness](components/freshness.md)) |
 | 4 | Import (100 / 25 free, more paid) | built 2026-10-05 ([imports](components/imports.md)) |
-| 5 | Drafts, reply halt | next: needs the owner's mailbox choice |
+| 5 | Drafts, Gmail / Outlook drafts, sent and reply detection, follow-ups a reply stops | built 2026-10-05 ([messages](components/messages.md)); live mailbox needs the [app registrations](connections/mailbox-setup.md) |
+
+All five Slice 4 steps are built; the Slice 4 gate is the owner's to declare.
 
 Slice 3 (the Brief, closed): built 2026-10-04 ([brief](components/brief.md)).
 

@@ -11,7 +11,7 @@ One action that deletes everything the platform holds about a person, followed b
 "Forgetting someone is one action that fails out loud if anything about them is still findable" (vision). Blueprint E-i9 and 05 RA-04 (single-subject documents in Slice 0); 02 F1.9 (suppression check first).
 
 ## How
-- **Deletes:** the pair history and breakdown snapshots of the person's pairs; the person's claims with their observations and evidence; review decisions and their items; pairs with jobs; not-same records; document links; their documents, text artifacts and runs; the original files (unless another org's document uses the same stored bytes); the candidate row. Ids of the person are removed from other people's identity notes.
+- **Deletes:** the pair history and breakdown snapshots of the person's pairs; the person's claims with their observations and evidence; review decisions and their items; pairs with jobs; not-same records; document links; their documents, text artifacts and runs; activities, tags, Brief items, import rows and messages to or about them (Slice 3–4); the original files (unless another org's document uses the same stored bytes); the candidate row. Ids of the person are removed from other people's identity notes.
 - **Pairs are permanent** (a database trigger refuses deletes); erasure is the only exception and switches the guard off for its own transaction only (`SET LOCAL maindscout.erasure = 'on'`).
 - **Cost ledger** rows keep their numbers but lose their link to the person and their documents.
 - **Company records** hold no personal data and stay; "Same company?" cards raised by the person's CV are deleted.

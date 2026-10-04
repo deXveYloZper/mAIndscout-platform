@@ -577,6 +577,59 @@ class ClientBlock(Base):
     lift_note: Mapped[str | None] = mapped_column(Text)
 
 
+MESSAGE_KINDS = ("candidate_outreach", "follow_up", "client_submission", "interview_confirm", "decline")
+MESSAGE_STATUS = ("draft", "in_mailbox", "sent", "replied", "cancelled")
+
+
+class Mailbox(Base):
+    """A connected Gmail or Outlook mailbox (Slice 4, step 5). The access token is stored encrypted."""
+
+    __tablename__ = "mailbox"
+    __table_args__ = (CheckConstraint(_in("provider", ("google", "microsoft")), name="mailbox_provider"),)
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    provider: Mapped[str] = mapped_column(String, nullable=False)
+    account: Mapped[str | None] = mapped_column(String)  # the mailbox's own address
+    token_enc: Mapped[str] = mapped_column(Text, nullable=False)
+    connected_by: Mapped[str] = mapped_column(String, nullable=False)
+    connected_at: Mapped[datetime] = _created()
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String, nullable=False, default="connected")  # connected | needs_reconnect
+
+
+class Message(Base):
+    """A message to a candidate or a client contact, drafted here from what may be said outward, and sent by a person
+    from their own mailbox. Never sent automatically. Any reply stops the follow-ups."""
+
+    __tablename__ = "message"
+    __table_args__ = (
+        CheckConstraint(_in("kind", MESSAGE_KINDS), name="message_kind"),
+        CheckConstraint(_in("status", MESSAGE_STATUS), name="message_status"),
+        Index("ix_message_candidate", "org_id", "candidate_id"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    candidate_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("candidate.id"))
+    contact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("client_contact.id", ondelete="SET NULL"))
+    company_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("company.id"))
+    job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("job.id"))
+    about_candidate_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("candidate.id"))  # a submission's subject
+    to_address: Mapped[str] = mapped_column(String, nullable=False)
+    subject: Mapped[str] = mapped_column(String, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="draft")
+    provider: Mapped[str | None] = mapped_column(String)
+    provider_draft_id: Mapped[str | None] = mapped_column(String)
+    provider_thread_id: Mapped[str | None] = mapped_column(String)
+    follow_up_of: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("message.id"))
+    follow_up_due: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = _created()
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    replied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 IMPORT_KINDS = ("candidates", "clients")
 IMPORT_ROW_STATUS = ("ready", "duplicate", "invalid", "imported", "skipped", "held")
 

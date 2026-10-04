@@ -87,4 +87,10 @@ def test_a_job_without_must_have_skills_cannot_be_sourced(client, fake):
 def test_there_is_no_mail_or_send_path_anywhere():
     from maindscout.api.app import app
     paths = [getattr(r, "path", "") for r in app.routes]
-    assert not [p for p in paths if any(w in p.lower() for w in ("mail", "send", "outreach", "message"))]
+    # Slice 4 step 5 drafts messages and puts them in the recruiter's own mailbox drafts; nothing here can send one.
+    assert not [p for p in paths if any(w in p.lower() for w in ("send", "outreach", "deliver", "smtp"))]
+    import inspect
+
+    from maindscout.api import mailbox
+    source = inspect.getsource(mailbox)
+    assert "messages/send" not in source and "/sendMail" not in source and "/send" not in source, "the mailbox never sends"

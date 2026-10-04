@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from maindscout.api import companies, costs, documents, erasure, pipeline, process, queries, review, sourcing, tasks
+from maindscout.api import mailbox as mailbox_mod
 from maindscout.api import task_handlers  # noqa: F401 (registers task kinds)
 from maindscout.db.models import Document, ExtractionArtifact, IntelligenceRun, Org
 from maindscout.db.session import make_engine, make_session_factory
@@ -102,6 +103,7 @@ ERRORS: list[tuple[type[Exception], int]] = [
     (reg.UnknownClaimTypeError, 422),
     (pdf.UnreadableDocument, 422),
     (pipeline.BlockedError, 409),
+    (mailbox_mod.MailboxError, 502),
     (ValueError, 422),
 ]
 for _exc, _code in ERRORS:
@@ -905,3 +907,114 @@ def export_people(org_id: uuid.UUID = Depends(get_org), session: Session = Depen
 
     return Response(imports.export_people(session, org_id), media_type="text/csv",
                     headers={"Content-Disposition": 'attachment; filename="maindscout-people.csv"'})
+
+
+
+# --- messages and mailbox (Slice 4, step 5) ------------------------------------------------------
+
+@app.get("/v1/mailbox")
+def mailbox_status(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    return mailbox_mod.status(session, org_id)
+
+
+@app.post("/v1/mailbox/connect/{provider}")
+def mailbox_connect(provider: str, org_id: uuid.UUID = Depends(get_org), actor: str = Depends(get_actor)):
+    """Where to send the person to sign in to Gmail or Outlook."""
+    return {"url": mailbox_mod.authorize_url(org_id, provider, actor)}
+
+
+@app.get("/v1/mailbox/callback/{provider}")
+def mailbox_callback(provider: str, code: str | None = None, state: str | None = None, error: str | None = None,
+                     session: Session = Depends(get_session)):
+    """Google / Microsoft send the browser back here (no operator token: the signed state proves who started it)."""
+    from fastapi.responses import RedirectResponse
+
+    cockpit = (env("COCKPIT_URL", "http://localhost:3001") or "").rstrip("/")
+    if error or not code or not state:
+        return RedirectResponse(f"{cockpit}/mailbox?error={error or 'cancelled'}")
+    try:
+        mailbox_mod.complete(session, provider, code, state)
+        session.commit()
+    except mailbox_mod.MailboxError as failure:
+        return RedirectResponse(f"{cockpit}/mailbox?error=" + str(failure).replace(" ", "+")[:200])
+    return RedirectResponse(f"{cockpit}/mailbox?connected={provider}")
+
+
+@app.delete("/v1/mailbox", status_code=204)
+def mailbox_disconnect(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    mailbox_mod.disconnect(session, org_id)
+    session.commit()
+
+
+@app.post("/v1/mailbox/sync")
+def mailbox_sync_now(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """Look at the mailbox now: sent drafts, replies, follow-ups due."""
+    from maindscout.api import messages
+
+    result = messages.sync(session, org_id)
+    session.commit()
+    return result
+
+
+class DraftBody(BaseModel):
+    kind: str
+    candidate_id: uuid.UUID | None = None
+    contact_id: uuid.UUID | None = None
+    job_id: uuid.UUID | None = None
+    note: str | None = None
+
+
+@app.post("/v1/messages", status_code=201)
+def draft_message(body: DraftBody, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                  actor: str = Depends(get_actor), llm: LLMClient = Depends(get_llm)):
+    """Draft a message from what may be said outward. Nothing is sent."""
+    from maindscout.api import messages
+
+    m = messages.draft(session, org_id, body.kind, actor, llm, candidate_id=body.candidate_id, contact_id=body.contact_id,
+                       job_id=body.job_id, note=body.note)
+    session.commit()
+    return messages.as_dict(m)
+
+
+class EditBody(BaseModel):
+    subject: str
+    body: str
+
+
+@app.patch("/v1/messages/{message_id}")
+def edit_message(message_id: uuid.UUID, body: EditBody, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    from maindscout.api import messages
+
+    m = messages.edit(session, org_id, message_id, body.subject, body.body)
+    session.commit()
+    return messages.as_dict(m)
+
+
+@app.post("/v1/messages/{message_id}/mailbox")
+def message_to_mailbox(message_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """Put the draft in the connected mailbox's drafts; you send it from there."""
+    from maindscout.api import messages
+
+    result = messages.to_mailbox(session, org_id, message_id)
+    session.commit()
+    return result
+
+
+@app.post("/v1/messages/{message_id}/sent")
+def message_sent(message_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """Mark as sent by hand (sent outside a connected mailbox)."""
+    from maindscout.api import messages
+
+    m = messages.mark_sent(session, org_id, message_id)
+    session.commit()
+    return messages.as_dict(m)
+
+
+@app.post("/v1/messages/{message_id}/replied")
+def message_replied(message_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """Mark as replied by hand: stops the follow-ups."""
+    from maindscout.api import messages
+
+    m = messages.mark_replied(session, org_id, message_id)
+    session.commit()
+    return messages.as_dict(m)

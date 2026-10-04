@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import String, func, select
 from sqlalchemy.orm import Session
 
-from maindscout.api import coverage, freshness, hiring, pipeline, profiles, relationship
+from maindscout.api import coverage, freshness, hiring, messages, pipeline, profiles, relationship
 from maindscout.db.models import (
     Company,
     Candidate,
@@ -139,7 +139,7 @@ def person_page(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID) ->
     claims = list(session.scalars(select(Claim).where(Claim.subject_id == person.id).order_by(
         Claim.valid_from.desc().nulls_last(), Claim.created_at, Claim.natural_key, Claim.id)))
     ev = evidence_for(session, [c.id for c in claims])
-    pairs = session.execute(select(CandidateJob, Job).join(Job, Job.id == CandidateJob.job_id).where(CandidateJob.candidate_id == person.id))
+    pairs = session.execute(select(CandidateJob, Job).join(Job, Job.id == CandidateJob.job_id).where(CandidateJob.candidate_id == person.id)).all()
     documents = session.execute(
         select(Document).join(Evidence, Evidence.document_id == Document.id).join(Claim, Claim.id == Evidence.claim_id)
         .where(Claim.subject_id == person.id).distinct())
@@ -155,6 +155,8 @@ def person_page(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID) ->
         "relationship": relationship.summary_for_person(session, org_id, person.id),
         "blocks": pipeline.blocks_for_person(session, org_id, person.id),
         "freshness": freshness.of_person(session, org_id, person.id),
+        "messages": messages.for_person(session, org_id, person.id),
+        "client_contacts": messages.contacts_for_jobs(session, org_id, [j for _, j in pairs]),
         "classifications": profiles.labels_view(session, org_id, person.id),
         "claims": grouped,
         "jobs": [{"job_id": str(j.id), "title": j.title, "band": p.triage_band, "reason": p.triage_reason} for p, j in pairs],

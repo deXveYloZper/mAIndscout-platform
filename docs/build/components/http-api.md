@@ -44,6 +44,8 @@ The cockpit must never touch the database. Every action goes through one guarded
 | `POST /v1/jobs/{id}/intake` · `POST /v1/jobs/{id}/requirements` · `POST /v1/requirements/{id}/strength` | Intake notes, a requirement typed by the recruiter, change how much a requirement matters ([hiring-profiles.md](hiring-profiles.md)) |
 | `GET /v1/jobs/{id}/people/{cid}/brief` · `POST /v1/brief/{item}/answer` · `…/asked` · `…/dismiss` | The Brief and its answers ([brief.md](brief.md)) |
 | `POST /v1/imports` · `…/import` · `…/quote/accept` · `GET /v1/export/people.csv` | Import with allowance and quote; free export ([imports.md](imports.md)) |
+| `GET/DELETE /v1/mailbox` · `POST /v1/mailbox/connect/{provider}` · `GET /v1/mailbox/callback/{provider}` · `POST /v1/mailbox/sync` | Connect Gmail or Outlook; look for sent and replies ([messages.md](messages.md)) |
+| `POST /v1/messages` · `PATCH /v1/messages/{id}` · `POST …/mailbox` · `…/sent` · `…/replied` | Draft, edit, put in the mailbox drafts, mark sent or replied; never sends ([messages.md](messages.md)) |
 | `GET /v1/freshness` | Who to re-contact and which clients to reconnect with ([freshness.md](freshness.md)) |
 | `POST /v1/blocks/{id}/lift` | Lift a client's block with a note ([pipeline.md](pipeline.md)) |
 | `…/activities` · `…/tags` · `GET /v1/tags` · `…/contacts` | Relationship memory ([relationship-memory.md](relationship-memory.md)) |

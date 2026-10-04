@@ -124,6 +124,34 @@ export type PersonPage = {
   relationship: { last_contacted: string | null; last_verified: string | null; tags: string[];
     timeline: { at: string | null; type: string; text: string; direction?: string | null; job?: string | null; contact?: string | null;
       by?: string | null; id?: string; removable?: boolean }[] };
+  messages: MessageView[];
+  client_contacts: { id: string; name: string; role: string | null; job_id: string; job: string }[];
+};
+
+export type MessageView = {
+  id: string;
+  kind: "candidate_outreach" | "follow_up" | "client_submission" | "interview_confirm" | "decline";
+  to: string;
+  subject: string;
+  body: string;
+  status: "draft" | "in_mailbox" | "sent" | "replied" | "cancelled";
+  provider: string | null;
+  job_id: string | null;
+  follow_up_of: string | null;
+  follow_up_due: string | null;
+  created_at: string | null;
+  sent_at: string | null;
+  replied_at: string | null;
+};
+
+export type MailboxStatus = {
+  connected: boolean;
+  provider: "google" | "microsoft" | null;
+  account: string | null;
+  status: string | null;
+  last_sync_at: string | null;
+  google_ready: boolean;
+  microsoft_ready: boolean;
 };
 
 export type Side = {

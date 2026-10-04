@@ -288,3 +288,12 @@ form.inline { display: inline; margin-left: 6px; }
 .import-rows { list-style: none; padding: 0; }
 .import-rows li { padding: 4px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 .import-rows li.invalid, .import-rows li.duplicate { opacity: 0.75; }
+
+/* messages (Slice 4, step 5) */
+.messages-list { list-style: none; padding: 0; margin: 10px 0 0; }
+.messages-list .message { padding: 10px 0; border-top: 1px solid var(--line); }
+.messages-list .message .row { gap: 8px; flex-wrap: wrap; align-items: baseline; }
+.message-edit { display: grid; gap: 6px; margin-top: 6px; }
+.message-edit input, .message-edit textarea { width: 100%; background: var(--bg-raise-2); border: 1px solid var(--line); padding: 6px; }
+.message-body { white-space: pre-wrap; font: inherit; margin: 6px 0; color: var(--cream-dim); }
+.mailbox-providers { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; }

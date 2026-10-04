@@ -413,3 +413,70 @@ export async function acceptImportQuote(batchId: string, path: string): Promise<
   await idempotent(() => apiJson(`/v1/imports/${batchId}/quote/accept`, {}));
   revalidatePath(path);
 }
+
+// --- messages and mailbox (Slice 4, step 5): drafts only; you send from your own mailbox ---
+
+export type MessageState = FormState & { link?: string };
+
+export async function draftMessage(candidateId: string, path: string, _: FormState, form: FormData): Promise<FormState> {
+  const kind = String(form.get("kind") || "candidate_outreach");
+  const contact = String(form.get("contact_id") || "");
+  const [contactId, contactJob] = contact ? contact.split("|") : [null, null];
+  const body = {
+    kind, candidate_id: candidateId, contact_id: contactId,
+    job_id: contactJob || String(form.get("job_id") || "") || null,
+    note: String(form.get("note") || "").trim() || null,
+  };
+  if (kind === "client_submission" && !contactId) return { error: "Choose who at the client it goes to." };
+  try {
+    await apiJson("/v1/messages", body);
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  return { message: "Drafted below. Read it, edit it, then put it in your drafts." };
+}
+
+export async function editMessage(messageId: string, path: string, _: MessageState, form: FormData): Promise<MessageState> {
+  try {
+    await api(`/v1/messages/${messageId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subject: String(form.get("subject") || ""), body: String(form.get("body") || "") }),
+    });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  return { message: "Saved." };
+}
+
+export async function messageToMailbox(messageId: string, path: string, _: MessageState): Promise<MessageState> {
+  let link: string | undefined;
+  try {
+    link = (await apiJson<{ open: string | null }>(`/v1/messages/${messageId}/mailbox`, {})).open ?? undefined;
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  return { message: "In your drafts. Send it from there.", link };
+}
+
+export async function markMessage(messageId: string, what: "sent" | "replied", path: string): Promise<void> {
+  await idempotent(() => apiJson(`/v1/messages/${messageId}/${what}`, {}));
+  revalidatePath(path);
+}
+
+export async function connectMailbox(provider: "google" | "microsoft"): Promise<void> {
+  const { url } = await apiJson<{ url: string }>(`/v1/mailbox/connect/${provider}`, {});
+  redirect(url);
+}
+
+export async function disconnectMailbox(): Promise<void> {
+  await idempotent(() => api("/v1/mailbox", { method: "DELETE" }));
+  revalidatePath("/mailbox");
+}
+
+export async function syncMailbox(path: string): Promise<void> {
+  await idempotent(() => apiJson("/v1/mailbox/sync", {}));
+  revalidatePath(path);
+}

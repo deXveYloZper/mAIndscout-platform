@@ -1,11 +1,13 @@
 import Link from "next/link";
-import { addFact, bringBack, eraseCandidate, liftBlock, logActivity, putOnJob, tagPerson, untagPerson } from "@/app/actions";
+import { addFact, bringBack, draftMessage, editMessage, eraseCandidate, liftBlock, logActivity, markMessage, messageToMailbox, putOnJob, syncMailbox,
+  tagPerson, untagPerson } from "@/app/actions";
+import { DraftMessage, MessageCard } from "@/components/Messages";
 import { CareerProfile } from "@/components/CareerProfile";
 import { Dates, LogActivity, Timeline } from "@/components/Relationship";
 import { ClaimRow, Status } from "@/components/Claim";
 import { EraseForm } from "@/components/EraseForm";
 import { FactForm } from "@/components/FactForm";
-import { api, apiOr404, type JobSummary, type PersonPage } from "@/lib/api";
+import { api, apiOr404, type JobSummary, type MailboxStatus, type PersonPage } from "@/lib/api";
 import { BAND_LABEL, reasonWords } from "@/lib/format";
 
 export const metadata = { title: "Person" };
@@ -20,10 +22,12 @@ const SECTIONS: [string, string][] = [
 
 export default async function Person({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [person, jobs] = await Promise.all([apiOr404<PersonPage>(`/v1/candidates/${id}`), api<JobSummary[]>("/v1/jobs")]);
+  const [person, jobs, mailbox] = await Promise.all([apiOr404<PersonPage>(`/v1/candidates/${id}`), api<JobSummary[]>("/v1/jobs"),
+    api<MailboxStatus>("/v1/mailbox")]);
   const otherJobs = jobs.filter((j) => !person.jobs.some((p) => p.job_id === j.id));
   const path = `/people/${id}`;
   const skills = person.claims.SkillClaim ?? [];
+  const hasEmail = (person.claims.ContactClaim ?? []).some((c) => c.payload.kind === "email" && (c.status === "approved" || c.status === "proposed"));
 
   return (
     <>
@@ -72,6 +76,32 @@ export default async function Person({ params }: { params: Promise<{ id: string 
           <Timeline rows={person.relationship.timeline} path={path} />
         </details>
       </section>
+
+      {!person.archived && (
+        <section className="panel messages">
+          <h3>Messages</h3>
+          <p className="sub">
+            Drafts use only approved facts, the job&apos;s public details and what was said on the call. Nothing is sent from here:{" "}
+            {mailbox.connected
+              ? <>drafts go to your {mailbox.provider === "microsoft" ? "Outlook" : "Gmail"} ({mailbox.account}) and you send them yourself.</>
+              : <>copy the text, or <Link href="/mailbox">connect Gmail or Outlook</Link> to put drafts straight in your mailbox.</>}
+          </p>
+          <DraftMessage action={draftMessage.bind(null, person.id, path)} hasEmail={hasEmail}
+            jobs={person.jobs.map((j) => ({ id: j.job_id, title: j.title }))} contacts={person.client_contacts} />
+          {person.messages.length > 0 && (
+            <ul className="messages-list">
+              {person.messages.map((m) => (
+                <MessageCard key={m.id} m={m} connected={mailbox.connected} provider={mailbox.provider}
+                  edit={editMessage.bind(null, m.id, path)} toMailbox={messageToMailbox.bind(null, m.id, path)}
+                  markSent={markMessage.bind(null, m.id, "sent", path)} markReplied={markMessage.bind(null, m.id, "replied", path)} />
+              ))}
+            </ul>
+          )}
+          {mailbox.connected && person.messages.some((m) => m.status === "in_mailbox" || m.status === "sent") && (
+            <form action={syncMailbox.bind(null, path)}><button className="btn small">Check my mailbox now</button></form>
+          )}
+        </section>
+      )}
 
       {otherJobs.length > 0 && (
         <form action={putOnJob.bind(null, person.id)} className="row" style={{ marginTop: 12 }}>
