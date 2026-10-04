@@ -29,8 +29,8 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 |---|---|---|
 | 1 | Relationship memory | built 2026-10-04 ([relationship-memory](components/relationship-memory.md)) |
 | 2 | Full pipeline, submissions, client feedback and block | built 2026-10-05 ([pipeline](components/pipeline.md)) |
-| 3 | Freshness | next |
-| 4 | Import (100 / 25 free, more paid) | |
+| 3 | Freshness | built 2026-10-05 ([freshness](components/freshness.md)) |
+| 4 | Import (100 / 25 free, more paid) | next |
 | 5 | Drafts, reply halt | |
 
 Slice 3 (the Brief, closed): built 2026-10-04 ([brief](components/brief.md)).

@@ -279,3 +279,7 @@ form.inline { display: inline; margin-left: 6px; }
 .blocktag { font-size: 11px; color: var(--amber); border: 1px solid var(--amber); padding: 0 6px; margin-left: 6px; }
 .statetag.placed { color: var(--amber); border-color: var(--amber); }
 .statetag.client_rejected, .statetag.withdrawn { color: var(--cream-dim); }
+
+/* freshness (Slice 4 step 3) */
+.stale-note { color: var(--amber); font-size: 13px; margin: 4px 0 8px; }
+.stale-tag { font-size: 11px; color: var(--amber); border: 1px dashed var(--amber); padding: 0 6px; margin-left: 6px; }

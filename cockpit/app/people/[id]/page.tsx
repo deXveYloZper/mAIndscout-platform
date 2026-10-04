@@ -53,6 +53,7 @@ export default async function Person({ params }: { params: Promise<{ id: string 
       <section className="panel relationship">
         <h3>Relationship</h3>
         <Dates lastContacted={person.relationship.last_contacted} lastVerified={person.relationship.last_verified} />
+        {person.freshness.status === "stale" && <p className="stale-note">Stale: {person.freshness.words}. Worth a call before relying on these facts.</p>}
         <div className="row tags">
           {person.relationship.tags.map((t) => (
             <form key={t} action={untagPerson.bind(null, person.id, t, path)} className="chipform">

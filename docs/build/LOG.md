@@ -2,6 +2,7 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-05 — Slice 4 step 3: freshness. People stale after 6 months without contact or verification, clients after 12; Refresh page with who to re-contact (priority, strong matches, talent pools, strong careers first, with why) and clients to reconnect with; stale tags — [freshness](components/freshness.md)
 - 2026-10-05 — Slice 4 step 2: full pipeline (new → seen → contacted → screened → submitted → interviewing → offer → placed; passed / withdrawn / client rejected, each with its reason); a client rejection blocks the person at that client (refused, not sourced, matched unlikely, lift with a note); client answers on the company timeline; stage counts — [pipeline](components/pipeline.md)
 - 2026-10-04 — Slice 4 step 1: relationship memory. Log calls, emails, meetings, messages and notes for people and clients; one timeline joined with CVs, band and stage changes, Brief answers; last contacted and last verified; tags as talent pools; contacts at client companies — [relationship-memory](components/relationship-memory.md)
 - 2026-10-04 — Decision: mAIndscout is the source of truth, not an ATS accessory; import 100 candidates and 25 clients per account free (approved by the account holder), more only as paid analysis at compute cost + 90%; Slice 4 rescoped to ATS core and import — [decision](../decisions/2026-10-04-source-of-truth-and-imports.md)

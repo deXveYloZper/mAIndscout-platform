@@ -37,6 +37,7 @@ Local setup: [core/README.md](../../core/README.md).
 | The Brief: call checklist, answers become approved facts, person-wide inheritance (Slice 3) | built | [brief.md](components/brief.md) |
 | Relationship memory: activity timeline, last contacted / verified, tags as talent pools, client contacts (Slice 4) | built | [relationship-memory.md](components/relationship-memory.md) |
 | Pipeline to placed; client rejection as a wall at that client (Slice 4) | built | [pipeline.md](components/pipeline.md) |
+| Freshness: stale people and clients, re-contact list by value with reasons (Slice 4) | built | [freshness.md](components/freshness.md) |
 | Sourcing feeder (Slice 2) | built (desk) | [sourcing.md](components/sourcing.md) |
 | Coverage floor + reserved score (Slice 1) | built | [coverage.md](components/coverage.md) |
 | Gap table (Slice 1) | built | [gap-table.md](components/gap-table.md) |

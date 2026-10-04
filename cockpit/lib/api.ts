@@ -118,6 +118,7 @@ export type PersonPage = {
   coverage_override: boolean;
   profile: CareerProfile | null;
   classifications: Record<string, StepLabel>;
+  freshness: { status: string; since: string | null; words: string };
   blocks: { id: string; company_id: string; company: string | null; reason: string; at: string | null; by: string;
     lifted: boolean; lift_note: string | null }[];
   relationship: { last_contacted: string | null; last_verified: string | null; tags: string[];
@@ -162,6 +163,7 @@ export type PersonSummary = {
   document_id: string | null;
   archived: string | null;
   tags: string[];
+  stale: boolean;
 };
 
 export type ProcessResult = {

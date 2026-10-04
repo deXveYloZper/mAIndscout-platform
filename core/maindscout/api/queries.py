@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import String, func, select
 from sqlalchemy.orm import Session
 
-from maindscout.api import coverage, hiring, pipeline, profiles, relationship
+from maindscout.api import coverage, freshness, hiring, pipeline, profiles, relationship
 from maindscout.db.models import (
     Company,
     Candidate,
@@ -154,6 +154,7 @@ def person_page(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID) ->
         "profile": profiles.as_view(profiles.latest(session, person.id)),
         "relationship": relationship.summary_for_person(session, org_id, person.id),
         "blocks": pipeline.blocks_for_person(session, org_id, person.id),
+        "freshness": freshness.of_person(session, org_id, person.id),
         "classifications": profiles.labels_view(session, org_id, person.id),
         "claims": grouped,
         "jobs": [{"job_id": str(j.id), "title": j.title, "band": p.triage_band, "reason": p.triage_reason} for p, j in pairs],
@@ -248,11 +249,13 @@ def list_people(session: Session, org_id: uuid.UUID) -> list[dict[str, Any]]:
         .group_by(DocumentSubject.subject_id)).all())
     from maindscout.db.models import CandidateTag
 
+    stale = freshness.stale_ids(session, org_id)
     tags: dict = defaultdict(list)
     for cid, tag in session.execute(select(CandidateTag.candidate_id, CandidateTag.tag).where(CandidateTag.org_id == org_id)):
         tags[cid].append(tag)
     return [{"id": str(p.id), "name": who.get(p.id), "created_at": _iso(p.created_at), "jobs": pairs.get(p.id, []),
              "archived": (p.archived_reason or {}).get("text") if p.archived_at else None, "tags": sorted(tags.get(p.id, [])),
+             "stale": p.id in stale,
              "document_id": docs.get(p.id)} for p in people]
 
 

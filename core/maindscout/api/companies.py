@@ -124,7 +124,7 @@ def company_page(session: Session, org_id: uuid.UUID, company_id: uuid.UUID) -> 
         row = grouped.setdefault(st["candidate_id"], {"candidate_id": st["candidate_id"], "name": st["name"], "roles": [], "current": False})
         row["roles"].append({k: st[k] for k in ("title", "valid_from", "valid_to", "current")})
         row["current"] = row["current"] or st["current"]
-    from maindscout.api import relationship, research
+    from maindscout.api import freshness, relationship, research
 
     return {"id": str(company.id), "name": company.name, "website": company.website, "hq_country": company.hq_country,
             "research_status": company.research_status,
@@ -134,7 +134,8 @@ def company_page(session: Session, org_id: uuid.UUID, company_id: uuid.UUID) -> 
             "jobs": [{"id": str(j.id), "title": j.title} for j in jobs],
             "contacts": relationship.contacts_at(session, org_id, [uuid.UUID(i) for i in _ids_for(session, company)]),
             "timeline": relationship.timeline(session, org_id, "company", company.id),
-            "last_contacted": (lambda d: d.isoformat() if d else None)(relationship.last_contacted(session, org_id, "company", company.id))}
+            "last_contacted": (lambda d: d.isoformat() if d else None)(relationship.last_contacted(session, org_id, "company", company.id)),
+            "freshness": freshness.of_company(session, org_id, company)}
 
 
 def search(session: Session, org_id: uuid.UUID, q: str | None, limit: int = 50) -> list[dict[str, Any]]:

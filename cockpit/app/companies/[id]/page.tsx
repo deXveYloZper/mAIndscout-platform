@@ -26,6 +26,7 @@ type CompanyPage = {
     last_contacted: string | null }[];
   timeline: TimelineRow[];
   last_contacted: string | null;
+  freshness: { status: string; words: string };
 };
 
 const STAGE: Record<string, string> = {
@@ -80,6 +81,7 @@ export default async function Company({ params }: { params: Promise<{ id: string
       <section className="panel relationship">
         <h3>Relationship</h3>
         <Dates lastContacted={c.last_contacted} lastVerified={c.researched_at} verifiedLabel="Public facts researched" />
+        {c.freshness.status === "stale" && <p className="stale-note">Stale: {c.freshness.words}.</p>}
         <h4>People we know there</h4>
         {c.contacts.length === 0 ? <p className="empty">No contacts yet.</p> : (
           <ul className="contacts">

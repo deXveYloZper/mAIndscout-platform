@@ -831,3 +831,12 @@ def lift_block(block_id: uuid.UUID, body: LiftBody, org_id: uuid.UUID = Depends(
     b = pipeline.lift(session, org_id, block_id, body.note, actor)
     session.commit()
     return {"id": str(b.id), "lifted": b.lifted_at is not None}
+
+
+@app.get("/v1/freshness")
+def refresh_lists(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """Who to re-contact (stale people, most valuable first, with why) and which clients to reconnect with."""
+    from maindscout.api import freshness
+
+    return {"person_months": freshness.person_months(), "company_months": freshness.company_months(),
+            "people": freshness.recontact(session, org_id), "clients": freshness.reconnect(session, org_id)}

@@ -344,6 +344,15 @@ test("relationship memory: a logged call, last contacted, and a tag that becomes
   await expect(page.locator("tbody tr")).toContainText("Ioannis");
 });
 
+test("the Refresh page lists who to re-contact and which clients to reconnect with", async ({ page }) => {
+  await page.goto("/refresh");
+  await expect(page.getByRole("heading", { name: "Refresh" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Re-contact these people/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Clients to reconnect with/ })).toBeVisible();
+  // Everyone on this desk was read today, so nobody is stale yet.
+  await expect(page.getByText("Nobody is stale.")).toBeVisible();
+});
+
 test("a typed contact is saved as an approved fact", async ({ page }) => {
   await openJob(page, /InSAR Processing Specialist/);
   await page.locator("summary", { hasText: /Do not submit \(\d+\)/ }).click();

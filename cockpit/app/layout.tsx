@@ -23,6 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/companies">Companies</Link>
             <Link href="/inbox">Inbox</Link>
             <Link href="/search">Search</Link>
+            <Link href="/refresh">Refresh</Link>
             <Link href="/costs">Costs</Link>
           </nav>
         </header>
