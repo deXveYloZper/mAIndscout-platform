@@ -84,9 +84,17 @@ def list_jobs(session: Session, org_id: uuid.UUID) -> list[dict[str, Any]]:
         elif band in BANDS:
             counts[job_id][band] += n
     jobs = list(session.scalars(select(Job).where(Job.org_id == org_id).order_by(Job.created_at.desc())))
+    # "To review" per job = the job's priority inbox. Built once for the desk and counted per job, not once per job.
+    priority: dict[uuid.UUID, set[str]] = defaultdict(set)
+    for job_id, cid in session.execute(select(CandidateJob.job_id, CandidateJob.candidate_id)
+                                       .join(Candidate, Candidate.id == CandidateJob.candidate_id)
+                                       .where(CandidateJob.org_id == org_id, CandidateJob.triage_band == "priority",
+                                              Candidate.archived_at.is_(None))):
+        priority[job_id].add(str(cid))
+    items = inbox(session, org_id, None, "all") if priority else []
     return [{"id": str(j.id), "title": j.title, "hiring_company": j.hiring_company, "state": j.state,
              "created_at": _iso(j.created_at), "bands": counts[j.id], "archived": archived[j.id],
-             "to_review": len(inbox(session, org_id, j.id, "priority"))} for j in jobs]
+             "to_review": sum(1 for i in items if (i.get("subject") or {}).get("id") in priority[j.id])} for j in jobs]
 
 
 def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str, Any]:
@@ -106,6 +114,7 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
     gone = {c.id: c.archived_reason for c in session.scalars(select(Candidate).where(
         Candidate.id.in_([p.candidate_id for p in pairs] or [None]), Candidate.archived_at.is_not(None)))}
     archived = []
+    gap_rows = _gap_rows_many(session, org_id, job, [p.candidate_id for p in pairs if p.candidate_id not in gone])
     for p in pairs:
         if p.candidate_id in gone:
             archived.append({"candidate_id": str(p.candidate_id), "name": who.get(p.candidate_id),
@@ -114,7 +123,7 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
         people.setdefault(p.triage_band, []).append({
             "candidate_id": str(p.candidate_id), "name": who.get(p.candidate_id), "band": p.triage_band,
             "reason": p.triage_reason, "overridden_by": p.band_overridden_by, "open_decisions": open_counts.get(p.candidate_id, 0),
-            **_gap_summary(session, org_id, job, p.candidate_id),
+            **_gap_summary(gap_rows[p.candidate_id]),
             "state": p.pair_state, "outcome": p.outcome, "match_tier": p.match_tier, "blocked": p.candidate_id in blocked,
         })
     return {
@@ -228,8 +237,10 @@ def inbox(session: Session, org_id: uuid.UUID, job_id: uuid.UUID | None = None, 
     suspect = session.scalars(select(Claim).where(
         Claim.org_id == org_id, Claim.claim_type == "ContactClaim", Claim.status == "proposed",
         Claim.subject_id.in_(scope), Claim.flags["possible_ocr_identifier"].astext == "true"))
+    suspect = list(suspect)
+    ev_suspect = evidence_for(session, [c.id for c in suspect if c.id not in ev])
     for c in suspect:
-        e = ev.get(c.id) or evidence_for(session, [c.id])[c.id]
+        e = ev.get(c.id) or ev_suspect.get(c.id) or []
         items.append({"id": f"contact:{c.id}", "kind": "ocr_contact", "blocking": True, "created_at": _iso(c.created_at),
                       "subject": {"id": str(c.subject_id), "name": who.get(c.subject_id)}, "claim": _side(c, e),
                       "note": (e[0] if e else {}).get("note")})
@@ -262,15 +273,29 @@ def list_people(session: Session, org_id: uuid.UUID) -> list[dict[str, Any]]:
 
 
 def _gap_rows(session: Session, org_id: uuid.UUID, job: Job, candidate_id: uuid.UUID):
+    return _gap_rows_many(session, org_id, job, [candidate_id])[candidate_id]
+
+
+def _gap_rows_many(session: Session, org_id: uuid.UUID, job: Job, candidate_ids: list[uuid.UUID]) -> dict[uuid.UUID, list]:
+    """The gap table of each person against one job: one query for the requirements, one for everyone's facts, one
+    for their evidence (not three per person)."""
     from maindscout.domain import gaps
 
     reqs = list(session.scalars(select(Claim).where(Claim.subject_id == job.id, Claim.claim_type == "JobRequirementClaim",
                                                     Claim.status.in_(LIVE)).order_by(Claim.created_at, Claim.natural_key)))
-    mine = list(session.scalars(select(Claim).where(Claim.subject_id == candidate_id, Claim.status.in_(LIVE))))
-    ev = evidence_for(session, [c.id for c in mine])
-    facts = [gaps.Fact(str(c.id), c.claim_type, c.approved_view or c.payload, c.status, c.valid_from, c.valid_to,
-                       (ev[c.id][-1]["snippet"] if ev[c.id] else None)) for c in mine]  # newest reading
-    return gaps.gap_table([{"id": str(r.id), "payload": r.payload} for r in reqs], facts)
+    requirements = [{"id": str(r.id), "payload": r.payload} for r in reqs]
+    claims: dict[uuid.UUID, list[Claim]] = {cid: [] for cid in candidate_ids}
+    if candidate_ids:
+        for c in session.scalars(select(Claim).where(Claim.org_id == org_id, Claim.subject_id.in_(candidate_ids),
+                                                     Claim.status.in_(LIVE))):
+            claims[c.subject_id].append(c)
+    ev = evidence_for(session, [c.id for cs in claims.values() for c in cs])
+    out = {}
+    for cid, mine in claims.items():
+        facts = [gaps.Fact(str(c.id), c.claim_type, c.approved_view or c.payload, c.status, c.valid_from, c.valid_to,
+                           (ev[c.id][-1]["snippet"] if ev[c.id] else None)) for c in mine]  # newest reading
+        out[cid] = gaps.gap_table(requirements, facts)
+    return out
 
 
 def gap_counts(session: Session, org_id: uuid.UUID, job: Job, candidate_id: uuid.UUID) -> dict[str, int]:
@@ -322,8 +347,7 @@ def _coverage(rows) -> dict[str, Any]:
     return coverage.coverage(rows).as_dict()
 
 
-def _gap_summary(session: Session, org_id: uuid.UUID, job: Job, candidate_id: uuid.UUID) -> dict[str, Any]:
+def _gap_summary(rows: list) -> dict[str, Any]:
     from maindscout.domain import gaps
 
-    rows = _gap_rows(session, org_id, job, candidate_id)
     return {"gaps": gaps.counts(rows), "coverage": _coverage(rows)}

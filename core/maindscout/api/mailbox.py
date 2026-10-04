@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from maindscout.db.models import Mailbox
 from maindscout.settings import env
 
-GOOGLE_SCOPES = "openid email https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.readonly"
+GOOGLE_SCOPES = "openid email https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.metadata"
 MS_SCOPES = "offline_access User.Read Mail.ReadWrite"
 
 

@@ -71,45 +71,96 @@ def _digits(value: str) -> str:
     return re.sub(r"\D", "", value)
 
 
+def _year_written(year: str, lowered: str) -> bool:
+    """The four-digit year, or a two-digit year that is plainly a date: 03/19, 03.19, Mar 19, Mar '19, '19.
+    A bare two-digit number ("24th", "24/7") is not a year."""
+    if re.search(rf"(?<!\d){year}(?!\d)", lowered):
+        return True
+    yy = year[2:]
+    months = "|".join(MONTHS)
+    return bool(re.search(rf"(?<!\d)(0?[1-9]|1[0-2])\s*[/.\-]\s*{yy}(?!\d)"
+                          rf"|\b(?:{months})[a-z]*\.?\s*'?{yy}(?!\d)"
+                          rf"|['’]{yy}(?!\d)", lowered))
+
+
 def date_supported(iso: str | None, precision: str, quote: str) -> bool:
     """The year (and month, if the claim says month) must be written in the quote."""
     if not iso:
         return True
     year, month = iso[:4], int(iso[5:7]) if len(iso) >= 7 else None
-    lowered = quote.lower()
-    if year not in lowered and year[2:] not in re.findall(r"(?<!\d)(\d{2})(?!\d)", lowered):
+    lowered = quote.lower().replace("’", "'")
+    if not _year_written(year, lowered):
         return False
     if precision in ("month", "exact") and month:
-        named = MONTHS[month - 1] in lowered
-        numeric = re.search(rf"(?<!\d)0?{month}\s*[/.\-]\s*{year}|{year}\s*[/.\-]\s*0?{month}(?!\d)", lowered)
+        named = re.search(rf"\b{MONTHS[month - 1]}", lowered)
+        yy = rf"(?:{year}|{year[2:]})"
+        numeric = re.search(rf"(?<!\d)0?{month}\s*[/.\-]\s*{yy}(?!\d)|(?<!\d){year}\s*[/.\-]\s*0?{month}(?!\d)", lowered)
         return bool(named or numeric)
     return True
 
 
+def _phone_runs(text: str) -> list[str]:
+    """The digits of each phone-like run in the text (digits with spaces, dots, dashes, slashes, brackets, a leading +)."""
+    return [_digits(m) for m in re.findall(r"\+?\d[\d\s().\-/]{4,}\d", text)]
+
+
 def value_supported(kind: str, value: str, text: str, annotation_uris: list[str]) -> bool:
-    """A contact value must appear in the document text or in a link annotation."""
+    """A contact value must appear in the document text or in a link annotation.
+
+    Phones: the digits must be one written number, not digits gathered from different places. Emails and links:
+    spaces are tolerated (PDF text often splits a word in two), but only where the text has nothing else in between.
+    """
     haystack = text.translate(_LIGATURES).lower()
     needle = value.strip().lower()
     if kind == "phone":
         digits = _digits(value)
-        return len(digits) >= 6 and digits in _digits(text)
-    if needle in haystack.replace(" ", "") or needle in haystack:
+        return len(digits) >= 6 and any(digits in run for run in _phone_runs(text))
+    if needle in haystack or _spaced(needle, haystack):
         return True
     stripped = re.sub(r"^(https?://)?(www\.)?", "", needle).rstrip("/")
-    if stripped and stripped in haystack.replace(" ", ""):
+    if stripped and (stripped in haystack or _spaced(stripped, haystack)):
         return True
     return any(stripped in uri.lower() or needle in uri.lower() for uri in annotation_uris)
 
 
+def _spaced(needle: str, haystack: str) -> bool:
+    """The needle with at most one stray space inside (a split word), starting and ending at a token edge."""
+    if len(needle) < 5:
+        return False
+    pattern = r"\s?".join(re.escape(c) for c in needle)
+    for m in re.finditer(rf"(?<![\w.@\-]){pattern}(?![\w@\-])", haystack):
+        if m.group(0).count(" ") <= 1:
+            return True
+    return False
+
+
 def name_supported(value: str, quote: str) -> bool:
-    """A tidied name is supported if, ignoring spaces, case and accents, it is inside the quote."""
+    """A tidied name is in the quote, ignoring spaces, case and accents, starting and ending on word edges.
+
+    Spaces are ignored because PDF text splits words ("GUST AVO"); word edges stop "Ann" being found in "Joann".
+    """
     import unicodedata
 
-    def flat(text: str) -> str:
+    def fold(text: str) -> str:
         text = unicodedata.normalize("NFKD", text.translate(_LIGATURES))
-        return "".join(c for c in text.lower() if c.isalpha())
+        return "".join(c for c in text.lower() if c.isalpha() or c.isspace() or c in "-'")
 
-    return bool(flat(value)) and flat(value) in flat(quote)
+    target = "".join(c for c in fold(value) if c.isalpha())
+    if not target:
+        return False
+    words = re.findall(r"[a-z]+", fold(quote))
+    flat, starts, ends, pos = "", set(), set(), 0
+    for w in words:
+        starts.add(pos)
+        flat += w
+        pos += len(w)
+        ends.add(pos)
+    i = flat.find(target)
+    while i >= 0:
+        if i in starts and i + len(target) in ends:
+            return True
+        i = flat.find(target, i + 1)
+    return False
 
 
 def month_day_supported(when, quote: str) -> bool:

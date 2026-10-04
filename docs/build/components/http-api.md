@@ -34,7 +34,7 @@ The cockpit must never touch the database. Every action goes through one guarded
 | `POST /v1/jobs/{id}/people/{cid}` | Put an existing person on a job and band them (no re-read) |
 | `GET /v1/jobs/{id}/people/{cid}/gaps` | The gap table: every requirement as evidence / missing / conflict / question, plus the pair's history; never a number |
 | `GET /v1/candidates/{id}` · `/claims?status=` | Person page: facts with snippets, jobs, documents |
-| `GET /v1/inbox?job_id=&band=` | Review items; default band `priority`, `all` for everyone |
+| `GET /v1/inbox?job_id=&band=` | Review items; with a job, default band `priority`, `all` for everyone on it; without a job, everyone (a band without a job is refused, 422) |
 | `POST /v1/claims/{id}/approve` · `/reject` | Human act on one claim |
 | `POST /v1/claims` | Human-typed fact, born approved (`replaces` supersedes the claim it corrects) |
 | `POST /v1/decisions/{id}/resolve` | Answer a card (see [review.md](review.md)) |
@@ -52,7 +52,7 @@ The cockpit must never touch the database. Every action goes through one guarded
 | `GET /v1/search` | Search the desk by career profile ([people-search.md](people-search.md)) |
 | `PUT /v1/jobs/{id}/countries` · `POST /v1/candidates/{id}/bring-back` | Open a job to more countries; un-archive a person ([coverage-gate.md](coverage-gate.md)) |
 | `POST /v1/companies/{id}/research` | Queue fresh public research now; `202` with a task id ([company-research.md](company-research.md)) |
-| `?background=true` on `POST /v1/jobs/{id}/documents` and `POST /v1/candidates` · `GET /v1/tasks?ids=` | Store now, read in the background (202 + task id); task progress |
+| `?background=true` on `POST /v1/jobs/{id}/documents` and `POST /v1/candidates` · `GET /v1/tasks?ids=` | Store now, read in the background (202 + task id); task progress (the desk's own tasks and the shared research it queued) |
 | `GET /v1/costs` | This month's spend by purpose and day against the budget |
 | `POST /v1/subjects/candidate/{id}/erase` · `GET …/erase/verify` | Forget a person; re-check (see [erasure.md](erasure.md)) |
 

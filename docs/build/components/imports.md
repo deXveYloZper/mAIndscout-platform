@@ -10,13 +10,13 @@
   3. **Free allowance per account: 100 candidates and 25 clients**, counted by rows actually imported. Ticking more than is left is refused.
   4. **Beyond the allowance: a quote**, at our measured compute per record (from the cost ledger: reading, classifying, a share of company research) × **1.9**. Accepting it records the order and holds those rows; they're verified before they become facts.
 - **Outside freshness is never trusted.** The file's "last contacted" is kept as a timeline note ("not counted as contact"), so freshness starts from what happens here.
-- **Export is always free:** everyone on the desk as CSV (name, contacts, location, current role, tags, jobs and bands, last contacted, facts last verified).
+- **Export is always free:** everyone on the desk as CSV (name, contacts, location, current role, tags, jobs and bands, last contacted, facts last verified). A cell that starts like a formula (`=`, `+`, `-`, `@`) is written as text, so a spreadsheet never runs it.
 
 ## Why
 The owner's decision ([source of truth and imports](../../decisions/2026-10-04-source-of-truth-and-imports.md)): about 100 candidates and 25 clients is what one person can reliably vouch for. Beyond that, data is a guess and must be verified as paid work. Export keeps trust and meets data-protection law.
 
 ## How
-- Upload: UTF-8 (BOM tolerated), comma, semicolon or tab separated (sniffed), up to 10 MB and 20,000 rows.
+- Upload: UTF-8 (BOM tolerated), comma, semicolon or tab separated (sniffed), up to 10 MB (never buffered beyond it) and 20,000 rows (a longer file is refused, not cut).
 - Duplicates are checked against the desk's contact facts. People erased at their request are recognised through the suppression list (by contact hashes) and refused.
 - Imported claims are written with `review.assert_claim` (born approved, human assertion), exactly as if the recruiter had typed them.
 - Erasure deletes a person's import row (it holds their name and contacts).

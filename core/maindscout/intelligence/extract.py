@@ -244,6 +244,18 @@ def _period_end(iso: str, precision: str) -> str:
     return (nxt - timedelta(days=1)).isoformat()
 
 
+def _open_range(quote: str, year: str) -> bool:
+    """The quote writes the start as an open range: "since 2019", "from 03/2019", or "2019 –" with no later date."""
+    lowered = quote.lower()
+    if re.search(rf"\b(since|seit|depuis|desde|dal|od)\b[^0-9]{{0,12}}(\d{{1,2}}\s*[/.\-]\s*)?{year}", lowered):
+        return True
+    m = re.search(rf"{year}\s*(?:[-–—]|to\b|bis\b)\s*", lowered)
+    if not m:
+        return False
+    rest = lowered[m.end():m.end() + 25]
+    return not re.match(r"[a-z]{0,9}\.?\s*'?\d{2,4}|\d{1,2}\s*[/.\-]", rest)
+
+
 def _precision(a: str, b: str) -> str:
     order = ["unknown", "year_only", "ordered_only", "month", "exact"]
     return a if order.index(a) <= order.index(b) else b
@@ -299,8 +311,12 @@ class _Run:
             self.reject(key, "end date is before start date")
             return None
         if valid_from and not end:
-            # No end is written, which is not the same as "still there". Only an explicit "present" is open.
-            valid_to, p2 = _period_end(valid_from, p1), p1
+            if _open_range(quote, valid_from[:4]):
+                # "since 2019", "2019 –": written as still running, even though the model gave no end.
+                valid_to, p2 = None, "exact"
+            else:
+                # A lone date ("2019  Intern, Acme") stands for that year or month only.
+                valid_to, p2 = _period_end(valid_from, p1), p1
         precision = _precision(p1, p2) if (valid_from and valid_to) else (p1 if valid_from else p2)
         return valid_from, valid_to, precision
 
@@ -360,8 +376,12 @@ def extract_cv(text: str, artifact_id: uuid.UUID, annotations: list[dict], clien
         key = run.key("contact")
         span = {"artifact_id": str(artifact_id), "page": a["page"], "char_start": None, "char_end": None,
                 "snippet": a["uri"], "annotation_id": f"{a['page']}:{a['uri']}"}
-        payload = {"kind": kind, "value": norm, "normalized": norm, "attributable": True, "attribution": "subject"}
-        run.accept(StagedClaim(key, "ContactClaim", payload, span, note="taken from a link in the file"))
+        verdict = contacts.judge(kind, norm, name or None, [])
+        payload = {"kind": kind, "value": norm, "normalized": norm, "attributable": verdict.attributable,
+                   "attribution": verdict.attribution}
+        run.accept(StagedClaim(key, "ContactClaim", payload, span,
+                               flags={"possible_ocr_identifier": True} if verdict.possible_ocr_identifier else {},
+                               note=verdict.reason or "taken from a link in the file"))
 
     for item in data.get("career_steps", []):
         key = run.key("career")

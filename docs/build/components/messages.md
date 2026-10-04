@@ -30,7 +30,7 @@ The [Slice 4 plan](../../slice-4/PLAN.md) says drafts come from approved facts o
 - **A last mechanical check.** Words like tier, score, band, flag, "do not submit", "review later", coverage or a percentage refuse the model's draft, and the plain template is used instead. The same check refuses an edit that adds them.
 - **Lifecycle:** `draft` → `in_mailbox` → `sent` → `replied`; follow-ups can be `cancelled`. Drafting uses the model (cost recorded as `draft_message`, inside the budget). Without a model, or if it fails, the template is used.
 - **Mailbox.** One per desk, connected by OAuth.
-  - Google scopes: `gmail.compose` (create and delete drafts) and `gmail.readonly` (see Sent and replies).
+  - Google scopes: `gmail.compose` (create, read and delete its drafts) and `gmail.metadata` (labels and headers of a thread, to see Sent and replies; never message bodies).
   - Microsoft scopes: `Mail.ReadWrite` and `offline_access`.
   - Tokens are encrypted with `MAILBOX_KEY` (Fernet; `init` creates it in `core/.env`). The sign-in round trip is protected by an HMAC-signed state that expires in 15 minutes.
   - Disconnecting deletes the stored sign-in.

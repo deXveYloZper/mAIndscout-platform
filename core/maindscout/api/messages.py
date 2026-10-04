@@ -207,7 +207,10 @@ def _log(session: Session, m: Message, direction: str, when: datetime, text: str
         relationship.log(session, m.org_id, "candidate", m.candidate_id, "email", text, "system", direction=direction,
                          occurred_at=min(when, datetime.now(timezone.utc)), job_id=m.job_id)
     if m.company_id and m.contact_id:
-        relationship.log(session, m.org_id, "company", m.company_id, "email", text, "system", direction=direction,
+        # The client's timeline says what happened without the subject line, which may name the candidate (and would
+        # outlive their erasure there).
+        neutral = f"{'Sent' if direction == 'out' else 'Reply to'}: {m.kind.replace('_', ' ')}"
+        relationship.log(session, m.org_id, "company", m.company_id, "email", neutral, "system", direction=direction,
                          occurred_at=min(when, datetime.now(timezone.utc)), job_id=m.job_id, contact_id=m.contact_id)
 
 

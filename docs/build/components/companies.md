@@ -13,7 +13,8 @@ The intelligence track ([plan](../../intelligence/PLAN.md)) needs companies as t
 - **Shared public tier:** `company` and `company_alias` have no org id (owner's decision, [record](../../decisions/2026-10-03-intelligence-track.md)). Who worked there is read from each desk's own career claims, so one desk never sees another desk's people.
 - **Names:** legal suffixes (GmbH, Ltd, d.o.o., Sp. z o.o., …) and punctuation are dropped; a trailing parenthetical ("Bwin.Party (Entain)") is a note, never an alias (it may be a parent company). "Self employed", "Freelance" are not companies and turn the stint into contract work; "Stealth", "Confidential" are not companies.
 - **Matching is exact** on the normalised name. Anything else creates a new company: a false split is a nuisance, a false merge poisons every alumnus. A new name that looks like an existing one ("Bitpanda" / "Bitpanda Technology Solutions", or a one-letter difference in a long name) raises a **"Same company?"** card; "Same company" merges by redirect (nothing about any person is rewritten), "Different companies" keeps them apart.
-- **Linking:** reading a CV resolves each career step's company into `payload.company.company_id`; reading a job ad sets `job.hiring_company_id`. `python -m maindscout link-companies` links data read before this existed.
+- **Merges are recorded:** who merged, from which desk, and when (`merged_by`, `merged_by_org`, `merged_at`), since companies are shared by every desk.
+- **Linking:** reading a CV resolves each career step's company into `payload.company.company_id` (the payload only: an approved view is never rewritten; readers take the link from the payload); reading a job ad sets `job.hiring_company_id`. `python -m maindscout link-companies` links data read before this existed.
 - **Erasure:** company records hold no personal data and stay; "Same company?" cards raised by an erased person's CV are deleted, and verify checks for them.
 
 ## Depends on

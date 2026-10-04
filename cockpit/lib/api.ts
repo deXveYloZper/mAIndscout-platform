@@ -1,5 +1,7 @@
 // Server-side client for the platform API. Never import this from a client component:
-// it reads the operator token from the server environment.
+// it reads the operator token from the server environment. `server-only` makes the build fail if one tries
+// (type-only imports are erased and stay allowed).
+import "server-only";
 
 const BASE = process.env.MAINDSCOUT_API ?? "http://127.0.0.1:8765";
 

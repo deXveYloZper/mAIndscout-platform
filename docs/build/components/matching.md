@@ -35,7 +35,7 @@ Plan section 4.6 and phase I5: replace keyword triage with a comparison of what 
   1. **distinctive_must_missing**: a must-have that decides the band has no evidence → unlikely (today's InSAR rule, unchanged).
   2. **not_wanted**: they meet a "not wanted" requirement → unlikely.
   3. **too_little_known**: no usable career profile yet → unclear, and the coarse band stands (token triage as the fallback).
-  4. **substitution**: an intake note such as "can substitute for start-up experience" on a met requirement counts that other requirement as met.
+  4. **substitution**: an intake note such as "can substitute for start-up experience" on a met requirement counts that other requirement as met. The note must name it: its skill token, or at least half its meaningful words; one shared generic word ("role", "team") is not enough.
   5. **domain_over_seniority**: a strong industry match (must or strong plus) outweighs one level below the level asked for.
   6. **contractor_fit**: a contract job and a contractor with long engagements.
   7. **must_gaps**: two or more must-have gaps → unlikely; one → possible.

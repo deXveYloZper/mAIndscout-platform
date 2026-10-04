@@ -34,7 +34,12 @@ def _live(session: Session, org_id, candidate_id, claim_type: str) -> list[Claim
 
 
 def _view(c: Claim) -> dict[str, Any]:
-    return c.approved_view or c.payload
+    """The official view, with the company link (bookkeeping, set after approval too) taken from the payload."""
+    view = c.approved_view or c.payload
+    link = ((c.payload or {}).get("company") or {}).get("company_id")
+    if c.approved_view and link and isinstance(view.get("company"), dict) and view["company"].get("company_id") != link:
+        view = {**view, "company": {**view["company"], "company_id": link}}
+    return view
 
 
 def _cv_text(session: Session, org_id, candidate_id) -> tuple[str, ExtractionArtifact | None]:

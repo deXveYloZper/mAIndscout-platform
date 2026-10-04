@@ -174,10 +174,24 @@ def _employment(p: dict[str, Any], profile: dict[str, Any]) -> tuple[str, str]:
     return "strong", "no conflict with the kind of employment"
 
 
-def _covers(note: str, text: str) -> bool:
-    """Does an intake note like 'can substitute for start-up experience' name this requirement?"""
-    words = {w for w in re.findall(r"[a-z0-9]{4,}", text.lower().replace("-", "")) if w not in {"experience", "years", "with"}}
-    return bool(words) and any(w in note.lower().replace("-", "") for w in words)
+_GENERIC = {"experience", "years", "year", "with", "role", "roles", "work", "working", "team", "senior", "junior", "level",
+            "strong", "good", "skills", "skill", "knowledge", "background", "plus", "must", "have", "required", "preferred",
+            "ability", "able", "solid", "proven", "hands", "least", "minimum", "this", "that", "from", "into", "their"}
+
+
+def _covers(note: str, text: str, token: str | None = None) -> bool:
+    """Does an intake note like 'can substitute for start-up experience' name this requirement?
+
+    The requirement's own skill token, or most of its meaningful words, must be written in the note, as whole words.
+    One shared generic word ("role", "team") is not naming it."""
+    said = set(re.findall(r"[a-z0-9+#]+", note.lower().replace("-", "")))
+    if token and token.lower().replace("-", "") in said:
+        return True
+    words = {w for w in re.findall(r"[a-z0-9+#]{4,}", text.lower().replace("-", "")) if w not in _GENERIC}
+    if not words:
+        return False
+    hit = len(words & said)
+    return hit >= max(1, (len(words) + 1) // 2)
 
 
 def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str, Any] | None, stints: list[Stint],
@@ -251,7 +265,7 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
         note = by_id.get(a.requirement_id, {}).get("note") or ""
         if a.verdict == "strong" and "substitut" in note.lower():
             for b in rows:
-                if b is not a and b.verdict in ("gap", "partial") and _covers(note, b.requirement):
+                if b is not a and b.verdict in ("gap", "partial") and _covers(note, b.requirement, by_id.get(b.requirement_id, {}).get("normalized_token")):
                     b.verdict, b.detail = "strong", f"{b.detail}; counts as met: {a.requirement} can substitute for it"
                     fire("substitution", f"{a.requirement} stands in for {b.requirement}")
     # 4. Domain over seniority: one level below is outweighed by a strong industry match.

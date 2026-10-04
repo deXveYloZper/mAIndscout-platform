@@ -194,6 +194,9 @@ class Company(Base):
     registry_ids: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     hq_country: Mapped[str | None] = mapped_column(String(2))
     merged_into_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("company.id"))  # redirect, never rewrite
+    merged_by: Mapped[str | None] = mapped_column(String)
+    merged_by_org: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    merged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     research_status: Mapped[str | None] = mapped_column(String)  # identified | not_identified | failed
     research_depth: Mapped[str] = mapped_column(String, nullable=False, default="full", server_default="full")  # full | basic
     researched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -418,6 +421,7 @@ class Erasure(Base):
     document_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     counts: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     survivors: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    file_keys: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")  # content hashes
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created()
 

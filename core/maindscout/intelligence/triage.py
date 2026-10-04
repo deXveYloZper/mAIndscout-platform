@@ -60,7 +60,7 @@ def supports(token: str, skills: list[str], titles: list[str]) -> bool:
     return bool(re.search(whole(wanted), blob))
 
 
-def triage(requirements: list[dict], skills: list[str], titles: list[str], process_stale: bool = False) -> Triage:
+def triage(requirements: list[dict], skills: list[str], titles: list[str]) -> Triage:
     """`requirements` are JobRequirementClaim payloads of the job."""
     distinctive = [
         r["normalized_token"] for r in requirements

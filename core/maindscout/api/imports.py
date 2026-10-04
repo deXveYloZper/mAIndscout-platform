@@ -86,6 +86,8 @@ def _norm_contact(kind: str, value: str) -> str:
     return re.sub(r"^(https?://)?(www\.)?", "", value.lower()).split("?")[0].rstrip("/")
 
 
+MAX_ROWS = 20000
+
 def _existing_contacts(session: Session, org_id) -> dict[tuple[str, str], uuid.UUID]:
     rows = session.execute(select(Claim.payload["kind"].astext, Claim.payload["normalized"].astext, Claim.subject_id).where(
         Claim.org_id == org_id, Claim.claim_type == "ContactClaim", Claim.status.in_(("proposed", "approved")))).all()
@@ -147,14 +149,13 @@ def upload(session: Session, org_id, kind: str, filename: str | None, raw: bytes
     from maindscout.api import erasure
 
     def erased(keys):
-        try:
-            return keys and erasure.is_suppressed(session, org_id, keys) is not None
-        except Exception:  # no suppression key configured: nothing was ever erased with one
-            return False
+        # No SUPPRESSION_KEY means no hashes to compare (is_suppressed returns None); any other failure must stop the
+        # upload rather than let an erased person back in.
+        return bool(keys) and erasure.is_suppressed(session, org_id, keys) is not None
     seen: dict = {}
     for n, row in enumerate(reader, start=1):
-        if n > 20000:
-            break
+        if n > MAX_ROWS:
+            raise ImportError_(f"The file has more than {MAX_ROWS:,} rows: split it and import the parts")
         d = {field: (row.get(col) or "").strip() for field, col in columns.items()}
         if not any(d.values()):
             continue
@@ -330,12 +331,22 @@ def batches(session: Session, org_id) -> dict[str, Any]:
                          "at": b.created_at.isoformat() if b.created_at else None} for b in rows]}
 
 
+class _SafeWriter:
+    """csv.writer that neutralises spreadsheet formulas (a cell starting with = + - @, tab or carriage return)."""
+
+    def __init__(self, writer):
+        self.writer = writer
+
+    def writerow(self, row):
+        self.writer.writerow(["'" + c if isinstance(c, str) and c[:1] in ("=", "+", "-", "@", "\t", "\r") else c for c in row])
+
+
 def export_people(session: Session, org_id) -> str:
     """The desk's own people as CSV: always free."""
     from maindscout.api import queries, relationship
 
     out = io.StringIO()
-    w = csv.writer(out)
+    w = _SafeWriter(csv.writer(out))
     w.writerow(["name", "email", "phone", "linkedin", "location", "current company", "current title", "tags", "jobs",
                 "last contacted", "facts last verified"])
     for p in queries.list_people(session, org_id):

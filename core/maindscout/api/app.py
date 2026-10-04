@@ -6,6 +6,8 @@ Every request needs `Authorization: Bearer <OPERATOR_TOKEN>` and `X-Org-Id`. One
 from __future__ import annotations
 
 import hmac
+import threading
+import urllib.parse
 import uuid
 from functools import lru_cache
 from typing import Any, Iterator
@@ -14,7 +16,7 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from maindscout.api import companies, costs, documents, erasure, pipeline, process, queries, review, sourcing, tasks
@@ -117,10 +119,26 @@ async def _read(file: UploadFile) -> tuple[bytes, str]:
     data = await file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, "File is larger than 20 MB")
-    media = file.content_type or "application/octet-stream"
-    if (file.filename or "").lower().endswith(".pdf"):
-        media = "application/pdf"
-    return data, media
+    return data, _sniff(data)
+
+
+def _sniff(data: bytes) -> str:
+    """The type the bytes really are; the caller's claimed content type is never trusted (it decides how a file is
+    served back). Only PDFs and plain text can be read; anything else is stored as opaque bytes."""
+    if data[:1024].lstrip().startswith(b"%PDF-"):
+        return "application/pdf"
+    if b"\x00" not in data[:8192]:
+        try:
+            data[:65536].decode("utf-8")
+            return "text/plain; charset=utf-8"
+        except UnicodeDecodeError:
+            pass
+    return "application/octet-stream"
+
+
+def _safe_filename(name: str | None) -> str:
+    keep = "".join(c if c.isalnum() or c in " ._-()" else "_" for c in (name or "document"))[:120].strip()
+    return keep or "document"
 
 
 def _result(r: process.ProcessResult) -> dict[str, Any]:
@@ -169,9 +187,17 @@ def get_document(document_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), s
 @app.get("/v1/documents/{document_id}/file")
 def get_document_file(document_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
                       blobs: BlobStore = Depends(get_blobs)):
+    """The original file. Only a real PDF (or plain text) opens in the browser; anything else downloads, so an uploaded
+    HTML or SVG file can never run as a page on the desk's origin."""
     d = _doc(session, org_id, document_id)
-    return Response(blobs.get(d.storage_key), media_type=d.media_type,
-                    headers={"Content-Disposition": f'inline; filename="{(d.filename or "document").replace(chr(34), "")}"'})
+    data = blobs.get(d.storage_key)
+    media = _sniff(data)
+    disposition = "inline" if media != "application/octet-stream" else "attachment"
+    headers = {"Content-Disposition": f'{disposition}; filename="{_safe_filename(d.filename)}"',
+               "X-Content-Type-Options": "nosniff"}
+    if media != "application/pdf":
+        headers["Content-Security-Policy"] = "sandbox; default-src 'none'"
+    return Response(data, media_type=media, headers=headers)
 
 
 @app.get("/v1/documents/{document_id}/text")
@@ -354,9 +380,13 @@ def candidate_claims(candidate_id: uuid.UUID, status: str | None = Query(None), 
 
 
 @app.get("/v1/inbox")
-def get_inbox(job_id: uuid.UUID | None = Query(None), band: str | None = Query("priority"),
+def get_inbox(job_id: uuid.UUID | None = Query(None), band: str | None = Query(None),
               org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
-    return queries.inbox(session, org_id, job_id, band)
+    """With a job: people in `band` (default priority; `all` for everyone on it). Without a job: everyone, since a band
+    belongs to a person on a job; asking for a band without a job is refused rather than silently ignored."""
+    if job_id is None and band not in (None, "all"):
+        raise HTTPException(422, "A band applies to a job: pass job_id, or band=all")
+    return queries.inbox(session, org_id, job_id, band or ("priority" if job_id else "all"))
 
 
 @app.post("/v1/claims/{claim_id}/approve")
@@ -496,8 +526,8 @@ class MergeBody(BaseModel):
 
 @app.post("/v1/companies/{company_id}/merge")
 def merge_company(company_id: uuid.UUID, body: MergeBody, org_id: uuid.UUID = Depends(get_org),
-                  session: Session = Depends(get_session)):
-    keep = companies.merge(session, body.into, company_id)
+                  session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    keep = companies.merge(session, body.into, company_id, actor, org_id)
     session.commit()
     return {"id": str(keep.id), "name": keep.name}
 
@@ -509,7 +539,8 @@ def get_tasks(ids: str = Query(..., description="comma-separated task ids"), org
     from maindscout.db.models import Task
 
     wanted = [uuid.UUID(i) for i in ids.split(",") if i.strip()][:100]
-    rows = session.scalars(select(Task).where(Task.id.in_(wanted), Task.org_id == org_id))
+    # Shared public work (company research) has no desk; the desk that asked for it can still follow it.
+    rows = session.scalars(select(Task).where(Task.id.in_(wanted), or_(Task.org_id == org_id, Task.org_id.is_(None))))
     return [tasks.as_dict(t) for t in rows]
 
 
@@ -617,7 +648,8 @@ def set_strength(claim_id: uuid.UUID, body: StrengthBody, org_id: uuid.UUID = De
     return {"id": str(claim.id), "strength": claim.payload["strength"]}
 
 
-_QUERY_CACHE: dict[str, Any] = {}
+_QUERY_CACHE: dict[tuple[uuid.UUID, str], Any] = {}  # per desk: one desk's paid parse is not served to another
+_QUERY_LOCK = threading.Lock()
 
 
 @app.get("/v1/search")
@@ -632,16 +664,18 @@ def search_people(q: str | None = None, family: str | None = None, related: bool
     if q and q.strip():
         from maindscout.intelligence import query as reader
 
-        key = " ".join(q.lower().split())
-        parsed = _QUERY_CACHE.get(key)
-        if parsed is None:  # the same search again costs nothing
+        key = (org_id, " ".join(q.lower().split()))
+        with _QUERY_LOCK:
+            parsed = _QUERY_CACHE.get(key)
+        if parsed is None:  # the same search again, by the same desk, costs nothing
             costs.ensure_budget(session, org_id)
             parsed = reader.read(q.strip(), llm)
             costs.record(session, org_id, "search_query", parsed.cost)
             session.commit()
-            if len(_QUERY_CACHE) > 500:
-                _QUERY_CACHE.clear()
-            _QUERY_CACHE[key] = parsed
+            with _QUERY_LOCK:
+                if len(_QUERY_CACHE) >= 500:
+                    _QUERY_CACHE.pop(next(iter(_QUERY_CACHE)))  # oldest first
+                _QUERY_CACHE[key] = parsed
         return {"query": q, "understood": search.understood(parsed), "ignored": parsed.ignored,
                 "people": search.ranked(session, org_id, parsed) if not parsed.empty() else []}
 
@@ -859,7 +893,7 @@ async def upload_import(file: UploadFile = File(...), kind: str = Form("candidat
     """Upload a CSV of candidates or clients: a preview, nothing imported yet."""
     from maindscout.api import imports
 
-    raw = await file.read()
+    raw = await file.read(10 * 1024 * 1024 + 1)  # never buffer more than the limit
     if len(raw) > 10 * 1024 * 1024:
         raise HTTPException(413, "The file is over 10 MB")
     batch = imports.upload(session, org_id, kind, file.filename, raw, actor)
@@ -931,12 +965,12 @@ def mailbox_callback(provider: str, code: str | None = None, state: str | None =
 
     cockpit = (env("COCKPIT_URL", "http://localhost:3001") or "").rstrip("/")
     if error or not code or not state:
-        return RedirectResponse(f"{cockpit}/mailbox?error={error or 'cancelled'}")
+        return RedirectResponse(f"{cockpit}/mailbox?" + urllib.parse.urlencode({"error": (error or "cancelled")[:200]}))
     try:
         mailbox_mod.complete(session, provider, code, state)
         session.commit()
     except mailbox_mod.MailboxError as failure:
-        return RedirectResponse(f"{cockpit}/mailbox?error=" + str(failure).replace(" ", "+")[:200])
+        return RedirectResponse(f"{cockpit}/mailbox?" + urllib.parse.urlencode({"error": str(failure)[:200]}))
     return RedirectResponse(f"{cockpit}/mailbox?connected={provider}")
 
 

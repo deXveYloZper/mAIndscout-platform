@@ -39,6 +39,28 @@ def _tokens(name: str) -> list[str]:
     return [t for t in re.split(r"[^a-z]+", name.lower()) if len(t) >= 3]
 
 
+def _name_words(name: str) -> list[str]:
+    import unicodedata
+
+    folded = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
+    return [w for w in re.split(r"[^a-z]+", folded) if w]
+
+
+def same_name(a: str | None, b: str | None) -> bool:
+    """Could these be the same person's name? Every word of the shorter name is in the longer one, either whole or as
+    its initial ("J. Domajnko" and "Jure Domajnko"; "Jure Domajnko" and "Domajnko Jure"). No name on either side is
+    not a match: a shared email or phone alone never decides who someone is."""
+    wa, wb = _name_words(a or ""), _name_words(b or "")
+    if not wa or not wb:
+        return False
+
+    def within(short: list[str], long: list[str]) -> bool:
+        return any(len(w) > 1 for w in short) and all(
+            w in long if len(w) > 1 else any(x.startswith(w) for x in long) for w in short)
+
+    return within(wa, wb) or within(wb, wa)
+
+
 def _similar(a: str, b: str) -> bool:
     """True if the strings differ by at most one edit (a typo), and are not equal."""
     if a == b or abs(len(a) - len(b)) > 1:

@@ -207,7 +207,8 @@ def resolve_decision(session: Session, org_id: uuid.UUID, decision_id: uuid.UUID
         from maindscout.api import companies
 
         if action == "same":
-            companies.merge(session, uuid.UUID(decision.context["existing"]["id"]), uuid.UUID(decision.context["new"]["id"]))
+            companies.merge(session, uuid.UUID(decision.context["existing"]["id"]), uuid.UUID(decision.context["new"]["id"]),
+                            actor, org_id)
         elif action != "different":
             raise ReviewError("company_same takes same or different")
 

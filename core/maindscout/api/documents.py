@@ -6,7 +6,7 @@ import hashlib
 import uuid
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from maindscout.db.models import DOC_TYPES, Document, ExtractionArtifact
@@ -16,6 +16,12 @@ from maindscout.storage import BlobStore
 
 def _annotation_dict(a: pdf.Annotation) -> dict:
     return {"page": a.page, "kind": a.kind, "uri": a.uri}
+
+
+def lock_bytes(session: Session, sha: str) -> None:
+    """Serialise storing and deleting the same bytes (shared across orgs) until this transaction ends, so an erasure
+    never deletes a file another upload is just starting to use."""
+    session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": f"blob:{sha}"})
 
 
 def upload_document(
@@ -32,6 +38,7 @@ def upload_document(
     if doc_type_hint not in DOC_TYPES:
         raise ValueError(f"doc_type_hint must be one of {DOC_TYPES}")
     sha = hashlib.sha256(data).hexdigest()
+    lock_bytes(session, sha)
     existing = session.scalar(select(Document).where(Document.org_id == org_id, Document.sha256 == sha))
     if existing:
         return existing, True

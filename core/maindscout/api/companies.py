@@ -7,6 +7,7 @@ claims (org-scoped), so one desk never sees another desk's people.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import func, or_, select
@@ -68,7 +69,8 @@ def _suggest_duplicates(session: Session, company: Company, org_id: uuid.UUID, s
             return
 
 
-def merge(session: Session, keep_id: uuid.UUID, drop_id: uuid.UUID) -> Company:
+def merge(session: Session, keep_id: uuid.UUID, drop_id: uuid.UUID, actor: str | None = None,
+          org_id: uuid.UUID | None = None) -> Company:
     """Fold one company into another: a redirect plus its aliases. Claims keep pointing at the old id and are read
     through the redirect, so nothing about any person is rewritten."""
     keep, drop = canonical(session, session.get(Company, keep_id)), canonical(session, session.get(Company, drop_id))
@@ -77,6 +79,7 @@ def merge(session: Session, keep_id: uuid.UUID, drop_id: uuid.UUID) -> Company:
     if keep.id == drop.id:
         return keep
     drop.merged_into_id = keep.id
+    drop.merged_by, drop.merged_by_org, drop.merged_at = actor, org_id, datetime.now(timezone.utc)
     for alias in session.scalars(select(CompanyAlias).where(CompanyAlias.company_id == drop.id)):
         alias.company_id = keep.id
     session.flush()
@@ -175,9 +178,9 @@ def link_org(session: Session, org_id: uuid.UUID) -> dict[str, int]:
             continue
         company, _ = resolve(session, company_part.get("raw_name", ""), "cv", org_id, claim.subject_id)
         if company is not None:
+            # The link is machine bookkeeping, not a fact: it goes on the payload only. The approved view is pinned at
+            # approval and never rewritten; readers take the company link from the payload (see profiles._view).
             claim.payload = {**claim.payload, "company": {**company_part, "company_id": str(company.id)}}
-            if claim.approved_view:
-                claim.approved_view = {**claim.approved_view, "company": {**claim.approved_view.get("company", {}), "company_id": str(company.id)}}
             linked += 1
     jobs = 0
     for job in session.scalars(select(Job).where(Job.org_id == org_id, Job.hiring_company_id.is_(None), Job.hiring_company.is_not(None))):

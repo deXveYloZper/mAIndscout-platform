@@ -8,7 +8,7 @@ The desk puts drafts in your own mailbox and watches for sent and replied ([mess
 1. Go to console.cloud.google.com and create a project (e.g. "mAIndscout desk").
 2. **APIs & Services → Library:** enable the **Gmail API**.
 3. **OAuth consent screen:** choose External (or Internal on Workspace).
-   - Add the scopes `openid`, `email`, `.../auth/gmail.compose` and `.../auth/gmail.readonly`.
+   - Add the scopes `openid`, `email`, `.../auth/gmail.compose` and `.../auth/gmail.metadata`.
    - While in Testing, add your own address as a test user.
 4. **Credentials → Create credentials → OAuth client ID:** application type Web application.
    - Authorised redirect URI: `http://localhost:8765/v1/mailbox/callback/google`
@@ -36,4 +36,4 @@ The desk puts drafts in your own mailbox and watches for sent and replied ([mess
 - On a server, set `PUBLIC_API_URL` and `COCKPIT_URL` to the public addresses, and register `{PUBLIC_API_URL}/v1/mailbox/callback/{google|microsoft}` as the redirect URI instead.
 
 ## What the desk can do with the access
-Create and delete its own drafts, and read the threads of messages it drafted to see Sent and replies. Google's `gmail.readonly` scope technically allows reading the whole mailbox; the code only reads threads it created. It never sends: there is no send call in the code, and a test checks for that.
+Create and delete its own drafts, and read the threads of messages it drafted to see Sent and replies. With Google, `gmail.metadata` sees labels and headers but never message bodies; the code only looks at threads it created. It never sends: there is no send call in the code, and a test checks for that.
