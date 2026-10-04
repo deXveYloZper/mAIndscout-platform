@@ -30,7 +30,9 @@ Three kinds of knowledge, built once and reused:
 
 ## 2. How this maps onto the blueprint (it is already the target)
 
-| Owner's brief | Blueprint (`01`/`02`) | Status today |
+_Status column as of the plan's acceptance (2026-10-03); company claims, research snapshots and career intelligence were built in I1–I6 (see [STATUS](../build/STATUS.md))._
+
+| Owner's brief | Blueprint (`01`/`02`) | Status at plan time |
 |---|---|---|
 | Company type, domain, stage, funding rounds, headcount over time | Company claims: `CompanyStageClaim`, `FundingClaim`, `TeamSizeClaim`, `DomainClaim`, `CompanyTypeClaim`, time-bounded (01 §F) | Not built (deferred to Slice 5) |
 | Research companies with web search, cheaper as the base grows | Research Gateway F6: snapshots, company anchors, caching incl. absence, budgets | Not built |

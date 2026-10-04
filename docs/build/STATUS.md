@@ -10,6 +10,8 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 
 **Slice 3 gate: GREEN**, declared by the owner on 2026-10-04 ([decision](../decisions/2026-10-04-slice-3-gate.md)). Slice 4 (live desk) is unlocked.
 
+**Slice 4 gate: GREEN**, declared by the owner on 2026-10-05 ([decision](../decisions/2026-10-05-slice-4-gate.md)). Slice 5 (Depth) unlocks once a desk is also running live jobs ([plan](../slice-5/PLAN.md)).
+
 **Now:** the [intelligence track](../intelligence/PLAN.md), accepted 2026-10-03 ([decisions](../decisions/2026-10-03-intelligence-track.md)).
 
 | Phase | What | State |
@@ -25,7 +27,7 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 
 **Before the desk is reachable from outside this machine** (from the [code review](../decisions/2026-10-05-external-code-review.md)): per-desk credentials instead of one operator token, the actor taken from a real session rather than `X-Actor`, and a cockpit login. Until then, the API, database and cockpit listen on this machine only.
 
-**Current slice:** 4, ATS core and import ([plan](../slice-4/PLAN.md)): rescoped by the owner (we are the source of truth; import 100 candidates / 25 clients free, more as paid analysis at compute cost + 90%, [decision](../decisions/2026-10-04-source-of-truth-and-imports.md)); plan approved 2026-10-04.
+**Slice 4 (closed):** ATS core and import ([plan](../slice-4/PLAN.md)): rescoped by the owner (we are the source of truth; import 100 candidates / 25 clients free, more as paid analysis at compute cost + 90%, [decision](../decisions/2026-10-04-source-of-truth-and-imports.md)); plan approved 2026-10-04.
 
 | Step | What | State |
 |---|---|---|
@@ -35,7 +37,9 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 | 4 | Import (100 / 25 free, more paid) | built 2026-10-05 ([imports](components/imports.md)) |
 | 5 | Drafts, Gmail / Outlook drafts, sent and reply detection, follow-ups a reply stops | built 2026-10-05 ([messages](components/messages.md)); live mailbox needs the [app registrations](connections/mailbox-setup.md) |
 
-All five Slice 4 steps are built; the Slice 4 gate is the owner's to declare.
+All five Slice 4 steps built; gate declared GREEN 2026-10-05.
+
+**Next:** run live jobs on the desk (and, before it is reachable beyond this machine, per-desk logins). Slice 5 and I7 calibration follow from real use.
 
 Slice 3 (the Brief, closed): built 2026-10-04 ([brief](components/brief.md)).
 

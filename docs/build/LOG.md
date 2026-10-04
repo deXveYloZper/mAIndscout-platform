@@ -2,6 +2,7 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-05 — Slice 4 gate declared GREEN by the owner — [decision](../decisions/2026-10-05-slice-4-gate.md)
 - 2026-10-05 — External code review: every finding checked, most fixed. A shared contact merges only when names agree; tighter span check (dates, phones, names) and no invented end dates; approved views never rewritten; erasure fails loud and reaches import rows, tasks and client notes; uploads typed by their bytes and never served as pages; formula-safe export; narrower Gmail scope; stuck tasks reclaimed; faster jobs list and job page; database and cockpit bound to this machine — [review](../decisions/2026-10-05-external-code-review.md)
 - 2026-10-05 — Slice 4 step 5: messages. Drafts from approved facts, the public job and the call only (internal words refused); put in your Gmail or Outlook drafts, never sent by the desk; sent and replies noticed and logged; follow-ups drafted after 4 days, stopped by any reply — [messages](components/messages.md), [mailbox setup](connections/mailbox-setup.md)
 - 2026-10-05 — Slice 4 step 4: import from CSV (preview; ticked rows become approved facts; 100 candidates / 25 clients free per account; beyond that a quote at compute cost x 1.9; outside last-contacted kept as a note only; erased people refused) and free CSV export — [imports](components/imports.md)

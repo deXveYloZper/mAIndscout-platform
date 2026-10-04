@@ -23,8 +23,8 @@ A desk can run on mAIndscout without another ATS: every person and client has a 
 
 ## Gate to unlock Slice 5
 
-- [ ] A desk can run real jobs end to end on mAIndscout (relationship memory, pipeline to placed, client feedback)
-- [ ] Client rejection is a wall (tested)
-- [ ] Stale people and companies are flagged and listed for refresh
-- [ ] Import: 100 / 25 free with approval; beyond that only as paid analysis; nothing unverified becomes a fact
-- [ ] Any reply halts follow-up (tested)
+- [x] A desk can run real jobs end to end on mAIndscout (relationship memory, pipeline to placed, client feedback)
+- [x] Client rejection is a wall (tested)
+- [x] Stale people and companies are flagged and listed for refresh
+- [x] Import: 100 / 25 free with approval; beyond that only as paid analysis; nothing unverified becomes a fact
+- [x] Any reply halts follow-up (tested)
