@@ -6,6 +6,8 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 
 **Slice 1 gate: GREEN**, declared by the owner on 2026-10-03 ([decision](../decisions/2026-10-03-slice-1-gate.md)).
 
+**Slice 2 gate: GREEN**, declared by the owner on 2026-10-04 ([decision](../decisions/2026-10-04-slice-2-gate.md)). Slice 3 (Brief) starts.
+
 **Now:** the [intelligence track](../intelligence/PLAN.md), accepted 2026-10-03 ([decisions](../decisions/2026-10-03-intelligence-track.md)).
 
 | Phase | What | State |
@@ -19,12 +21,12 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 | I6 | Sourcing v2 | **gate GREEN** 2026-10-04 ([decision](../decisions/2026-10-04-i6-gate.md)) |
 | I7 | Calibration from real decisions (band changes, pass reasons) | ongoing; first review after about 50 real decisions |
 
-**Current slice:** 2, sourcing feeder ([plan](../slice-2/PLAN.md))
+**Current slice:** 3, the Brief ([plan](../slice-3/PLAN.md)). Slice 2 (sourcing feeder, closed):
 
 | Step | What | State |
 |---|---|---|
 | 1 | Desk adapter, campaigns (cap / target / human stop), same triage, cockpit "Find more people" | done 2026-10-03 |
-| 2 | Slice 2 gate checks in the eval | done 2026-10-03: GREEN; waiting for the owner's declaration |
+| 2 | Slice 2 gate checks in the eval | done 2026-10-03; **gate GREEN** 2026-10-04 |
 | later | External adapter (e.g. GitHub profiles) | not started: needs a data-use decision |
 
 **Slice 1** (defendable match, closed)

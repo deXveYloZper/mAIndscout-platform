@@ -1,6 +1,6 @@
 # Slice 3 — The Brief
 
-**Status: LOCKED.** Do not start until Slice 1 is green. May run in parallel with Slice 2 if inbound priority volume is already enough (record that in `docs/decisions/`).
+**Status: UNLOCKED** 2026-10-04 (Slice 2 gate green, [decision](../decisions/2026-10-04-slice-2-gate.md)). In progress.
 
 ---
 
