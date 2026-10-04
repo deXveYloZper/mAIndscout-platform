@@ -318,6 +318,26 @@ test("a Brief for the call: answers become official, are not asked again, and no
   await expect(answered).toContainText("one month");
 });
 
+test("relationship memory: a logged call, last contacted, and a tag that becomes a talent pool", async ({ page }) => {
+  await page.goto("/people");
+  await page.locator("tbody tr").filter({ hasText: "Ioannis" }).getByRole("link", { name: /Ioannis/ }).click();
+  const rel = page.locator("section.relationship");
+  // An earlier test answered his Brief (a call), which already counts as contact; the timeline joins it all.
+  await expect(rel.locator(".timeline")).toContainText("Brief answer");
+  await rel.getByLabel("What happened, in a line").fill("Intro call, open to InSAR roles");
+  await rel.getByRole("button", { name: "Log it" }).click();
+  await expect(rel.getByRole("status")).toContainText("Logged.");
+  await expect(rel).toContainText("Last contacted: today");
+  await expect(rel.locator(".timeline")).toContainText("Intro call, open to InSAR roles");
+  await rel.getByLabel("Add a tag (talent pool)").fill("InSAR pool");
+  await rel.getByRole("button", { name: "Tag" }).click();
+  await expect(rel.locator(".chip", { hasText: "insar-pool" })).toBeVisible();
+  await page.goto("/people");
+  await page.getByRole("link", { name: /insar-pool \(1\)/ }).click();
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await expect(page.locator("tbody tr")).toContainText("Ioannis");
+});
+
 test("a typed contact is saved as an approved fact", async ({ page }) => {
   await openJob(page, /InSAR Processing Specialist/);
   await page.locator("summary", { hasText: /Do not submit \(\d+\)/ }).click();

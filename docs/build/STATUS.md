@@ -23,7 +23,15 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 | I6 | Sourcing v2 | **gate GREEN** 2026-10-04 ([decision](../decisions/2026-10-04-i6-gate.md)) |
 | I7 | Calibration from real decisions (band changes, pass reasons) | ongoing; first review after about 50 real decisions |
 
-**Current slice:** 4, ATS core and import ([plan](../slice-4/PLAN.md)): rescoped by the owner (we are the source of truth; import 100 candidates / 25 clients free, more as paid analysis at compute cost + 90%, [decision](../decisions/2026-10-04-source-of-truth-and-imports.md)); plan waiting for approval.
+**Current slice:** 4, ATS core and import ([plan](../slice-4/PLAN.md)): rescoped by the owner (we are the source of truth; import 100 candidates / 25 clients free, more as paid analysis at compute cost + 90%, [decision](../decisions/2026-10-04-source-of-truth-and-imports.md)); plan approved 2026-10-04.
+
+| Step | What | State |
+|---|---|---|
+| 1 | Relationship memory | built 2026-10-04 ([relationship-memory](components/relationship-memory.md)) |
+| 2 | Full pipeline, submissions, client feedback and block | next |
+| 3 | Freshness | |
+| 4 | Import (100 / 25 free, more paid) | |
+| 5 | Drafts, reply halt | |
 
 Slice 3 (the Brief, closed): built 2026-10-04 ([brief](components/brief.md)).
 

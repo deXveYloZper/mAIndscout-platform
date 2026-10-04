@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { addFact, bringBack, eraseCandidate, putOnJob } from "@/app/actions";
+import { addFact, bringBack, eraseCandidate, logActivity, putOnJob, tagPerson, untagPerson } from "@/app/actions";
 import { CareerProfile } from "@/components/CareerProfile";
+import { Dates, LogActivity, Timeline } from "@/components/Relationship";
 import { ClaimRow, Status } from "@/components/Claim";
 import { EraseForm } from "@/components/EraseForm";
 import { FactForm } from "@/components/FactForm";
@@ -38,6 +39,28 @@ export default async function Person({ params }: { params: Promise<{ id: string 
         </div>
       )}
       {person.coverage_override && !person.archived && <p className="hint">Brought back by a person: the coverage rule leaves them be.</p>}
+
+      <section className="panel relationship">
+        <h3>Relationship</h3>
+        <Dates lastContacted={person.relationship.last_contacted} lastVerified={person.relationship.last_verified} />
+        <div className="row tags">
+          {person.relationship.tags.map((t) => (
+            <form key={t} action={untagPerson.bind(null, person.id, t, path)} className="chipform">
+              <span className="chip">{t} <button className="chip-x" aria-label={`Remove tag ${t}`}>×</button></span>
+            </form>
+          ))}
+          <form action={tagPerson.bind(null, person.id, path)} className="row">
+            <input name="tag" aria-label="Add a tag (talent pool)" placeholder="add a tag, e.g. insar-pool" size={20} />
+            <button className="btn small">Tag</button>
+          </form>
+        </div>
+        <LogActivity action={logActivity.bind(null, "candidates", person.id, path)}
+          jobs={person.jobs.map((j) => ({ id: j.job_id, title: j.title }))} />
+        <details className="band" open>
+          <summary>Timeline ({person.relationship.timeline.length})</summary>
+          <Timeline rows={person.relationship.timeline} path={path} />
+        </details>
+      </section>
 
       {otherJobs.length > 0 && (
         <form action={putOnJob.bind(null, person.id)} className="row" style={{ marginTop: 12 }}>

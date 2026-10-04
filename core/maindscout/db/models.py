@@ -504,6 +504,68 @@ class Institution(Base):
     created_at: Mapped[datetime] = _created()
 
 
+# --- relationship memory (Slice 4) ---------------------------------------------------------------
+
+ACTIVITY_KINDS = ("call", "email", "meeting", "message", "note")
+
+
+class ClientContact(Base):
+    """A person at a client company (e.g. a hiring manager). Desk-private: the company is shared, who we know there
+    and how to reach them is not."""
+
+    __tablename__ = "client_contact"
+    __table_args__ = (Index("ix_client_contact_company", "org_id", "company_id"),)
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("company.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[str | None] = mapped_column(String)
+    email: Mapped[str | None] = mapped_column(String)
+    phone: Mapped[str | None] = mapped_column(String)
+    linkedin: Mapped[str | None] = mapped_column(String)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = _created()
+
+
+class Activity(Base):
+    """Something that happened in a relationship: a call, an email, a meeting, a note. About a person or a client
+    company (optionally with one of its contacts), optionally for a job. What the platform already records itself
+    (CVs read, band and stage changes, Brief answers) is not copied here: the timeline joins it in."""
+
+    __tablename__ = "activity"
+    __table_args__ = (
+        CheckConstraint(_in("kind", ACTIVITY_KINDS), name="activity_kind"),
+        CheckConstraint(_in("subject_type", ("candidate", "company")), name="activity_subject"),
+        Index("ix_activity_subject", "org_id", "subject_type", "subject_id", "occurred_at"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    subject_type: Mapped[str] = mapped_column(String, nullable=False)
+    subject_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    direction: Mapped[str | None] = mapped_column(String)  # out | in (who reached out)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("job.id"))
+    contact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("client_contact.id", ondelete="SET NULL"))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = _created()
+
+
+class CandidateTag(Base):
+    """A tag on a person; a tag is also a talent pool ("insar-pool", "warm-2026")."""
+
+    __tablename__ = "candidate_tag"
+    __table_args__ = (UniqueConstraint("candidate_id", "tag"), Index("ix_candidate_tag_tag", "org_id", "tag"))
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate.id"), nullable=False)
+    tag: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = _created()
+
+
 BRIEF_STATUS = ("open", "asked", "answered", "dismissed", "expired")
 
 

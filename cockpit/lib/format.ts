@@ -154,3 +154,16 @@ export const TIER_WORDS: Record<string, string> = {
 export const VERDICT_LABEL: Record<string, string> = {
   strong: "Met", partial: "Partly", gap: "Gap", against: "Not wanted", ask: "Ask", level_one_below: "Partly",
 };
+
+/** "today", "3 days ago", "5 months ago", "2 years ago" (dates in the cockpit's own words). */
+export function ago(iso: string | null | undefined): string {
+  if (!iso) return "unknown";
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 30) return `${days} days ago`;
+  const months = Math.floor(days / 30.4);
+  if (months < 12) return `${months} month${months === 1 ? "" : "s"} ago`;
+  const years = Math.floor(months / 12);
+  return `${years} year${years === 1 ? "" : "s"} ago`;
+}

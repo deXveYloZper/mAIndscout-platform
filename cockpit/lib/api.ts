@@ -116,6 +116,9 @@ export type PersonPage = {
   coverage_override: boolean;
   profile: CareerProfile | null;
   classifications: Record<string, StepLabel>;
+  relationship: { last_contacted: string | null; last_verified: string | null; tags: string[];
+    timeline: { at: string | null; type: string; text: string; direction?: string | null; job?: string | null; contact?: string | null;
+      by?: string | null; id?: string; removable?: boolean }[] };
 };
 
 export type Side = {
@@ -154,6 +157,7 @@ export type PersonSummary = {
   jobs: { job_id: string; title: string; band: Band }[];
   document_id: string | null;
   archived: string | null;
+  tags: string[];
 };
 
 export type ProcessResult = {

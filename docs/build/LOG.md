@@ -2,6 +2,7 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-04 — Slice 4 step 1: relationship memory. Log calls, emails, meetings, messages and notes for people and clients; one timeline joined with CVs, band and stage changes, Brief answers; last contacted and last verified; tags as talent pools; contacts at client companies — [relationship-memory](components/relationship-memory.md)
 - 2026-10-04 — Decision: mAIndscout is the source of truth, not an ATS accessory; import 100 candidates and 25 clients per account free (approved by the account holder), more only as paid analysis at compute cost + 90%; Slice 4 rescoped to ATS core and import — [decision](../decisions/2026-10-04-source-of-truth-and-imports.md)
 - 2026-10-04 — **Slice 3 gate GREEN**, declared by the owner; Slice 4 (live desk) unlocked — [decision](../decisions/2026-10-04-slice-3-gate.md)
 - 2026-10-04 — Brief: a one-line "why" on every question that needs it (who asked for it and how much; what is unusual in the career), and a two-line header (who this is, why they are on the call list) — [brief](components/brief.md)

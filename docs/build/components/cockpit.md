@@ -17,6 +17,7 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
 - **Costs (`/costs`):** this month's spend against the budget, by purpose and day.
 - **Companies (`/companies`, `/companies/[id]`):** search; who we know at a company (one row per person, all roles); the company's jobs; its public facts, each with the page and quote it came from, and "Research now" ([company-research.md](company-research.md)). Career rows on a person link to their company.
 - **People (`/people`):** everyone, or only those on no job (the pool); upload CVs without a job.
+- **Relationship ([relationship-memory.md](relationship-memory.md)):** on the person and company pages, last contacted / verified, log a call or note, the timeline; tags on people and talent-pool filters on People; contacts at client companies.
 - **Brief ([brief.md](brief.md)):** call questions about the person and for the job, answered inline (confirmed / not met / note), asked, not needed; linked beside priority people and from the gap table.
 - **Search (`/search`) ([people-search.md](people-search.md)):** a search bar in your own words, "Understood as", results best first with ✓ ~ ✗ per criterion; filters under "Refine"; results with what each person meets, "Put on job"; "Find more people" on a job describes its profile search.
 - **Match ([matching.md](matching.md)):** on the person-on-job page, the tier with the rules that fired and a verdict per requirement; on the job page, the tier beside each person.

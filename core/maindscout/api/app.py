@@ -293,8 +293,11 @@ def override_band(job_id: uuid.UUID, candidate_id: uuid.UUID, body: BandBody, or
 
 
 @app.get("/v1/candidates")
-def list_candidates(unassigned: bool = Query(False), org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+def list_candidates(unassigned: bool = Query(False), tag: str | None = Query(None), org_id: uuid.UUID = Depends(get_org),
+                    session: Session = Depends(get_session)):
     people = queries.list_people(session, org_id)
+    if tag:
+        people = [p for p in people if tag in p["tags"]]
     return [p for p in people if not p["jobs"]] if unassigned else people
 
 
@@ -693,3 +696,123 @@ def dismiss_brief(item_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), sess
     item = brief.dismiss(session, org_id, item_id, actor)
     session.commit()
     return brief.as_dict(item)
+
+
+# --- relationship memory (Slice 4) ---------------------------------------------------------------
+
+class ActivityBody(BaseModel):
+    kind: str
+    summary: str
+    direction: str | None = None
+    occurred_at: str | None = None  # ISO date or date-time; default now
+    job_id: uuid.UUID | None = None
+    contact_id: uuid.UUID | None = None
+
+
+def _when(text: str | None):
+    from datetime import datetime, timezone
+
+    if not text:
+        return None
+    when = datetime.fromisoformat(text)
+    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+
+
+@app.post("/v1/candidates/{candidate_id}/activities", status_code=201)
+def log_person_activity(candidate_id: uuid.UUID, body: ActivityBody, org_id: uuid.UUID = Depends(get_org),
+                        session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Log a call, email, meeting, message or note with a person."""
+    from maindscout.api import relationship
+
+    a = relationship.log(session, org_id, "candidate", candidate_id, body.kind, body.summary, actor, direction=body.direction,
+                         occurred_at=_when(body.occurred_at), job_id=body.job_id)
+    session.commit()
+    return {"id": str(a.id)}
+
+
+@app.post("/v1/companies/{company_id}/activities", status_code=201)
+def log_company_activity(company_id: uuid.UUID, body: ActivityBody, org_id: uuid.UUID = Depends(get_org),
+                         session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Log a call, email, meeting, message or note with a client (optionally with one of its contacts)."""
+    from maindscout.api import companies as comp
+    from maindscout.api import relationship
+    from maindscout.db.models import Company
+
+    company = comp.canonical(session, session.get(Company, company_id))
+    if company is None:
+        raise LookupError(f"No company {company_id}")
+    a = relationship.log(session, org_id, "company", company.id, body.kind, body.summary, actor, direction=body.direction,
+                         occurred_at=_when(body.occurred_at), job_id=body.job_id, contact_id=body.contact_id)
+    session.commit()
+    return {"id": str(a.id)}
+
+
+@app.delete("/v1/activities/{activity_id}", status_code=204)
+def remove_activity(activity_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    from maindscout.api import relationship
+
+    relationship.remove_activity(session, org_id, activity_id)
+    session.commit()
+
+
+class TagBody(BaseModel):
+    tag: str
+
+
+@app.post("/v1/candidates/{candidate_id}/tags", status_code=201)
+def add_tag(candidate_id: uuid.UUID, body: TagBody, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+            actor: str = Depends(get_actor)):
+    from maindscout.api import relationship
+
+    tag = relationship.add_tag(session, org_id, candidate_id, body.tag, actor)
+    session.commit()
+    return {"tag": tag}
+
+
+@app.delete("/v1/candidates/{candidate_id}/tags/{tag}", status_code=204)
+def remove_tag(candidate_id: uuid.UUID, tag: str, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    from maindscout.api import relationship
+
+    relationship.remove_tag(session, org_id, candidate_id, tag)
+    session.commit()
+
+
+@app.get("/v1/tags")
+def list_pools(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """Tags as talent pools, with how many people are in each."""
+    from maindscout.api import relationship
+
+    return relationship.pools(session, org_id)
+
+
+class ContactBody(BaseModel):
+    name: str
+    role: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    linkedin: str | None = None
+    notes: str | None = None
+
+
+@app.post("/v1/companies/{company_id}/contacts", status_code=201)
+def add_contact(company_id: uuid.UUID, body: ContactBody, org_id: uuid.UUID = Depends(get_org),
+                session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Someone we know at a client company (e.g. a hiring manager)."""
+    from maindscout.api import companies as comp
+    from maindscout.api import relationship
+    from maindscout.db.models import Company
+
+    company = comp.canonical(session, session.get(Company, company_id))
+    if company is None:
+        raise LookupError(f"No company {company_id}")
+    c = relationship.add_contact(session, org_id, company.id, body.model_dump(), actor)
+    session.commit()
+    return {"id": str(c.id)}
+
+
+@app.delete("/v1/contacts/{contact_id}", status_code=204)
+def remove_contact(contact_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    from maindscout.api import relationship
+
+    relationship.remove_contact(session, org_id, contact_id)
+    session.commit()

@@ -5,10 +5,16 @@ import { BAND_LABEL } from "@/lib/format";
 
 export const metadata = { title: "People" };
 
-export default async function People({ searchParams }: { searchParams: Promise<{ show?: string }> }) {
-  const { show } = await searchParams;
+export default async function People({ searchParams }: { searchParams: Promise<{ show?: string; tag?: string }> }) {
+  const { show, tag } = await searchParams;
   const pool = show === "pool";
-  const people = await api<PersonSummary[]>(`/v1/candidates${pool ? "?unassigned=true" : ""}`);
+  const query = new URLSearchParams();
+  if (pool) query.set("unassigned", "true");
+  if (tag) query.set("tag", tag);
+  const [people, pools] = await Promise.all([
+    api<PersonSummary[]>(`/v1/candidates${query.size ? `?${query}` : ""}`),
+    api<{ tag: string; people: number }[]>("/v1/tags"),
+  ]);
   return (
     <>
       <h1>People</h1>
@@ -17,6 +23,15 @@ export default async function People({ searchParams }: { searchParams: Promise<{
         <Link href="/people" aria-current={!pool ? "page" : undefined}>Everyone</Link>
         <Link href="/people?show=pool" aria-current={pool ? "page" : undefined}>Not on a job</Link>
       </nav>
+      {pools.length > 0 && (
+        <p className="pools">
+          <span className="sub">Talent pools:</span>{" "}
+          {pools.map((p) => (
+            <Link key={p.tag} href={tag === p.tag ? "/people" : `/people?tag=${encodeURIComponent(p.tag)}`}
+              className={`chip ${tag === p.tag ? "on" : ""}`} aria-current={tag === p.tag ? "page" : undefined}>{p.tag} ({p.people})</Link>
+          ))}
+        </p>
+      )}
 
       <section className="panel">
         <h3>Add CVs without a job</h3>
@@ -35,6 +50,7 @@ export default async function People({ searchParams }: { searchParams: Promise<{
                   <td>
                     <Link href={`/people/${p.id}`}>{p.name ?? "name not read"}</Link>
                     {p.archived && <span className="bandtag archived" title={p.archived}> archived</span>}
+                    {p.tags.map((t) => <span key={t} className="chip small">{t}</span>)}
                   </td>
                   <td>
                     {p.jobs.length === 0 ? <span className="sub">in the pool</span> : (

@@ -249,3 +249,27 @@ table.gaps tr.conflict td:first-child { border-left: 2px solid var(--red); }
 
 .brief-head { border-left: 2px solid var(--amber); padding: 4px 10px; margin: 8px 0; }
 .why-line { font-size: 12px; color: var(--cream-dim); font-style: italic; }
+
+/* relationship memory (Slice 4) */
+.rel-dates { display: flex; gap: 18px; flex-wrap: wrap; margin: 4px 0 8px; }
+.tags { gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.chipform { display: inline; }
+.chip-x { background: none; border: 0; color: var(--cream-dim); cursor: pointer; padding: 0 2px; }
+.chip.small { font-size: 11px; margin-left: 6px; }
+.chip.on { border-color: var(--amber); color: var(--amber); }
+.pools { margin: 8px 0; }
+.logact .row { gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.logact .grow { flex: 1; min-width: 0; }
+.timeline { list-style: none; padding: 0; margin: 0; }
+.timeline .tl { display: grid; grid-template-columns: 90px 110px 1fr auto; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); align-items: baseline; }
+.timeline .tl-when { color: var(--cream-dim); font-size: 12px; }
+.timeline .tl-type { font-size: 12px; }
+.timeline .tl.call .tl-type, .timeline .tl.meeting .tl-type, .timeline .tl.email .tl-type { color: var(--amber); }
+@media (max-width: 600px) { .timeline .tl { grid-template-columns: 1fr auto; } .timeline .tl-when, .timeline .tl-type { grid-column: 1; } }
+
+.contacts { list-style: none; padding: 0; }
+.contacts li { padding: 4px 0; border-bottom: 1px solid var(--line); }
+form.inline { display: inline; margin-left: 6px; }
+.addcontact { gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+.addcontact input { min-width: 0; max-width: 100%; }
+.relationship h4 { margin: 12px 0 4px; font-size: 13px; color: var(--cream-dim); }

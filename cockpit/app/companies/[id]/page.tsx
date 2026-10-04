@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { researchCompany } from "@/app/actions";
+import { addContact, logActivity, removeContact, researchCompany } from "@/app/actions";
+import { AddContact } from "@/components/AddContact";
+import { Dates, LogActivity, Timeline, type TimelineRow } from "@/components/Relationship";
 import { apiOr404 } from "@/lib/api";
 import { period } from "@/lib/format";
 
@@ -20,6 +22,10 @@ type CompanyPage = {
   people: { candidate_id: string; name: string | null; current: boolean;
     roles: { title: string | null; valid_from: string | null; valid_to: string | null; current: boolean }[] }[];
   jobs: { id: string; title: string }[];
+  contacts: { id: string; name: string; role: string | null; email: string | null; phone: string | null; linkedin: string | null;
+    last_contacted: string | null }[];
+  timeline: TimelineRow[];
+  last_contacted: string | null;
 };
 
 const STAGE: Record<string, string> = {
@@ -70,6 +76,37 @@ export default async function Company({ params }: { params: Promise<{ id: string
         {c.aliases.length > 1 && <> Also written as: {c.aliases.join(", ")}.</>}
         {c.website && <> <a href={c.website} target="_blank" rel="noreferrer">{c.website}</a></>}
       </p>
+
+      <section className="panel relationship">
+        <h3>Relationship</h3>
+        <Dates lastContacted={c.last_contacted} lastVerified={c.researched_at} verifiedLabel="Public facts researched" />
+        <h4>People we know there</h4>
+        {c.contacts.length === 0 ? <p className="empty">No contacts yet.</p> : (
+          <ul className="contacts">
+            {c.contacts.map((k) => (
+              <li key={k.id}>
+                <strong>{k.name}</strong>{k.role ? ` · ${k.role}` : ""}
+                <span className="sub">
+                  {[k.email, k.phone].filter(Boolean).map((x) => ` · ${x}`)}
+                  {k.linkedin && <> · <a href={k.linkedin.startsWith("http") ? k.linkedin : `https://${k.linkedin}`} target="_blank" rel="noreferrer">LinkedIn</a></>}
+                  {" "}· last contacted {k.last_contacted ? new Date(k.last_contacted).toISOString().slice(0, 10) : "never"}
+                </span>
+                <form action={removeContact.bind(null, k.id, `/companies/${c.id}`)} className="inline">
+                  <button className="btn small ghost" aria-label={`Forget contact ${k.name}`}>forget</button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        )}
+        <AddContact action={addContact.bind(null, c.id, `/companies/${c.id}`)} />
+        <h4>Log a call, email or meeting</h4>
+        <LogActivity action={logActivity.bind(null, "companies", c.id, `/companies/${c.id}`)} jobs={c.jobs}
+          contacts={c.contacts.map((k) => ({ id: k.id, name: k.name }))} />
+        <details className="band">
+          <summary>Timeline ({c.timeline.length})</summary>
+          <Timeline rows={c.timeline} path={`/companies/${c.id}`} />
+        </details>
+      </section>
 
       <h2>What we know about the company</h2>
       <div className="research-bar">

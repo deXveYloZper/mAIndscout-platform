@@ -323,3 +323,60 @@ export async function briefDismiss(itemId: string, path: string): Promise<void> 
   await idempotent(() => apiJson(`/v1/brief/${itemId}/dismiss`, {}));
   revalidatePath(path);
 }
+
+// --- relationship memory (Slice 4) ---
+
+/** Log a call, email, meeting, message or note with a person or a client. */
+export async function logActivity(subject: "candidates" | "companies", subjectId: string, path: string, _: FormState, form: FormData): Promise<FormState> {
+  const body: Record<string, unknown> = {
+    kind: String(form.get("kind") || "note"), summary: String(form.get("summary") || "").trim(),
+    direction: String(form.get("direction") || "") || null,
+    occurred_at: String(form.get("occurred_at") || "") || null,
+    job_id: String(form.get("job_id") || "") || null,
+    contact_id: String(form.get("contact_id") || "") || null,
+  };
+  if (!body.summary) return { error: "Write what happened, in a line." };
+  try {
+    await apiJson(`/v1/${subject}/${subjectId}/activities`, body);
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  return { message: "Logged." };
+}
+
+export async function removeActivity(activityId: string, path: string): Promise<void> {
+  await idempotent(() => api(`/v1/activities/${activityId}`, { method: "DELETE" }));
+  revalidatePath(path);
+}
+
+export async function tagPerson(candidateId: string, path: string, form: FormData): Promise<void> {
+  const tag = String(form.get("tag") || "").trim();
+  if (!tag) return;
+  await idempotent(() => apiJson(`/v1/candidates/${candidateId}/tags`, { tag }));
+  revalidatePath(path);
+  revalidatePath("/people");
+}
+
+export async function untagPerson(candidateId: string, tag: string, path: string): Promise<void> {
+  await idempotent(() => api(`/v1/candidates/${candidateId}/tags/${encodeURIComponent(tag)}`, { method: "DELETE" }));
+  revalidatePath(path);
+  revalidatePath("/people");
+}
+
+export async function addContact(companyId: string, path: string, _: FormState, form: FormData): Promise<FormState> {
+  const body = Object.fromEntries(["name", "role", "email", "phone", "linkedin"].map((k) => [k, String(form.get(k) || "").trim() || null]));
+  if (!body.name) return { error: "A contact needs a name." };
+  try {
+    await apiJson(`/v1/companies/${companyId}/contacts`, body);
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  return { message: "Contact added." };
+}
+
+export async function removeContact(contactId: string, path: string): Promise<void> {
+  await idempotent(() => api(`/v1/contacts/${contactId}`, { method: "DELETE" }));
+  revalidatePath(path);
+}
