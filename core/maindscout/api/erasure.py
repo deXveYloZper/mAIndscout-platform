@@ -40,12 +40,21 @@ from maindscout.db.models import (
     PairEvent,
     Score,
     CareerProfile,
+    BriefItem,
+    Activity,
+    CandidateTag,
+    ClientBlock,
+    ImportRow,
+    Message,
     SuppressionEntry,
+    Task,
 )
 from maindscout.settings import env
 from maindscout.storage import BlobStore
 
 KEY_KINDS = ("email", "phone", "linkedin")
+# A rejected contact is still suppressed unless it was rejected as not this person's (an agency address, a misread).
+NOT_THEIRS = ("not_about_subject", "wrong")
 
 
 class ErasureConflict(RuntimeError):
@@ -109,17 +118,22 @@ def erase_candidate(session: Session, blobs: BlobStore, org_id: uuid.UUID, candi
     claim_ids = list(session.scalars(select(Claim.id).where(Claim.subject_id == candidate_id)))
     identifiers = {
         (c.payload["kind"], c.payload["normalized"]) for c in session.scalars(select(Claim).where(
-            Claim.id.in_(claim_ids), Claim.claim_type == "ContactClaim", Claim.status != "rejected"))
+            Claim.id.in_(claim_ids), Claim.claim_type == "ContactClaim"))
         if c.payload.get("kind") in KEY_KINDS
+        and not (c.status == "rejected" and (c.rejection_reason or {}).get("code") in NOT_THEIRS)
     }
+    full_names = {(c.approved_view or c.payload).get("full_name") for c in session.scalars(select(Claim).where(
+        Claim.id.in_(claim_ids), Claim.claim_type == "IdentityClaim"))} - {None, ""}
     decision_ids = list(session.scalars(select(Decision.id).where(or_(
         Decision.subject_id == candidate_id,
         Decision.context["candidate_id"].astext == str(candidate_id)))))  # e.g. "same company?" cards raised by their CV
     run_ids = list(session.scalars(select(IntelligenceRun.id).where(IntelligenceRun.document_id.in_(doc_ids))))
-    storage = {d.id: d.storage_key for d in session.scalars(select(Document).where(Document.id.in_(doc_ids)))}
+    stored = list(session.scalars(select(Document).where(Document.id.in_(doc_ids))))
+    storage = {d.id: d.storage_key for d in stored}
+    shas = {d.storage_key: d.sha256 for d in stored}
 
     erasure = Erasure(org_id=org_id, subject_type="candidate", subject_id=candidate_id, requested_by=actor,
-                      reason=reason, document_ids=[str(d) for d in doc_ids])
+                      reason=reason, document_ids=[str(d) for d in doc_ids], file_keys=sorted(set(storage.values())))
     session.add(erasure)
     session.flush()
 
@@ -130,6 +144,26 @@ def erase_candidate(session: Session, blobs: BlobStore, org_id: uuid.UUID, candi
 
     run("decision_items", delete(DecisionItem).where(or_(DecisionItem.decision_id.in_(decision_ids), DecisionItem.claim_id.in_(claim_ids))))
     run("decisions", delete(Decision).where(Decision.id.in_(decision_ids)))
+    run("brief_items", delete(BriefItem).where(BriefItem.candidate_id == candidate_id))
+    run("activities", delete(Activity).where(Activity.subject_type == "candidate", Activity.subject_id == candidate_id))
+    run("tags", delete(CandidateTag).where(CandidateTag.candidate_id == candidate_id))
+    run("client_blocks", delete(ClientBlock).where(ClientBlock.candidate_id == candidate_id))
+    stray = [r.id for r in session.scalars(select(ImportRow).where(ImportRow.org_id == org_id, ImportRow.candidate_id.is_(None)))
+             if _row_identifiers(r.data) & identifiers]
+    run("import_rows", delete(ImportRow).where(or_(ImportRow.candidate_id == candidate_id, ImportRow.id.in_(stray))))
+    # Background tasks name the person or their documents in their payload.
+    refs = [str(candidate_id), *map(str, doc_ids)]
+    run("tasks", delete(Task).where(or_(Task.payload["candidate_id"].astext.in_(refs), Task.payload["document_id"].astext.in_(refs))))
+    # Notes on other timelines (a client's) that name the person: the name is struck out, the note stays.
+    redacted = 0
+    for name in full_names:
+        for a in session.scalars(select(Activity).where(Activity.org_id == org_id, Activity.summary.ilike(f"%{_like(name)}%", escape="\\"))):
+            a.summary = _strike(a.summary, name)
+            redacted += 1
+    counts["notes_redacted"] = redacted
+    session.execute(update(Message).where(Message.follow_up_of.in_(select(Message.id).where(
+        or_(Message.candidate_id == candidate_id, Message.about_candidate_id == candidate_id)))).values(follow_up_of=None))
+    run("messages", delete(Message).where(or_(Message.candidate_id == candidate_id, Message.about_candidate_id == candidate_id)))
     run("observations", delete(ClaimObservation).where(ClaimObservation.claim_id.in_(claim_ids)))
     run("evidence", delete(Evidence).where(or_(Evidence.claim_id.in_(claim_ids), Evidence.document_id.in_(doc_ids))))
     session.execute(update(Claim).where(Claim.superseded_by.in_(claim_ids)).values(superseded_by=None))
@@ -163,7 +197,10 @@ def erase_candidate(session: Session, blobs: BlobStore, org_id: uuid.UUID, candi
     session.flush()
     # Original bytes: delete unless another document row (e.g. another org) still uses the same stored file.
     deleted_blobs = 0
+    from maindscout.api.documents import lock_bytes
+
     for key in set(storage.values()):
+        lock_bytes(session, shas[key])
         if not session.scalar(select(func.count()).select_from(Document).where(Document.storage_key == key)):
             blobs.delete(key)
             deleted_blobs += 1
@@ -179,10 +216,11 @@ def erase_candidate(session: Session, blobs: BlobStore, org_id: uuid.UUID, candi
     counts["suppressed_identifiers"] = suppressed
     if identifiers and not env("SUPPRESSION_KEY"):
         counts["suppression_skipped_no_key"] = len(identifiers)
+    erasure.counts = counts
 
     erasure.counts = counts
     session.flush()
-    erasure.survivors = verify_erasure(session, blobs, org_id, candidate_id, storage_keys=list(storage.values()))
+    erasure.survivors = verify_erasure(session, blobs, org_id, candidate_id)
     erasure.verified_at = datetime.now(timezone.utc)
     session.flush()
     return erasure
@@ -207,10 +245,18 @@ def verify_erasure(session: Session, blobs: BlobStore, org_id: uuid.UUID, candid
         ("pairs", count(CandidateJob, CandidateJob.candidate_id == candidate_id)),
         ("breakdown snapshots", count(Score, Score.candidate_id == candidate_id)),
         ("career profiles", count(CareerProfile, CareerProfile.candidate_id == candidate_id)),
+        ("brief items", count(BriefItem, BriefItem.candidate_id == candidate_id)),
+        ("activities", count(Activity, (Activity.subject_type == "candidate") & (Activity.subject_id == candidate_id))),
+        ("tags", count(CandidateTag, CandidateTag.candidate_id == candidate_id)),
+        ("client blocks", count(ClientBlock, ClientBlock.candidate_id == candidate_id)),
+        ("import rows", count(ImportRow, ImportRow.candidate_id == candidate_id)),
+        ("messages", count(Message, or_(Message.candidate_id == candidate_id, Message.about_candidate_id == candidate_id))),
         ("document links", count(DocumentSubject, DocumentSubject.subject_id == candidate_id)),
         ("not-same records", count(NotSame, or_(NotSame.candidate_a == candidate_id, NotSame.candidate_b == candidate_id))),
         ("candidates redirected to this person", count(Candidate, Candidate.merged_into_id == candidate_id)),
         ("cost entries still linked", count(CostEntry, CostEntry.subject_id.in_([candidate_id, *doc_ids]))),
+        ("background tasks naming them", count(Task, or_(Task.payload["candidate_id"].astext.in_([sid, *map(str, doc_ids)]),
+                                                         Task.payload["document_id"].astext.in_([sid, *map(str, doc_ids)])))),
     ]
     if doc_ids:
         checks += [
@@ -226,16 +272,49 @@ def verify_erasure(session: Session, blobs: BlobStore, org_id: uuid.UUID, candid
     if notes:
         survivors.append(f"{len(notes)} identity notes on other people still point to this person")
 
-    for key in storage_keys or []:
+    if storage_keys is None:
+        storage_keys = list(record.file_keys or []) if record else []
+    for key in storage_keys:
         if blobs.exists(key) and not count(Document, Document.storage_key == key):
             survivors.append(f"original file {key} is still stored")
 
     # The same human may exist twice (a false split). If another person carries one of the erased
     # identifiers, they were not erased: say so instead of reporting green.
+    if record and record.counts.get("suppression_skipped_no_key"):
+        survivors.append(f"{record.counts['suppression_skipped_no_key']} identifiers were not suppressed (SUPPRESSION_KEY is "
+                         "not set): the same person could be uploaded again")
     if record:
         hashes = set(session.scalars(select(SuppressionEntry.identifier_hash).where(SuppressionEntry.erasure_id == record.id)))
         if hashes:
+            stray = [r for r in session.scalars(select(ImportRow).where(ImportRow.org_id == org_id))
+                     if {identifier_hash(k, n) for k, n in _row_identifiers(r.data)} & hashes]
+            if stray:
+                survivors.append(f"{len(stray)} import rows still carry one of the erased identifiers")
             for c in session.scalars(select(Claim).where(Claim.org_id == org_id, Claim.claim_type == "ContactClaim")):
                 if identifier_hash(c.payload.get("kind", ""), c.payload.get("normalized", "")) in hashes:
                     survivors.append(f"another person ({c.subject_id}) has one of the erased identifiers")
     return survivors
+
+
+def _row_identifiers(data: dict) -> set[tuple[str, str]]:
+    """The contacts an import row carries, normalized as contact claims are."""
+    from maindscout.intelligence import contacts
+
+    out = set()
+    for kind in KEY_KINDS:
+        value = (data or {}).get(kind)
+        if value:
+            norm = contacts.normalise(kind, value)
+            if norm:
+                out.add((kind, norm))
+    return out
+
+
+def _like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _strike(text_: str, name: str) -> str:
+    import re
+
+    return re.sub(re.escape(name), "[erased person]", text_, flags=re.IGNORECASE)

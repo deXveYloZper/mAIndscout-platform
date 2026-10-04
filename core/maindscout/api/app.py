@@ -6,6 +6,8 @@ Every request needs `Authorization: Bearer <OPERATOR_TOKEN>` and `X-Org-Id`. One
 from __future__ import annotations
 
 import hmac
+import threading
+import urllib.parse
 import uuid
 from functools import lru_cache
 from typing import Any, Iterator
@@ -14,10 +16,11 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from maindscout.api import companies, costs, documents, erasure, process, queries, review, sourcing, tasks
+from maindscout.api import companies, costs, documents, erasure, pipeline, process, queries, review, sourcing, tasks
+from maindscout.api import mailbox as mailbox_mod
 from maindscout.api import task_handlers  # noqa: F401 (registers task kinds)
 from maindscout.db.models import Document, ExtractionArtifact, IntelligenceRun, Org
 from maindscout.db.session import make_engine, make_session_factory
@@ -101,6 +104,8 @@ ERRORS: list[tuple[type[Exception], int]] = [
     (reg.UnknownFlagError, 422),
     (reg.UnknownClaimTypeError, 422),
     (pdf.UnreadableDocument, 422),
+    (pipeline.BlockedError, 409),
+    (mailbox_mod.MailboxError, 502),
     (ValueError, 422),
 ]
 for _exc, _code in ERRORS:
@@ -114,10 +119,26 @@ async def _read(file: UploadFile) -> tuple[bytes, str]:
     data = await file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, "File is larger than 20 MB")
-    media = file.content_type or "application/octet-stream"
-    if (file.filename or "").lower().endswith(".pdf"):
-        media = "application/pdf"
-    return data, media
+    return data, _sniff(data)
+
+
+def _sniff(data: bytes) -> str:
+    """The type the bytes really are; the caller's claimed content type is never trusted (it decides how a file is
+    served back). Only PDFs and plain text can be read; anything else is stored as opaque bytes."""
+    if data[:1024].lstrip().startswith(b"%PDF-"):
+        return "application/pdf"
+    if b"\x00" not in data[:8192]:
+        try:
+            data[:65536].decode("utf-8")
+            return "text/plain; charset=utf-8"
+        except UnicodeDecodeError:
+            pass
+    return "application/octet-stream"
+
+
+def _safe_filename(name: str | None) -> str:
+    keep = "".join(c if c.isalnum() or c in " ._-()" else "_" for c in (name or "document"))[:120].strip()
+    return keep or "document"
 
 
 def _result(r: process.ProcessResult) -> dict[str, Any]:
@@ -166,9 +187,17 @@ def get_document(document_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), s
 @app.get("/v1/documents/{document_id}/file")
 def get_document_file(document_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
                       blobs: BlobStore = Depends(get_blobs)):
+    """The original file. Only a real PDF (or plain text) opens in the browser; anything else downloads, so an uploaded
+    HTML or SVG file can never run as a page on the desk's origin."""
     d = _doc(session, org_id, document_id)
-    return Response(blobs.get(d.storage_key), media_type=d.media_type,
-                    headers={"Content-Disposition": f'inline; filename="{(d.filename or "document").replace(chr(34), "")}"'})
+    data = blobs.get(d.storage_key)
+    media = _sniff(data)
+    disposition = "inline" if media != "application/octet-stream" else "attachment"
+    headers = {"Content-Disposition": f'{disposition}; filename="{_safe_filename(d.filename)}"',
+               "X-Content-Type-Options": "nosniff"}
+    if media != "application/pdf":
+        headers["Content-Security-Policy"] = "sandbox; default-src 'none'"
+    return Response(data, media_type=media, headers=headers)
 
 
 @app.get("/v1/documents/{document_id}/text")
@@ -273,7 +302,8 @@ class StateBody(BaseModel):
 @app.post("/v1/jobs/{job_id}/people/{candidate_id}/state")
 def set_pair_state(job_id: uuid.UUID, candidate_id: uuid.UUID, body: StateBody, org_id: uuid.UUID = Depends(get_org),
                    session: Session = Depends(get_session), actor: str = Depends(get_actor)):
-    """Move a pair: seen, submitted (needs a note) or we_passed (needs a reason). Pairs are never deleted."""
+    """Move a pair along the pipeline (new → seen → contacted → screened → submitted → interviewing → offer → placed;
+    or we passed / withdrawn / client rejected). Notes and reasons as the rules say; pairs are never deleted."""
     pair = review.set_state(session, org_id, job_id, candidate_id, body.state, actor, body.reason, body.note)
     session.commit()
     return {"state": pair.pair_state, "outcome": pair.outcome}
@@ -293,8 +323,11 @@ def override_band(job_id: uuid.UUID, candidate_id: uuid.UUID, body: BandBody, or
 
 
 @app.get("/v1/candidates")
-def list_candidates(unassigned: bool = Query(False), org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+def list_candidates(unassigned: bool = Query(False), tag: str | None = Query(None), org_id: uuid.UUID = Depends(get_org),
+                    session: Session = Depends(get_session)):
     people = queries.list_people(session, org_id)
+    if tag:
+        people = [p for p in people if tag in p["tags"]]
     return [p for p in people if not p["jobs"]] if unassigned else people
 
 
@@ -347,9 +380,13 @@ def candidate_claims(candidate_id: uuid.UUID, status: str | None = Query(None), 
 
 
 @app.get("/v1/inbox")
-def get_inbox(job_id: uuid.UUID | None = Query(None), band: str | None = Query("priority"),
+def get_inbox(job_id: uuid.UUID | None = Query(None), band: str | None = Query(None),
               org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
-    return queries.inbox(session, org_id, job_id, band)
+    """With a job: people in `band` (default priority; `all` for everyone on it). Without a job: everyone, since a band
+    belongs to a person on a job; asking for a band without a job is refused rather than silently ignored."""
+    if job_id is None and band not in (None, "all"):
+        raise HTTPException(422, "A band applies to a job: pass job_id, or band=all")
+    return queries.inbox(session, org_id, job_id, band or ("priority" if job_id else "all"))
 
 
 @app.post("/v1/claims/{claim_id}/approve")
@@ -489,8 +526,8 @@ class MergeBody(BaseModel):
 
 @app.post("/v1/companies/{company_id}/merge")
 def merge_company(company_id: uuid.UUID, body: MergeBody, org_id: uuid.UUID = Depends(get_org),
-                  session: Session = Depends(get_session)):
-    keep = companies.merge(session, body.into, company_id)
+                  session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    keep = companies.merge(session, body.into, company_id, actor, org_id)
     session.commit()
     return {"id": str(keep.id), "name": keep.name}
 
@@ -502,7 +539,8 @@ def get_tasks(ids: str = Query(..., description="comma-separated task ids"), org
     from maindscout.db.models import Task
 
     wanted = [uuid.UUID(i) for i in ids.split(",") if i.strip()][:100]
-    rows = session.scalars(select(Task).where(Task.id.in_(wanted), Task.org_id == org_id))
+    # Shared public work (company research) has no desk; the desk that asked for it can still follow it.
+    rows = session.scalars(select(Task).where(Task.id.in_(wanted), or_(Task.org_id == org_id, Task.org_id.is_(None))))
     return [tasks.as_dict(t) for t in rows]
 
 
@@ -610,7 +648,8 @@ def set_strength(claim_id: uuid.UUID, body: StrengthBody, org_id: uuid.UUID = De
     return {"id": str(claim.id), "strength": claim.payload["strength"]}
 
 
-_QUERY_CACHE: dict[str, Any] = {}
+_QUERY_CACHE: dict[tuple[uuid.UUID, str], Any] = {}  # per desk: one desk's paid parse is not served to another
+_QUERY_LOCK = threading.Lock()
 
 
 @app.get("/v1/search")
@@ -625,16 +664,18 @@ def search_people(q: str | None = None, family: str | None = None, related: bool
     if q and q.strip():
         from maindscout.intelligence import query as reader
 
-        key = " ".join(q.lower().split())
-        parsed = _QUERY_CACHE.get(key)
-        if parsed is None:  # the same search again costs nothing
+        key = (org_id, " ".join(q.lower().split()))
+        with _QUERY_LOCK:
+            parsed = _QUERY_CACHE.get(key)
+        if parsed is None:  # the same search again, by the same desk, costs nothing
             costs.ensure_budget(session, org_id)
             parsed = reader.read(q.strip(), llm)
             costs.record(session, org_id, "search_query", parsed.cost)
             session.commit()
-            if len(_QUERY_CACHE) > 500:
-                _QUERY_CACHE.clear()
-            _QUERY_CACHE[key] = parsed
+            with _QUERY_LOCK:
+                if len(_QUERY_CACHE) >= 500:
+                    _QUERY_CACHE.pop(next(iter(_QUERY_CACHE)))  # oldest first
+                _QUERY_CACHE[key] = parsed
         return {"query": q, "understood": search.understood(parsed), "ignored": parsed.ignored,
                 "people": search.ranked(session, org_id, parsed) if not parsed.empty() else []}
 
@@ -642,3 +683,372 @@ def search_people(q: str | None = None, family: str | None = None, related: bool
                        employer_kinds=[e for e in employer if e], domains=[d for d in domain if d],
                        company_ids=[c for c in company if c], current_only=current)
     return {"filters": f.words(), "people": search.search(session, org_id, f)}
+
+
+class BriefAnswerBody(BaseModel):
+    outcome: str
+    answer: str | None = None
+
+
+@app.get("/v1/jobs/{job_id}/people/{candidate_id}/brief")
+def get_brief(job_id: uuid.UUID, candidate_id: uuid.UUID, force: bool = False, org_id: uuid.UUID = Depends(get_org),
+              session: Session = Depends(get_session)):
+    """The call checklist for a priority person on a job (compiled and reconciled now). `force` for other bands."""
+    from maindscout.api import brief
+
+    try:
+        items = brief.build(session, org_id, job_id, candidate_id, force=force)
+    except brief.BriefError as error:
+        session.rollback()
+        return {"available": False, "reason": str(error), "items": [], "header": brief.header(session, org_id, job_id, candidate_id)}
+    session.commit()
+    return {"available": True, "items": [brief.as_dict(i) for i in items], "header": brief.header(session, org_id, job_id, candidate_id)}
+
+
+@app.post("/v1/brief/{item_id}/answer")
+def answer_brief(item_id: uuid.UUID, body: BriefAnswerBody, org_id: uuid.UUID = Depends(get_org),
+                 session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Capture an answer from the call as an approved fact; the person is matched again at once."""
+    from maindscout.api import brief
+
+    item = brief.answer(session, org_id, item_id, body.outcome, body.answer, actor)
+    session.commit()
+    return brief.as_dict(item)
+
+
+@app.post("/v1/brief/{item_id}/asked")
+def asked_brief(item_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                actor: str = Depends(get_actor)):
+    from maindscout.api import brief
+
+    item = brief.mark_asked(session, org_id, item_id, actor)
+    session.commit()
+    return brief.as_dict(item)
+
+
+@app.post("/v1/brief/{item_id}/dismiss")
+def dismiss_brief(item_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                  actor: str = Depends(get_actor)):
+    from maindscout.api import brief
+
+    item = brief.dismiss(session, org_id, item_id, actor)
+    session.commit()
+    return brief.as_dict(item)
+
+
+# --- relationship memory (Slice 4) ---------------------------------------------------------------
+
+class ActivityBody(BaseModel):
+    kind: str
+    summary: str
+    direction: str | None = None
+    occurred_at: str | None = None  # ISO date or date-time; default now
+    job_id: uuid.UUID | None = None
+    contact_id: uuid.UUID | None = None
+
+
+def _when(text: str | None):
+    from datetime import datetime, timezone
+
+    if not text:
+        return None
+    when = datetime.fromisoformat(text)
+    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+
+
+@app.post("/v1/candidates/{candidate_id}/activities", status_code=201)
+def log_person_activity(candidate_id: uuid.UUID, body: ActivityBody, org_id: uuid.UUID = Depends(get_org),
+                        session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Log a call, email, meeting, message or note with a person."""
+    from maindscout.api import relationship
+
+    a = relationship.log(session, org_id, "candidate", candidate_id, body.kind, body.summary, actor, direction=body.direction,
+                         occurred_at=_when(body.occurred_at), job_id=body.job_id)
+    session.commit()
+    return {"id": str(a.id)}
+
+
+@app.post("/v1/companies/{company_id}/activities", status_code=201)
+def log_company_activity(company_id: uuid.UUID, body: ActivityBody, org_id: uuid.UUID = Depends(get_org),
+                         session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Log a call, email, meeting, message or note with a client (optionally with one of its contacts)."""
+    from maindscout.api import companies as comp
+    from maindscout.api import relationship
+    from maindscout.db.models import Company
+
+    company = comp.canonical(session, session.get(Company, company_id))
+    if company is None:
+        raise LookupError(f"No company {company_id}")
+    a = relationship.log(session, org_id, "company", company.id, body.kind, body.summary, actor, direction=body.direction,
+                         occurred_at=_when(body.occurred_at), job_id=body.job_id, contact_id=body.contact_id)
+    session.commit()
+    return {"id": str(a.id)}
+
+
+@app.delete("/v1/activities/{activity_id}", status_code=204)
+def remove_activity(activity_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    from maindscout.api import relationship
+
+    relationship.remove_activity(session, org_id, activity_id)
+    session.commit()
+
+
+class TagBody(BaseModel):
+    tag: str
+
+
+@app.post("/v1/candidates/{candidate_id}/tags", status_code=201)
+def add_tag(candidate_id: uuid.UUID, body: TagBody, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+            actor: str = Depends(get_actor)):
+    from maindscout.api import relationship
+
+    tag = relationship.add_tag(session, org_id, candidate_id, body.tag, actor)
+    session.commit()
+    return {"tag": tag}
+
+
+@app.delete("/v1/candidates/{candidate_id}/tags/{tag}", status_code=204)
+def remove_tag(candidate_id: uuid.UUID, tag: str, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    from maindscout.api import relationship
+
+    relationship.remove_tag(session, org_id, candidate_id, tag)
+    session.commit()
+
+
+@app.get("/v1/tags")
+def list_pools(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """Tags as talent pools, with how many people are in each."""
+    from maindscout.api import relationship
+
+    return relationship.pools(session, org_id)
+
+
+class ContactBody(BaseModel):
+    name: str
+    role: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    linkedin: str | None = None
+    notes: str | None = None
+
+
+@app.post("/v1/companies/{company_id}/contacts", status_code=201)
+def add_contact(company_id: uuid.UUID, body: ContactBody, org_id: uuid.UUID = Depends(get_org),
+                session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Someone we know at a client company (e.g. a hiring manager)."""
+    from maindscout.api import companies as comp
+    from maindscout.api import relationship
+    from maindscout.db.models import Company
+
+    company = comp.canonical(session, session.get(Company, company_id))
+    if company is None:
+        raise LookupError(f"No company {company_id}")
+    c = relationship.add_contact(session, org_id, company.id, body.model_dump(), actor)
+    session.commit()
+    return {"id": str(c.id)}
+
+
+@app.delete("/v1/contacts/{contact_id}", status_code=204)
+def remove_contact(contact_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    from maindscout.api import relationship
+
+    relationship.remove_contact(session, org_id, contact_id)
+    session.commit()
+
+
+class LiftBody(BaseModel):
+    note: str
+
+
+@app.post("/v1/blocks/{block_id}/lift")
+def lift_block(block_id: uuid.UUID, body: LiftBody, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+               actor: str = Depends(get_actor)):
+    """Lift a client's block (e.g. the client changed its mind), with a note saying why."""
+    b = pipeline.lift(session, org_id, block_id, body.note, actor)
+    session.commit()
+    return {"id": str(b.id), "lifted": b.lifted_at is not None}
+
+
+@app.get("/v1/freshness")
+def refresh_lists(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """Who to re-contact (stale people, most valuable first, with why) and which clients to reconnect with."""
+    from maindscout.api import freshness
+
+    return {"person_months": freshness.person_months(), "company_months": freshness.company_months(),
+            "people": freshness.recontact(session, org_id), "clients": freshness.reconnect(session, org_id)}
+
+
+# --- import and export (Slice 4, step 4) ---------------------------------------------------------
+
+@app.get("/v1/imports")
+def list_imports(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    from maindscout.api import imports
+
+    return imports.batches(session, org_id)
+
+
+@app.post("/v1/imports", status_code=201)
+async def upload_import(file: UploadFile = File(...), kind: str = Form("candidates"), org_id: uuid.UUID = Depends(get_org),
+                        session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Upload a CSV of candidates or clients: a preview, nothing imported yet."""
+    from maindscout.api import imports
+
+    raw = await file.read(10 * 1024 * 1024 + 1)  # never buffer more than the limit
+    if len(raw) > 10 * 1024 * 1024:
+        raise HTTPException(413, "The file is over 10 MB")
+    batch = imports.upload(session, org_id, kind, file.filename, raw, actor)
+    session.commit()
+    return imports.view(session, batch)
+
+
+@app.get("/v1/imports/{batch_id}")
+def get_import(batch_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    from maindscout.api import imports
+
+    return imports.view(session, imports.get(session, org_id, batch_id))
+
+
+class ImportRowsBody(BaseModel):
+    row_ids: list[uuid.UUID]
+
+
+@app.post("/v1/imports/{batch_id}/import")
+def import_rows(batch_id: uuid.UUID, body: ImportRowsBody, org_id: uuid.UUID = Depends(get_org),
+                session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Import the ticked rows (the account holder vouches for them), within the free allowance."""
+    from maindscout.api import imports
+
+    result = imports.import_rows(session, org_id, batch_id, body.row_ids, actor)
+    session.commit()
+    return {**result, "batch": imports.view(session, imports.get(session, org_id, batch_id))}
+
+
+@app.post("/v1/imports/{batch_id}/quote/accept")
+def accept_import_quote(batch_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                        actor: str = Depends(get_actor)):
+    """Order the paid analysis of the rows beyond the free allowance (compute cost x 1.9)."""
+    from maindscout.api import imports
+
+    result = imports.accept_quote(session, org_id, batch_id, actor)
+    session.commit()
+    return result
+
+
+@app.get("/v1/export/people.csv")
+def export_people(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """The desk's own people as CSV. Always free."""
+    from maindscout.api import imports
+
+    return Response(imports.export_people(session, org_id), media_type="text/csv",
+                    headers={"Content-Disposition": 'attachment; filename="maindscout-people.csv"'})
+
+
+
+# --- messages and mailbox (Slice 4, step 5) ------------------------------------------------------
+
+@app.get("/v1/mailbox")
+def mailbox_status(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    return mailbox_mod.status(session, org_id)
+
+
+@app.post("/v1/mailbox/connect/{provider}")
+def mailbox_connect(provider: str, org_id: uuid.UUID = Depends(get_org), actor: str = Depends(get_actor)):
+    """Where to send the person to sign in to Gmail or Outlook."""
+    return {"url": mailbox_mod.authorize_url(org_id, provider, actor)}
+
+
+@app.get("/v1/mailbox/callback/{provider}")
+def mailbox_callback(provider: str, code: str | None = None, state: str | None = None, error: str | None = None,
+                     session: Session = Depends(get_session)):
+    """Google / Microsoft send the browser back here (no operator token: the signed state proves who started it)."""
+    from fastapi.responses import RedirectResponse
+
+    cockpit = (env("COCKPIT_URL", "http://localhost:3001") or "").rstrip("/")
+    if error or not code or not state:
+        return RedirectResponse(f"{cockpit}/mailbox?" + urllib.parse.urlencode({"error": (error or "cancelled")[:200]}))
+    try:
+        mailbox_mod.complete(session, provider, code, state)
+        session.commit()
+    except mailbox_mod.MailboxError as failure:
+        return RedirectResponse(f"{cockpit}/mailbox?" + urllib.parse.urlencode({"error": str(failure)[:200]}))
+    return RedirectResponse(f"{cockpit}/mailbox?connected={provider}")
+
+
+@app.delete("/v1/mailbox", status_code=204)
+def mailbox_disconnect(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    mailbox_mod.disconnect(session, org_id)
+    session.commit()
+
+
+@app.post("/v1/mailbox/sync")
+def mailbox_sync_now(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """Look at the mailbox now: sent drafts, replies, follow-ups due."""
+    from maindscout.api import messages
+
+    result = messages.sync(session, org_id)
+    session.commit()
+    return result
+
+
+class DraftBody(BaseModel):
+    kind: str
+    candidate_id: uuid.UUID | None = None
+    contact_id: uuid.UUID | None = None
+    job_id: uuid.UUID | None = None
+    note: str | None = None
+
+
+@app.post("/v1/messages", status_code=201)
+def draft_message(body: DraftBody, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                  actor: str = Depends(get_actor), llm: LLMClient = Depends(get_llm)):
+    """Draft a message from what may be said outward. Nothing is sent."""
+    from maindscout.api import messages
+
+    m = messages.draft(session, org_id, body.kind, actor, llm, candidate_id=body.candidate_id, contact_id=body.contact_id,
+                       job_id=body.job_id, note=body.note)
+    session.commit()
+    return messages.as_dict(m)
+
+
+class EditBody(BaseModel):
+    subject: str
+    body: str
+
+
+@app.patch("/v1/messages/{message_id}")
+def edit_message(message_id: uuid.UUID, body: EditBody, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    from maindscout.api import messages
+
+    m = messages.edit(session, org_id, message_id, body.subject, body.body)
+    session.commit()
+    return messages.as_dict(m)
+
+
+@app.post("/v1/messages/{message_id}/mailbox")
+def message_to_mailbox(message_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """Put the draft in the connected mailbox's drafts; you send it from there."""
+    from maindscout.api import messages
+
+    result = messages.to_mailbox(session, org_id, message_id)
+    session.commit()
+    return result
+
+
+@app.post("/v1/messages/{message_id}/sent")
+def message_sent(message_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """Mark as sent by hand (sent outside a connected mailbox)."""
+    from maindscout.api import messages
+
+    m = messages.mark_sent(session, org_id, message_id)
+    session.commit()
+    return messages.as_dict(m)
+
+
+@app.post("/v1/messages/{message_id}/replied")
+def message_replied(message_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """Mark as replied by hand: stops the follow-ups."""
+    from maindscout.api import messages
+
+    m = messages.mark_replied(session, org_id, message_id)
+    session.commit()
+    return messages.as_dict(m)

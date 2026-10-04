@@ -6,6 +6,12 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 
 **Slice 1 gate: GREEN**, declared by the owner on 2026-10-03 ([decision](../decisions/2026-10-03-slice-1-gate.md)).
 
+**Slice 2 gate: GREEN**, declared by the owner on 2026-10-04 ([decision](../decisions/2026-10-04-slice-2-gate.md)).
+
+**Slice 3 gate: GREEN**, declared by the owner on 2026-10-04 ([decision](../decisions/2026-10-04-slice-3-gate.md)). Slice 4 (live desk) is unlocked.
+
+**Slice 4 gate: GREEN**, declared by the owner on 2026-10-05 ([decision](../decisions/2026-10-05-slice-4-gate.md)). Slice 5 (Depth) unlocks once a desk is also running live jobs ([plan](../slice-5/PLAN.md)).
+
 **Now:** the [intelligence track](../intelligence/PLAN.md), accepted 2026-10-03 ([decisions](../decisions/2026-10-03-intelligence-track.md)).
 
 | Phase | What | State |
@@ -19,12 +25,30 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 | I6 | Sourcing v2 | **gate GREEN** 2026-10-04 ([decision](../decisions/2026-10-04-i6-gate.md)) |
 | I7 | Calibration from real decisions (band changes, pass reasons) | ongoing; first review after about 50 real decisions |
 
-**Current slice:** 2, sourcing feeder ([plan](../slice-2/PLAN.md))
+**Before the desk is reachable from outside this machine** (from the [code review](../decisions/2026-10-05-external-code-review.md)): per-desk credentials instead of one operator token, the actor taken from a real session rather than `X-Actor`, and a cockpit login. Until then, the API, database and cockpit listen on this machine only.
+
+**Slice 4 (closed):** ATS core and import ([plan](../slice-4/PLAN.md)): rescoped by the owner (we are the source of truth; import 100 candidates / 25 clients free, more as paid analysis at compute cost + 90%, [decision](../decisions/2026-10-04-source-of-truth-and-imports.md)); plan approved 2026-10-04.
+
+| Step | What | State |
+|---|---|---|
+| 1 | Relationship memory | built 2026-10-04 ([relationship-memory](components/relationship-memory.md)) |
+| 2 | Full pipeline, submissions, client feedback and block | built 2026-10-05 ([pipeline](components/pipeline.md)) |
+| 3 | Freshness | built 2026-10-05 ([freshness](components/freshness.md)) |
+| 4 | Import (100 / 25 free, more paid) | built 2026-10-05 ([imports](components/imports.md)) |
+| 5 | Drafts, Gmail / Outlook drafts, sent and reply detection, follow-ups a reply stops | built 2026-10-05 ([messages](components/messages.md)); live mailbox needs the [app registrations](connections/mailbox-setup.md) |
+
+All five Slice 4 steps built; gate declared GREEN 2026-10-05.
+
+**Next:** run live jobs on the desk (and, before it is reachable beyond this machine, per-desk logins). Slice 5 and I7 calibration follow from real use.
+
+Slice 3 (the Brief, closed): built 2026-10-04 ([brief](components/brief.md)).
+
+Slice 2 (sourcing feeder, closed):
 
 | Step | What | State |
 |---|---|---|
 | 1 | Desk adapter, campaigns (cap / target / human stop), same triage, cockpit "Find more people" | done 2026-10-03 |
-| 2 | Slice 2 gate checks in the eval | done 2026-10-03: GREEN; waiting for the owner's declaration |
+| 2 | Slice 2 gate checks in the eval | done 2026-10-03; **gate GREEN** 2026-10-04 |
 | later | External adapter (e.g. GitHub profiles) | not started: needs a data-use decision |
 
 **Slice 1** (defendable match, closed)

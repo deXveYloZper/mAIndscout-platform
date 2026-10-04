@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from sqlalchemy.orm import Session
 
-from maindscout.api import hiring, process, profiles, research
+from maindscout.api import hiring, messages, process, profiles, research
 from maindscout.api.tasks import handler
 from maindscout.db.models import Task
 from maindscout.intelligence.llm import LLMClient, XaiClient
@@ -57,3 +57,8 @@ def profile_candidate(session: Session, task: Task) -> dict[str, Any]:
 @handler("profile_job")
 def profile_job(session: Session, task: Task) -> dict[str, Any]:
     return hiring.from_ad(session, uuid.UUID(task.payload["job_id"]), llm_factory(), force=bool(task.payload.get("force")), task_id=task.id)
+
+
+@handler("mailbox_sync")
+def mailbox_sync(session: Session, task: Task) -> dict[str, Any]:
+    return messages.sync(session, task.org_id)

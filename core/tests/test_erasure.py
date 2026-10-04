@@ -138,13 +138,15 @@ def test_an_erased_person_uploaded_again_is_blocked_and_nothing_is_kept(session,
     assert entry.encounters == 1
 
 
-def test_without_a_key_erasure_still_completes_and_says_suppression_was_skipped(session, blobs, org, monkeypatch):
+def test_without_a_key_erasure_completes_but_is_not_reported_clean(session, blobs, org, monkeypatch):
+    """Deleting must never be refused, but without the key the person could come back: that is a survivor, not green."""
     monkeypatch.delenv("SUPPRESSION_KEY", raising=False)
     monkeypatch.setattr("maindscout.api.erasure.env", lambda name, default=None: None)
     result, _ = ingest(session, blobs, org, cv_json())
     record = erasure.erase_candidate(session, blobs, org.id, result.subject_id, "operator")
-    assert record.survivors == []
+    assert count(session, Candidate) == 0
     assert record.counts["suppression_skipped_no_key"] >= 1
+    assert len(record.survivors) == 1 and "SUPPRESSION_KEY" in record.survivors[0]
 
 
 def test_entangled_data_refuses_instead_of_half_erasing(session, blobs, org, key):

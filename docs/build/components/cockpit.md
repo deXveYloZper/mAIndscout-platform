@@ -17,6 +17,12 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
 - **Costs (`/costs`):** this month's spend against the budget, by purpose and day.
 - **Companies (`/companies`, `/companies/[id]`):** search; who we know at a company (one row per person, all roles); the company's jobs; its public facts, each with the page and quote it came from, and "Research now" ([company-research.md](company-research.md)). Career rows on a person link to their company.
 - **People (`/people`):** everyone, or only those on no job (the pool); upload CVs without a job.
+- **Messages (person page) and Mailbox (`/mailbox`) ([messages.md](messages.md)):** draft, edit, put in your Gmail or Outlook drafts or copy; mark sent or replied; connect or disconnect the mailbox.
+- **Import (`/import`) ([imports.md](imports.md)):** upload a CSV, preview, tick what you vouch for, free allowance shown, quote beyond it; download everyone as CSV.
+- **Refresh (`/refresh`) ([freshness.md](freshness.md)):** stale people to re-contact, most valuable first with why; stale clients to reconnect with; stale tags on People, person and company pages.
+- **Pipeline ([pipeline.md](pipeline.md)):** "Move to" on the gap table with the notes and reasons each move needs; stage counts on the job page; "blocked by client" tags; blocks with "Lift block" on the person page.
+- **Relationship ([relationship-memory.md](relationship-memory.md)):** on the person and company pages, last contacted / verified, log a call or note, the timeline; tags on people and talent-pool filters on People; contacts at client companies.
+- **Brief ([brief.md](brief.md)):** call questions about the person and for the job, answered inline (confirmed / not met / note), asked, not needed; linked beside priority people and from the gap table.
 - **Search (`/search`) ([people-search.md](people-search.md)):** a search bar in your own words, "Understood as", results best first with ✓ ~ ✗ per criterion; filters under "Refine"; results with what each person meets, "Put on job"; "Find more people" on a job describes its profile search.
 - **Match ([matching.md](matching.md)):** on the person-on-job page, the tier with the rules that fired and a verdict per requirement; on the job page, the tier beside each person.
 - **Hiring profile ([hiring-profiles.md](hiring-profiles.md)):** on the job page, requirements by strength with source, quote, approve / reject and a strength control; the hiring company's facts; who we know at target companies; intake notes; add a requirement.
@@ -27,7 +33,8 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
 - **Person (`/people/[id]`):** jobs and bands; name, contacts, career (with periods and overlap warnings), education, location, skills; every fact with its status, Approve and Reject, and its source snippet with a link to the original file; "Put on job"; "Add or correct a fact" (saved as approved).
 - **Inbox (`/inbox`):** inside a job, default is its priority people ("Everyone on this job" widens it); without a job, everything, with a job picker. Cards: confirm a contact (approve as is, type the correct value, or reject), who-is-this note (named links, open the CV, type a missing name), revision diff (keep official or accept new), same job or two, contradiction (pick one).
 - **Forget this person** at the foot of the person page (type `forget`); see [erasure.md](erasure.md).
-- **Original files** are streamed through `/files/[id]`, which only accepts a document id.
+- **Original files** are streamed through `/files/[id]`, which only accepts a document id. Only a real PDF or plain text opens in the browser; anything else downloads (`nosniff`, sandboxing CSP), so an uploaded HTML or SVG never runs on the desk's origin. `lib/api.ts` is `server-only`: the operator token can never be bundled into the browser.
+- **Bound to this machine** (`next dev -H 127.0.0.1`): the cockpit has no login of its own yet, so it must not be reachable from the network.
 - Same palette and fonts as the public site; dense layout; works at phone width.
 
 ## Depends on

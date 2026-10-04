@@ -25,6 +25,7 @@ MUST = ("must", "deal_breaker")
 
 # The desk's rules, as data: id -> what it says. The order of evaluation is the order of this list.
 RULES: list[dict[str, str]] = [
+    {"id": "client_block", "text": "The client said no to this person: a wall at this client until a person lifts it."},
     {"id": "distinctive_must_missing", "text": "A must-have that decides the band has no evidence: do not submit."},
     {"id": "not_wanted", "text": "The person meets a requirement the hiring manager does not want."},
     {"id": "substitution", "text": "A requirement the intake says can substitute for another is met, so that one counts as met."},
@@ -173,14 +174,28 @@ def _employment(p: dict[str, Any], profile: dict[str, Any]) -> tuple[str, str]:
     return "strong", "no conflict with the kind of employment"
 
 
-def _covers(note: str, text: str) -> bool:
-    """Does an intake note like 'can substitute for start-up experience' name this requirement?"""
-    words = {w for w in re.findall(r"[a-z0-9]{4,}", text.lower().replace("-", "")) if w not in {"experience", "years", "with"}}
-    return bool(words) and any(w in note.lower().replace("-", "") for w in words)
+_GENERIC = {"experience", "years", "year", "with", "role", "roles", "work", "working", "team", "senior", "junior", "level",
+            "strong", "good", "skills", "skill", "knowledge", "background", "plus", "must", "have", "required", "preferred",
+            "ability", "able", "solid", "proven", "hands", "least", "minimum", "this", "that", "from", "into", "their"}
+
+
+def _covers(note: str, text: str, token: str | None = None) -> bool:
+    """Does an intake note like 'can substitute for start-up experience' name this requirement?
+
+    The requirement's own skill token, or most of its meaningful words, must be written in the note, as whole words.
+    One shared generic word ("role", "team") is not naming it."""
+    said = set(re.findall(r"[a-z0-9+#]+", note.lower().replace("-", "")))
+    if token and token.lower().replace("-", "") in said:
+        return True
+    words = {w for w in re.findall(r"[a-z0-9+#]{4,}", text.lower().replace("-", "")) if w not in _GENERIC}
+    if not words:
+        return False
+    hit = len(words & said)
+    return hit >= max(1, (len(words) + 1) // 2)
 
 
 def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str, Any] | None, stints: list[Stint],
-          coarse: tuple[str, str]) -> Match:
+          coarse: tuple[str, str], answers: dict[str, dict[str, Any]] | None = None, blocked: str | None = None) -> Match:
     """`requirements`: [{id, payload}] (live, no process dates); `gap_rows`: domain.gaps rows for the same job and
     person; `profile`: the latest career profile (or None); `coarse`: the token triage (band, reason) as fallback."""
     by_id = {r["id"]: r["payload"] for r in requirements}
@@ -215,11 +230,24 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
             v, d = _employment(p, profile)
         rows.append(Verdict(r["id"], p["text_raw"], cat, p["strength"], v, d))
 
+    # Answers captured on the call (the Brief) are the best evidence there is: they settle their requirement.
+    for v in rows:
+        a = (answers or {}).get(v.requirement_id)
+        if a and v.kind != "mobility":
+            said = f": {a['answer']}" if a.get("answer") else ""
+            v.verdict, v.detail = ("strong", f"confirmed on the call{said}") if a["outcome"] == "confirmed" else ("gap", f"not met, said on the call{said}")
+        elif a:
+            v.detail = ("confirmed on the call" if a["outcome"] == "confirmed" else "not met, said on the call") + (f": {a['answer']}" if a.get("answer") else "")
+
     fired: list[dict[str, str]] = []
 
     def fire(rule: str, detail: str) -> None:
         fired.append({"id": rule, "text": RULE_TEXT[rule], "detail": detail})
 
+    # 0. The client said no: a wall.
+    if blocked:
+        fire("client_block", blocked)
+        return Match("unlikely", "do_not_submit", f"match:unlikely:the client said no ({blocked})", rows, fired)
     # 1. Today's rule: a distinctive must-have with no evidence decides the band.
     if coarse[0] == "do_not_submit" and coarse[1].startswith("no_support_for_must_have"):
         fire("distinctive_must_missing", coarse[1].split(":", 1)[-1])
@@ -237,7 +265,7 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
         note = by_id.get(a.requirement_id, {}).get("note") or ""
         if a.verdict == "strong" and "substitut" in note.lower():
             for b in rows:
-                if b is not a and b.verdict in ("gap", "partial") and _covers(note, b.requirement):
+                if b is not a and b.verdict in ("gap", "partial") and _covers(note, b.requirement, by_id.get(b.requirement_id, {}).get("normalized_token")):
                     b.verdict, b.detail = "strong", f"{b.detail}; counts as met: {a.requirement} can substitute for it"
                     fire("substitution", f"{a.requirement} stands in for {b.requirement}")
     # 4. Domain over seniority: one level below is outweighed by a strong industry match.

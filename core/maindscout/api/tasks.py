@@ -45,8 +45,31 @@ def enqueue(session: Session, org_id: uuid.UUID | None, kind: str, payload: dict
     return task
 
 
+STALE_AFTER = timedelta(minutes=30)  # far longer than any task takes; only a crashed process leaves one this old
+_last_reclaim = 0.0
+
+
+def reclaim_stale(session: Session, older_than: timedelta = STALE_AFTER) -> int:
+    """Tasks left `running` by a process that died: back in the queue (or failed once out of attempts), which also
+    frees their dedupe key for new work."""
+    cutoff = datetime.now(timezone.utc) - older_than
+    stale = list(session.scalars(select(Task).where(Task.status == "running", Task.started_at < cutoff).with_for_update(skip_locked=True)))
+    for task in stale:
+        task.error = f"abandoned while running (started {task.started_at.isoformat()})"
+        if task.attempts >= task.max_attempts:
+            task.status, task.finished_at = "failed", datetime.now(timezone.utc)
+        else:
+            task.status, task.locked_by, task.run_after = "queued", None, datetime.now(timezone.utc)
+    session.commit()
+    return len(stale)
+
+
 def claim(session: Session, worker: str) -> Task | None:
     """Take the most urgent ready task, skipping ones other workers hold."""
+    global _last_reclaim
+    if time.monotonic() - _last_reclaim > 60:
+        _last_reclaim = time.monotonic()
+        reclaim_stale(session)
     row = session.execute(text(
         "SELECT id FROM task WHERE status = 'queued' AND run_after <= now() "
         "ORDER BY priority, created_at FOR UPDATE SKIP LOCKED LIMIT 1")).first()

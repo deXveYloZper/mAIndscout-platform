@@ -1,5 +1,7 @@
 // Server-side client for the platform API. Never import this from a client component:
-// it reads the operator token from the server environment.
+// it reads the operator token from the server environment. `server-only` makes the build fail if one tries
+// (type-only imports are erased and stay allowed).
+import "server-only";
 
 const BASE = process.env.MAINDSCOUT_API ?? "http://127.0.0.1:8765";
 
@@ -79,6 +81,7 @@ export type JobSummary = {
 
 export type PersonOnJob = {
   match_tier?: string | null;
+  blocked?: boolean;
   candidate_id: string;
   name: string | null;
   band: Band;
@@ -97,6 +100,7 @@ export type JobPage = JobSummary & {
   people: Record<Band, PersonOnJob[]>;
   archived: { candidate_id: string; name: string | null; reason: string | null }[];
   coverage: { desk: string[]; from_ad: string[]; opened: string[]; names: Record<string, string> };
+  stages: Record<string, number>;
   hiring: {
     company: { id: string; name: string; kind?: string | null; stage?: string | null; team?: string | null; founded?: string | null;
       hq?: string | null; domains?: string[]; status?: string | null } | null;
@@ -116,6 +120,40 @@ export type PersonPage = {
   coverage_override: boolean;
   profile: CareerProfile | null;
   classifications: Record<string, StepLabel>;
+  freshness: { status: string; since: string | null; words: string };
+  blocks: { id: string; company_id: string; company: string | null; reason: string; at: string | null; by: string;
+    lifted: boolean; lift_note: string | null }[];
+  relationship: { last_contacted: string | null; last_verified: string | null; tags: string[];
+    timeline: { at: string | null; type: string; text: string; direction?: string | null; job?: string | null; contact?: string | null;
+      by?: string | null; id?: string; removable?: boolean }[] };
+  messages: MessageView[];
+  client_contacts: { id: string; name: string; role: string | null; job_id: string; job: string }[];
+};
+
+export type MessageView = {
+  id: string;
+  kind: "candidate_outreach" | "follow_up" | "client_submission" | "interview_confirm" | "decline";
+  to: string;
+  subject: string;
+  body: string;
+  status: "draft" | "in_mailbox" | "sent" | "replied" | "cancelled";
+  provider: string | null;
+  job_id: string | null;
+  follow_up_of: string | null;
+  follow_up_due: string | null;
+  created_at: string | null;
+  sent_at: string | null;
+  replied_at: string | null;
+};
+
+export type MailboxStatus = {
+  connected: boolean;
+  provider: "google" | "microsoft" | null;
+  account: string | null;
+  status: string | null;
+  last_sync_at: string | null;
+  google_ready: boolean;
+  microsoft_ready: boolean;
 };
 
 export type Side = {
@@ -154,6 +192,8 @@ export type PersonSummary = {
   jobs: { job_id: string; title: string; band: Band }[];
   document_id: string | null;
   archived: string | null;
+  tags: string[];
+  stale: boolean;
 };
 
 export type ProcessResult = {

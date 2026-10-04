@@ -49,7 +49,12 @@ CLAIM_STATUS = ("staged", "proposed", "approved", "rejected", "superseded")
 PRECISION = ("exact", "month", "year_only", "ordered_only", "unknown")
 VERIFIABILITY = ("registry", "public_record", "scholarly", "web", "unverifiable")
 TRIAGE_BANDS = ("priority", "review_later", "do_not_submit", "unassigned")
-PAIR_STATES = ("new", "seen", "submitted", "we_passed")
+PAIR_STATES = ("new", "seen", "contacted", "screened", "submitted", "interviewing", "offer", "placed",
+               "we_passed", "withdrawn", "client_rejected")
+# Endings: a pair that is in one of these is closed until someone reopens it (with a note).
+PAIR_ENDINGS = ("placed", "we_passed", "withdrawn", "client_rejected")
+# Stages at which the person is in front of the client: a client block stops all of them.
+CLIENT_STAGES = ("submitted", "interviewing", "offer", "placed")
 RUN_STATUS = ("running", "committed", "failed")
 DECISION_TYPES = ("revision_diff", "duplicate_stint", "contradiction", "identity_note", "company_same")
 
@@ -189,6 +194,9 @@ class Company(Base):
     registry_ids: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     hq_country: Mapped[str | None] = mapped_column(String(2))
     merged_into_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("company.id"))  # redirect, never rewrite
+    merged_by: Mapped[str | None] = mapped_column(String)
+    merged_by_org: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    merged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     research_status: Mapped[str | None] = mapped_column(String)  # identified | not_identified | failed
     research_depth: Mapped[str] = mapped_column(String, nullable=False, default="full", server_default="full")  # full | basic
     researched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -413,6 +421,7 @@ class Erasure(Base):
     document_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     counts: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     survivors: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    file_keys: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")  # content hashes
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created()
 
@@ -502,6 +511,208 @@ class Institution(Base):
     research_status: Mapped[str | None] = mapped_column(String)  # identified | not_identified | failed
     researched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created()
+
+
+# --- relationship memory (Slice 4) ---------------------------------------------------------------
+
+ACTIVITY_KINDS = ("call", "email", "meeting", "message", "note")
+
+
+class ClientContact(Base):
+    """A person at a client company (e.g. a hiring manager). Desk-private: the company is shared, who we know there
+    and how to reach them is not."""
+
+    __tablename__ = "client_contact"
+    __table_args__ = (Index("ix_client_contact_company", "org_id", "company_id"),)
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("company.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[str | None] = mapped_column(String)
+    email: Mapped[str | None] = mapped_column(String)
+    phone: Mapped[str | None] = mapped_column(String)
+    linkedin: Mapped[str | None] = mapped_column(String)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = _created()
+
+
+class Activity(Base):
+    """Something that happened in a relationship: a call, an email, a meeting, a note. About a person or a client
+    company (optionally with one of its contacts), optionally for a job. What the platform already records itself
+    (CVs read, band and stage changes, Brief answers) is not copied here: the timeline joins it in."""
+
+    __tablename__ = "activity"
+    __table_args__ = (
+        CheckConstraint(_in("kind", ACTIVITY_KINDS), name="activity_kind"),
+        CheckConstraint(_in("subject_type", ("candidate", "company")), name="activity_subject"),
+        Index("ix_activity_subject", "org_id", "subject_type", "subject_id", "occurred_at"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    subject_type: Mapped[str] = mapped_column(String, nullable=False)
+    subject_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    direction: Mapped[str | None] = mapped_column(String)  # out | in (who reached out)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("job.id"))
+    contact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("client_contact.id", ondelete="SET NULL"))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = _created()
+
+
+class ClientBlock(Base):
+    """A client said no to a person: a wall for that person at that client company (every job there), until a person
+    lifts it with a note."""
+
+    __tablename__ = "client_block"
+    __table_args__ = (Index("ix_client_block", "org_id", "company_id", "candidate_id"),)
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("company.id"), nullable=False)
+    candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate.id"), nullable=False)
+    job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("job.id"))
+    reason: Mapped[str] = mapped_column(Text, nullable=False)  # the client's words
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = _created()
+    lifted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lifted_by: Mapped[str | None] = mapped_column(String)
+    lift_note: Mapped[str | None] = mapped_column(Text)
+
+
+MESSAGE_KINDS = ("candidate_outreach", "follow_up", "client_submission", "interview_confirm", "decline")
+MESSAGE_STATUS = ("draft", "in_mailbox", "sent", "replied", "cancelled")
+
+
+class Mailbox(Base):
+    """A connected Gmail or Outlook mailbox (Slice 4, step 5). The access token is stored encrypted."""
+
+    __tablename__ = "mailbox"
+    __table_args__ = (CheckConstraint(_in("provider", ("google", "microsoft")), name="mailbox_provider"),)
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    provider: Mapped[str] = mapped_column(String, nullable=False)
+    account: Mapped[str | None] = mapped_column(String)  # the mailbox's own address
+    token_enc: Mapped[str] = mapped_column(Text, nullable=False)
+    connected_by: Mapped[str] = mapped_column(String, nullable=False)
+    connected_at: Mapped[datetime] = _created()
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String, nullable=False, default="connected")  # connected | needs_reconnect
+
+
+class Message(Base):
+    """A message to a candidate or a client contact, drafted here from what may be said outward, and sent by a person
+    from their own mailbox. Never sent automatically. Any reply stops the follow-ups."""
+
+    __tablename__ = "message"
+    __table_args__ = (
+        CheckConstraint(_in("kind", MESSAGE_KINDS), name="message_kind"),
+        CheckConstraint(_in("status", MESSAGE_STATUS), name="message_status"),
+        Index("ix_message_candidate", "org_id", "candidate_id"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    candidate_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("candidate.id"))
+    contact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("client_contact.id", ondelete="SET NULL"))
+    company_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("company.id"))
+    job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("job.id"))
+    about_candidate_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("candidate.id"))  # a submission's subject
+    to_address: Mapped[str] = mapped_column(String, nullable=False)
+    subject: Mapped[str] = mapped_column(String, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="draft")
+    provider: Mapped[str | None] = mapped_column(String)
+    provider_draft_id: Mapped[str | None] = mapped_column(String)
+    provider_thread_id: Mapped[str | None] = mapped_column(String)
+    follow_up_of: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("message.id"))
+    follow_up_due: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = _created()
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    replied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+IMPORT_KINDS = ("candidates", "clients")
+IMPORT_ROW_STATUS = ("ready", "duplicate", "invalid", "imported", "skipped", "held")
+
+
+class ImportBatch(Base):
+    """One uploaded file (Slice 4, step 4). Rows are previewed first; only rows the account holder ticks are imported,
+    within the free allowance (100 candidates, 25 clients per account). The rest are held with a quote."""
+
+    __tablename__ = "import_batch"
+    __table_args__ = (CheckConstraint(_in("kind", IMPORT_KINDS), name="import_kind"),)
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    filename: Mapped[str | None] = mapped_column(String)
+    columns: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)  # our field -> the file's column
+    quote_usd: Mapped[float | None] = mapped_column(Numeric(10, 2))
+    quote_accepted_by: Mapped[str | None] = mapped_column(String)
+    quote_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = _created()
+
+
+class ImportRow(Base):
+    __tablename__ = "import_row"
+    __table_args__ = (CheckConstraint(_in("status", IMPORT_ROW_STATUS), name="import_row_status"),
+                      Index("ix_import_row_batch", "batch_id", "row_no"))
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    batch_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("import_batch.id"), nullable=False)
+    row_no: Mapped[int] = mapped_column(nullable=False)
+    data: Mapped[dict] = mapped_column(JSONB, nullable=False)  # our fields, as read
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text)
+    candidate_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("candidate.id", ondelete="SET NULL"))
+    company_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("company.id"))
+    imported_by: Mapped[str | None] = mapped_column(String)
+    imported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class CandidateTag(Base):
+    """A tag on a person; a tag is also a talent pool ("insar-pool", "warm-2026")."""
+
+    __tablename__ = "candidate_tag"
+    __table_args__ = (UniqueConstraint("candidate_id", "tag"), Index("ix_candidate_tag_tag", "org_id", "tag"))
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate.id"), nullable=False)
+    tag: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = _created()
+
+
+BRIEF_STATUS = ("open", "asked", "answered", "dismissed", "expired")
+
+
+class BriefItem(Base):
+    """Slice 3: one question for the call. Keyed to the source that produced it; person-scope items (job_id NULL) are
+    shared by every job the person is on. Answered and dismissed items never come back (regeneration reconciles)."""
+
+    __tablename__ = "brief_item"
+    __table_args__ = (
+        CheckConstraint(_in("status", BRIEF_STATUS), name="brief_status"),
+        Index("ix_brief_candidate", "candidate_id"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate.id"), nullable=False)
+    job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("job.id"))  # NULL: about the person, every job
+    source_key: Mapped[str] = mapped_column(String, nullable=False)
+    kind: Mapped[str] = mapped_column(String, nullable=False)  # requirement | career | contact | mobility | standard
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    why: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="open")
+    outcome: Mapped[str | None] = mapped_column(String)  # confirmed | not_met | noted
+    answer: Mapped[str | None] = mapped_column(Text)
+    answer_claim_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("claim.id"))
+    answered_by: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class CareerProfile(Base):

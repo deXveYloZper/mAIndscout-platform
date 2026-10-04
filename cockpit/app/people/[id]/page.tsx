@@ -1,10 +1,13 @@
 import Link from "next/link";
-import { addFact, bringBack, eraseCandidate, putOnJob } from "@/app/actions";
+import { addFact, bringBack, draftMessage, editMessage, eraseCandidate, liftBlock, logActivity, markMessage, messageToMailbox, putOnJob, syncMailbox,
+  tagPerson, untagPerson } from "@/app/actions";
+import { DraftMessage, MessageCard } from "@/components/Messages";
 import { CareerProfile } from "@/components/CareerProfile";
+import { Dates, LogActivity, Timeline } from "@/components/Relationship";
 import { ClaimRow, Status } from "@/components/Claim";
 import { EraseForm } from "@/components/EraseForm";
 import { FactForm } from "@/components/FactForm";
-import { api, apiOr404, type JobSummary, type PersonPage } from "@/lib/api";
+import { api, apiOr404, type JobSummary, type MailboxStatus, type PersonPage } from "@/lib/api";
 import { BAND_LABEL, reasonWords } from "@/lib/format";
 
 export const metadata = { title: "Person" };
@@ -19,10 +22,12 @@ const SECTIONS: [string, string][] = [
 
 export default async function Person({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [person, jobs] = await Promise.all([apiOr404<PersonPage>(`/v1/candidates/${id}`), api<JobSummary[]>("/v1/jobs")]);
+  const [person, jobs, mailbox] = await Promise.all([apiOr404<PersonPage>(`/v1/candidates/${id}`), api<JobSummary[]>("/v1/jobs"),
+    api<MailboxStatus>("/v1/mailbox")]);
   const otherJobs = jobs.filter((j) => !person.jobs.some((p) => p.job_id === j.id));
   const path = `/people/${id}`;
   const skills = person.claims.SkillClaim ?? [];
+  const hasEmail = (person.claims.ContactClaim ?? []).some((c) => c.payload.kind === "email" && (c.status === "approved" || c.status === "proposed"));
 
   return (
     <>
@@ -38,6 +43,65 @@ export default async function Person({ params }: { params: Promise<{ id: string 
         </div>
       )}
       {person.coverage_override && !person.archived && <p className="hint">Brought back by a person: the coverage rule leaves them be.</p>}
+
+      {person.blocks.filter((b) => !b.lifted).map((b) => (
+        <div key={b.id} className="warn archived-note">
+          Blocked at <Link href={`/companies/${b.company_id}`}>{b.company ?? "a client"}</Link>: the client said no ({b.reason}).
+          <form action={liftBlock.bind(null, b.id, path)} className="row">
+            <input name="note" aria-label="Why lift the block" placeholder="why lift it" size={22} required />
+            <button className="btn small">Lift block</button>
+          </form>
+        </div>
+      ))}
+
+      <section className="panel relationship">
+        <h3>Relationship</h3>
+        <Dates lastContacted={person.relationship.last_contacted} lastVerified={person.relationship.last_verified} />
+        {person.freshness.status === "stale" && <p className="stale-note">Stale: {person.freshness.words}. Worth a call before relying on these facts.</p>}
+        <div className="row tags">
+          {person.relationship.tags.map((t) => (
+            <form key={t} action={untagPerson.bind(null, person.id, t, path)} className="chipform">
+              <span className="chip">{t} <button className="chip-x" aria-label={`Remove tag ${t}`}>×</button></span>
+            </form>
+          ))}
+          <form action={tagPerson.bind(null, person.id, path)} className="row">
+            <input name="tag" aria-label="Add a tag (talent pool)" placeholder="add a tag, e.g. insar-pool" size={20} />
+            <button className="btn small">Tag</button>
+          </form>
+        </div>
+        <LogActivity action={logActivity.bind(null, "candidates", person.id, path)}
+          jobs={person.jobs.map((j) => ({ id: j.job_id, title: j.title }))} />
+        <details className="band" open>
+          <summary>Timeline ({person.relationship.timeline.length})</summary>
+          <Timeline rows={person.relationship.timeline} path={path} />
+        </details>
+      </section>
+
+      {!person.archived && (
+        <section className="panel messages">
+          <h3>Messages</h3>
+          <p className="sub">
+            Drafts use only approved facts, the job&apos;s public details and what was said on the call. Nothing is sent from here:{" "}
+            {mailbox.connected
+              ? <>drafts go to your {mailbox.provider === "microsoft" ? "Outlook" : "Gmail"} ({mailbox.account}) and you send them yourself.</>
+              : <>copy the text, or <Link href="/mailbox">connect Gmail or Outlook</Link> to put drafts straight in your mailbox.</>}
+          </p>
+          <DraftMessage action={draftMessage.bind(null, person.id, path)} hasEmail={hasEmail}
+            jobs={person.jobs.map((j) => ({ id: j.job_id, title: j.title }))} contacts={person.client_contacts} />
+          {person.messages.length > 0 && (
+            <ul className="messages-list">
+              {person.messages.map((m) => (
+                <MessageCard key={m.id} m={m} connected={mailbox.connected} provider={mailbox.provider}
+                  edit={editMessage.bind(null, m.id, path)} toMailbox={messageToMailbox.bind(null, m.id, path)}
+                  markSent={markMessage.bind(null, m.id, "sent", path)} markReplied={markMessage.bind(null, m.id, "replied", path)} />
+              ))}
+            </ul>
+          )}
+          {mailbox.connected && person.messages.some((m) => m.status === "in_mailbox" || m.status === "sent") && (
+            <form action={syncMailbox.bind(null, path)}><button className="btn small">Check my mailbox now</button></form>
+          )}
+        </section>
+      )}
 
       {otherJobs.length > 0 && (
         <form action={putOnJob.bind(null, person.id)} className="row" style={{ marginTop: 12 }}>

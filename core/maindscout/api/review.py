@@ -207,7 +207,8 @@ def resolve_decision(session: Session, org_id: uuid.UUID, decision_id: uuid.UUID
         from maindscout.api import companies
 
         if action == "same":
-            companies.merge(session, uuid.UUID(decision.context["existing"]["id"]), uuid.UUID(decision.context["new"]["id"]))
+            companies.merge(session, uuid.UUID(decision.context["existing"]["id"]), uuid.UUID(decision.context["new"]["id"]),
+                            actor, org_id)
         elif action != "different":
             raise ReviewError("company_same takes same or different")
 
@@ -244,37 +245,50 @@ def override_band(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, candid
 
 def set_state(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, candidate_id: uuid.UUID, state: str, actor: str,
               reason: str | None = None, note: str | None = None) -> CandidateJob:
-    """Move a pair to another state. The pair is never deleted; every move is recorded with who and why.
+    """Move a pair along the pipeline. The pair is never deleted; every move is recorded with who and why.
 
-    - we_passed needs a reason code (PASS_REASONS): outcomes with reasons are how the desk's taste is learned later.
-    - submitted needs a note (to whom, how).
-    - reopening (back to seen) after we_passed or submitted needs a note.
+    - we_passed needs a reason code (PASS_REASONS): reasons are how the desk's taste is learned later.
+    - submitted needs a note (to whom, how); withdrawn needs a note (why they pulled out).
+    - client_rejected needs the client's feedback, and blocks the person at that client (every job there).
+    - Moving out of an ending (placed, passed, withdrawn, rejected) needs a note saying why.
+    - A person blocked by the client cannot be put in front of that client (submitted, interviewing, offer, placed).
     """
-    from maindscout.db.models import PAIR_STATES
+    from maindscout.api import pipeline
+    from maindscout.db.models import PAIR_ENDINGS, PAIR_STATES
 
     if state not in PAIR_STATES or state == "new":
-        raise ReviewError("state must be seen, submitted or we_passed")
+        raise ReviewError(f"state must be one of {PAIR_STATES[1:]}")
     pair = session.scalar(select(CandidateJob).where(CandidateJob.job_id == job_id, CandidateJob.candidate_id == candidate_id,
                                                      CandidateJob.org_id == org_id))
     if pair is None:
         raise LookupError("No such pair")
     if state == pair.pair_state:
         return pair
+    note = (note or "").strip() or None
     if state == "we_passed" and reason not in PASS_REASONS:
         raise ReviewError(f"we_passed needs a reason: one of {PASS_REASONS}")
-    if state == "submitted" and not (note or "").strip():
+    if state == "submitted" and not note:
         raise ReviewError("submitted needs a note (to whom, how)")
-    if pair.pair_state in ("we_passed", "submitted") and state == "seen" and not (note or "").strip():
+    if state == "withdrawn" and not note:
+        raise ReviewError("withdrawn needs a note (why they pulled out)")
+    if state == "client_rejected" and not note:
+        raise ReviewError("client_rejected needs the client's feedback")
+    if pair.pair_state in PAIR_ENDINGS and state not in PAIR_ENDINGS and not note:
         raise ReviewError("reopening needs a note saying why")
+    pipeline.ensure_not_blocked(session, org_id, job_id, candidate_id, state)
     old = pair.pair_state
     pair.pair_state = state
     pair.version = (pair.version or 1) + 1
-    if state in ("we_passed", "submitted"):
-        pair.outcome = {"party": "operator", "state": state, "reason": reason, "note": note, "by": actor}
-    elif state == "seen":
+    if state in PAIR_ENDINGS or state == "submitted":
+        party = "client" if state == "client_rejected" else "candidate" if state == "withdrawn" else "operator"
+        pair.outcome = {"party": party, "state": state, "reason": reason, "note": note, "by": actor}
+    elif old in PAIR_ENDINGS:
         pair.outcome = None
     words = reason if state == "we_passed" else note
     session.add(PairEvent(org_id=org_id, pair_id=pair.id, kind="state", from_value=old, to_value=state,
                           reason=words, cause={"act": "state", "note": note}, actor=actor))
     session.flush()
+    if state == "client_rejected":
+        pipeline.block(session, org_id, job_id, candidate_id, note, actor)
     return pair
+

@@ -33,7 +33,7 @@ from maindscout.db.models import (
     Score,
 )
 from maindscout.domain import stints
-from maindscout.intelligence import extract, triage
+from maindscout.intelligence import contacts, extract, triage
 from maindscout.intelligence.llm import LLMClient
 from maindscout.storage import BlobStore
 
@@ -110,6 +110,8 @@ def natural_key(subject_id, claim_type: str, p: dict, valid_from: str | None = N
         return f"{sid}|{p['category']}|{p.get('normalized_token') or _norm_name(p['text_raw'])}"
     if claim_type == "StepClassificationClaim":
         return f"{p['career_claim_id']}|class"
+    if claim_type == "BriefAnswerClaim":
+        return f"{sid}|answer|{p['topic']}|{p.get('job_id') or ''}"
     raise ValueError(f"No natural key for {claim_type}")
 
 
@@ -136,6 +138,10 @@ def _write_claim(session: Session, doc: Document, run: IntelligenceRun, subject_
         )
     else:
         claim = existing
+        # A later file that casts doubt on a contact still awaiting review flags it (an approved one was decided by a
+        # person and stays as it is).
+        if flags and flags.get("possible_ocr_identifier") and claim.status == "proposed"                 and not claim.flags.get("possible_ocr_identifier"):
+            writer.set_flags(session, claim, {**claim.flags, "possible_ocr_identifier": True})
     evidence = Evidence(
         org_id=doc.org_id, claim_id=claim.id, evidence_type="document_span", document_id=doc.id,
         locator={k: span[k] for k in ("artifact_id", "page", "char_start", "char_end", "annotation_id") if k in span} if span else None,
@@ -186,7 +192,11 @@ def _resolve_candidate(session: Session, org_id, outcome: extract.ExtractionOutc
             if candidate is not None:
                 matched.add(candidate.id)
 
-    if len(matched) == 1:
+    # A shared contact merges only when the names agree too: a recruiter's email or an agency phone printed on many
+    # CVs must not fold different people into one. A name that differs (or cannot be read) asks a human instead.
+    names = _names_of(session, org_id, matched)
+    agreeing = {cid for cid in matched if any(contacts.same_name(outcome.full_name, n) for n in names.get(cid, []))}
+    if len(matched) == 1 and agreeing:
         return session.get(Candidate, next(iter(matched))), None
 
     candidate = Candidate(org_id=org_id, name_variants=[outcome.full_name] if outcome.full_name else [])
@@ -195,11 +205,16 @@ def _resolve_candidate(session: Session, org_id, outcome: extract.ExtractionOutc
     note = None
     if len(matched) > 1:
         note = {"reason": "contacts match more than one existing person", "candidate_ids": sorted(map(str, matched))}
+    elif matched:
+        note = {"reason": "same email, phone or LinkedIn as an existing person, but not the same name" if outcome.full_name
+                else "same email, phone or LinkedIn as an existing person, and no name could be read",
+                "candidate_ids": sorted(map(str, matched))}
     elif outcome.full_name:
+        pattern = _norm_name(outcome.full_name).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         same_name = session.scalars(
             select(Claim).where(
                 Claim.org_id == org_id, Claim.claim_type == "IdentityClaim", Claim.status.in_(LIVE),
-                Claim.subject_id != candidate.id, Claim.natural_key.like(f"%|{_norm_name(outcome.full_name)}"),
+                Claim.subject_id != candidate.id, Claim.natural_key.like(f"%|{pattern}", escape="\\"),
             )
         )
         twins = sorted({str(c.subject_id) for c in same_name})
@@ -208,6 +223,19 @@ def _resolve_candidate(session: Session, org_id, outcome: extract.ExtractionOutc
     elif not outcome.full_name:
         note = {"reason": "no name could be read from this document", "candidate_ids": []}
     return candidate, note
+
+
+def _names_of(session: Session, org_id, candidate_ids: set[uuid.UUID]) -> dict[uuid.UUID, list[str]]:
+    """Every live name (and name variant) of these people."""
+    out: dict[uuid.UUID, list[str]] = {cid: [] for cid in candidate_ids}
+    if not candidate_ids:
+        return out
+    for c in session.scalars(select(Claim).where(Claim.org_id == org_id, Claim.claim_type == "IdentityClaim",
+                                                 Claim.status.in_(LIVE), Claim.subject_id.in_(candidate_ids))):
+        out[c.subject_id].append((c.approved_view or c.payload)["full_name"])
+    for person in session.scalars(select(Candidate).where(Candidate.id.in_(candidate_ids))):
+        out[person.id] += person.name_variants or []
+    return out
 
 
 def _live_claims(session: Session, org_id, subject_type: str, subject_id, claim_type: str) -> list[Claim]:
@@ -229,11 +257,21 @@ def _flag_careers(session: Session, org_id, candidate_id, run: IntelligenceRun, 
                   decisions: list[uuid.UUID]) -> None:
     careers = _live_claims(session, org_id, "candidate", candidate_id, "CareerStepClaim")
     # Same company + overlapping period across different documents: keep both, flag, ask a human.
+    # Within one CV, two roles at one company that overlap are usually a promotion and are left alone; the same title
+    # twice over overlapping dates is the same job written (or read) twice, so it is asked about too.
+    def same_title(a: Claim, b: Claim) -> bool:
+        return _norm_name(a.payload.get("title_raw") or "") == _norm_name(b.payload.get("title_raw") or "") != ""
+
+    seen: set[frozenset] = set()
     for claim in (c for c in careers if c.id in new_ids):
         for other in careers:
-            if other.id == claim.id or other.run_id == run.id or other.id in new_ids:
+            if other.id == claim.id or frozenset((claim.id, other.id)) in seen:
+                continue
+            within_run = other.run_id == run.id or other.id in new_ids
+            if within_run and not same_title(claim, other):
                 continue
             if stints.same_company_overlap(_step(claim), _step(other)):
+                seen.add(frozenset((claim.id, other.id)))
                 for target, partner in ((claim, other), (other, claim)):
                     writer.set_flags(session, target, {**target.flags, "possible_duplicate_stint": True})
                 decision = _decision(
@@ -267,8 +305,7 @@ def _contradictions(session: Session, org_id, candidate_id, decisions: list[uuid
         for b in places[i + 1:]:
             if a.payload["country_code"] == b.payload["country_code"] or a.observed_as_of != b.observed_as_of:
                 continue
-            if a.status == "approved" and b.status == "approved":
-                continue
+            # Both approved still cannot both be true; picking one rejects the other, so the card does not come back.
             already = session.scalar(
                 select(Decision.id).join(DecisionItem, DecisionItem.decision_id == Decision.id).where(
                     Decision.type == "contradiction", Decision.sealed_at.is_(None), DecisionItem.claim_id == a.id,
@@ -298,8 +335,13 @@ def _match_now(session: Session, org_id, candidate_id, job: Job):
             for c in _live_claims(session, org_id, "job", job.id, "JobRequirementClaim") if c.payload.get("category") != "process"]
     snap = profiles.latest(session, candidate_id)
     stints, _ = profiles.inputs(session, org_id, candidate_id) if snap else ([], [])
+    from maindscout.api.brief import answers_for
+    from maindscout.api.pipeline import active_block
+
+    block = active_block(session, org_id, job.id, candidate_id)
     return matching.match(reqs, _gap_rows(session, org_id, job, candidate_id), snap.profile if snap else None, stints,
-                          (coarse.band, coarse.reason))
+                          (coarse.band, coarse.reason), answers_for(session, org_id, candidate_id),
+                          blocked=block.reason if block is not None else None)
 
 
 def snapshot_pair(session: Session, pair: CandidateJob) -> Score | None:

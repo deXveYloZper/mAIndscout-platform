@@ -7,6 +7,7 @@ claims (org-scoped), so one desk never sees another desk's people.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import func, or_, select
@@ -68,7 +69,8 @@ def _suggest_duplicates(session: Session, company: Company, org_id: uuid.UUID, s
             return
 
 
-def merge(session: Session, keep_id: uuid.UUID, drop_id: uuid.UUID) -> Company:
+def merge(session: Session, keep_id: uuid.UUID, drop_id: uuid.UUID, actor: str | None = None,
+          org_id: uuid.UUID | None = None) -> Company:
     """Fold one company into another: a redirect plus its aliases. Claims keep pointing at the old id and are read
     through the redirect, so nothing about any person is rewritten."""
     keep, drop = canonical(session, session.get(Company, keep_id)), canonical(session, session.get(Company, drop_id))
@@ -77,6 +79,7 @@ def merge(session: Session, keep_id: uuid.UUID, drop_id: uuid.UUID) -> Company:
     if keep.id == drop.id:
         return keep
     drop.merged_into_id = keep.id
+    drop.merged_by, drop.merged_by_org, drop.merged_at = actor, org_id, datetime.now(timezone.utc)
     for alias in session.scalars(select(CompanyAlias).where(CompanyAlias.company_id == drop.id)):
         alias.company_id = keep.id
     session.flush()
@@ -124,14 +127,18 @@ def company_page(session: Session, org_id: uuid.UUID, company_id: uuid.UUID) -> 
         row = grouped.setdefault(st["candidate_id"], {"candidate_id": st["candidate_id"], "name": st["name"], "roles": [], "current": False})
         row["roles"].append({k: st[k] for k in ("title", "valid_from", "valid_to", "current")})
         row["current"] = row["current"] or st["current"]
-    from maindscout.api import research
+    from maindscout.api import freshness, relationship, research
 
     return {"id": str(company.id), "name": company.name, "website": company.website, "hq_country": company.hq_country,
             "research_status": company.research_status,
             "researched_at": company.researched_at.isoformat() if company.researched_at else None,
             "facts": research.facts(session, company),
             "aliases": sorted(aliases), "people": list(grouped.values()), "people_count": len(grouped),
-            "jobs": [{"id": str(j.id), "title": j.title} for j in jobs]}
+            "jobs": [{"id": str(j.id), "title": j.title} for j in jobs],
+            "contacts": relationship.contacts_at(session, org_id, [uuid.UUID(i) for i in _ids_for(session, company)]),
+            "timeline": relationship.timeline(session, org_id, "company", company.id),
+            "last_contacted": (lambda d: d.isoformat() if d else None)(relationship.last_contacted(session, org_id, "company", company.id)),
+            "freshness": freshness.of_company(session, org_id, company)}
 
 
 def search(session: Session, org_id: uuid.UUID, q: str | None, limit: int = 50) -> list[dict[str, Any]]:
@@ -171,9 +178,9 @@ def link_org(session: Session, org_id: uuid.UUID) -> dict[str, int]:
             continue
         company, _ = resolve(session, company_part.get("raw_name", ""), "cv", org_id, claim.subject_id)
         if company is not None:
+            # The link is machine bookkeeping, not a fact: it goes on the payload only. The approved view is pinned at
+            # approval and never rewritten; readers take the company link from the payload (see profiles._view).
             claim.payload = {**claim.payload, "company": {**company_part, "company_id": str(company.id)}}
-            if claim.approved_view:
-                claim.approved_view = {**claim.approved_view, "company": {**claim.approved_view.get("company", {}), "company_id": str(company.id)}}
             linked += 1
     jobs = 0
     for job in session.scalars(select(Job).where(Job.org_id == org_id, Job.hiring_company_id.is_(None), Job.hiring_company.is_not(None))):

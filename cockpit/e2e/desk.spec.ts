@@ -118,26 +118,32 @@ test("recording a missing must-have as a fact moves the band, and the history sa
   await expect(page.locator(".bandtag").first()).toHaveText("Do not submit");
 });
 
-test("a pair moves seen, passed with a reason, reopened and submitted, all in the history", async ({ page }) => {
+test("a pair moves through the pipeline: passed with a reason, reopened, submitted, all in the history", async ({ page }) => {
   await page.goto(catalystUrl);
   await openPerson(page, "Ioannis Gkanatsios");
   await expect(page.locator(".statetag").first()).toHaveText("new");
-  await page.getByRole("button", { name: "Mark seen" }).click();
+  await page.getByLabel("Move to").selectOption("seen");
+  await page.getByRole("button", { name: "Move" }).click();
   await expect(page.locator(".statetag").first()).toHaveText("seen");
+  await page.getByLabel("Move to").selectOption("we_passed");
   await page.getByLabel("Reason for passing").selectOption("compensation");
-  await page.getByRole("button", { name: "We passed" }).click();
+  await page.getByRole("button", { name: "Move" }).click();
   await expect(page.locator(".statetag").first()).toHaveText("we passed");
-  await page.getByLabel("Reason to reopen").fill("budget raised");
-  await page.getByRole("button", { name: "Reopen" }).click();
-  await page.getByLabel("Submission note").fill("sent to the hiring lead");
-  await page.getByRole("button", { name: "Submitted" }).click();
+  await page.getByLabel("Move to").selectOption("contacted");
+  await page.getByLabel("Note for this move").fill("budget raised");
+  await page.getByRole("button", { name: "Move" }).click();
+  await expect(page.locator(".statetag").first()).toHaveText("contacted");
+  await page.getByLabel("Move to").selectOption("submitted");
+  await page.getByLabel("Note for this move").fill("sent to the hiring lead");
+  await page.getByRole("button", { name: "Move" }).click();
   await expect(page.locator(".statetag").first()).toHaveText("submitted");
   const history = page.locator(".history");
   await expect(history).toContainText("seen → we passed");
-  await expect(history).toContainText("we passed → seen");
-  await expect(history).toContainText("seen → submitted");
+  await expect(history).toContainText("we passed → contacted");
+  await expect(history).toContainText("contacted → submitted");
   await page.goto(catalystUrl);
   await expect(page.locator(".people li", { hasText: "Ioannis" }).locator(".statetag")).toHaveText("submitted");
+  await expect(page.locator(".stages")).toContainText("submitted 1");
 });
 
 test("a stale advertisement warns before anyone is submitted", async ({ page }) => {
@@ -299,6 +305,106 @@ test("a person's career profile is built in the background: dimensions, question
   await expect(page.getByLabel("Kind of work").first()).toBeVisible();
 });
 
+test("a Brief for the call: answers become official, are not asked again, and nothing is sent", async ({ page }) => {
+  await page.goto(catalystUrl);
+  await openPerson(page, "Ioannis Gkanatsios");
+  await page.getByRole("link", { name: "Brief for the call" }).click();
+  await expect(page.getByRole("heading", { name: /^Brief: Ioannis/ })).toBeVisible();
+  // Priority by default; for anyone else the recruiter can still ask for one.
+  const anyway = page.getByRole("link", { name: "Make a Brief anyway" });
+  if (await anyway.isVisible()) await anyway.click();
+  await expect(page.getByText("Nothing here is ever sent to anyone.")).toBeVisible();
+  const notice = page.locator(".brief-item", { hasText: "Notice period and availability" });
+  await notice.getByRole("textbox").fill("one month");
+  await notice.getByRole("button", { name: "Note it" }).click();
+  const answered = page.locator("section", { has: page.getByRole("heading", { name: /^Answered/ }) });
+  await expect(answered).toContainText("one month");
+  await page.reload();
+  await expect(page.locator(".brief-item.open", { hasText: "Notice period and availability" })).toHaveCount(0);
+  await expect(answered).toContainText("one month");
+});
+
+test("relationship memory: a logged call, last contacted, and a tag that becomes a talent pool", async ({ page }) => {
+  await page.goto("/people");
+  await page.locator("tbody tr").filter({ hasText: "Ioannis" }).getByRole("link", { name: /Ioannis/ }).click();
+  const rel = page.locator("section.relationship");
+  // An earlier test answered his Brief (a call), which already counts as contact; the timeline joins it all.
+  await expect(rel.locator(".timeline")).toContainText("Brief answer");
+  await rel.getByLabel("What happened, in a line").fill("Intro call, open to InSAR roles");
+  await rel.getByRole("button", { name: "Log it" }).click();
+  await expect(rel.getByRole("status")).toContainText("Logged.");
+  await expect(rel).toContainText("Last contacted: today");
+  await expect(rel.locator(".timeline")).toContainText("Intro call, open to InSAR roles");
+  await rel.getByLabel("Add a tag (talent pool)").fill("InSAR pool");
+  await rel.getByRole("button", { name: "Tag" }).click();
+  await expect(rel.locator(".chip", { hasText: "insar-pool" })).toBeVisible();
+  await page.goto("/people");
+  await page.getByRole("link", { name: /insar-pool \(1\)/ }).click();
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await expect(page.locator("tbody tr")).toContainText("Ioannis");
+});
+
+test("a message is drafted from approved facts, edited, and sent by the recruiter, never by the desk", async ({ page }) => {
+  await page.goto("/mailbox");
+  await expect(page.getByRole("button", { name: /Connect Gmail/ })).toBeVisible();
+  await page.goto("/people");
+  await page.locator("tbody tr").filter({ hasText: "Ioannis" }).getByRole("link", { name: /Ioannis/ }).click();
+  const box = page.locator("section.messages");
+  await expect(box).toContainText("Nothing is sent from here");
+  await box.getByLabel("What kind of message").selectOption("candidate_outreach");
+  await box.getByRole("button", { name: "Draft" }).click();
+  await expect(box.getByRole("status")).toContainText("Drafted below");
+  const card = box.locator(".message").first();
+  await expect(card).toContainText("First contact");
+  await expect(card).toContainText("draft here");
+  const body = await card.getByLabel("Message").inputValue();
+  expect(body).not.toMatch(/\b(priority|review later|do not submit|score|band|tier)\b|\d+\s*%/i);
+  await card.getByLabel("Message").fill(body + "\n\nP.S. Happy to talk this week.");
+  await card.getByRole("button", { name: "Save edits" }).click();
+  await expect(card.getByRole("status")).toContainText("Saved.");
+  await expect(card.getByRole("button", { name: /Put in my/ })).toHaveCount(0); // no mailbox connected
+  await card.getByRole("button", { name: "I sent it myself" }).click();
+  await expect(box.locator(".message").first()).toContainText("sent");
+  await expect(box.locator(".message").first()).toContainText("follow-up drafted");
+  await expect(page.locator("section.relationship .timeline")).toContainText(/email/i);
+});
+
+test("the Refresh page lists who to re-contact and which clients to reconnect with", async ({ page }) => {
+  await page.goto("/refresh");
+  await expect(page.getByRole("heading", { name: "Refresh" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Re-contact these people/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Clients to reconnect with/ })).toBeVisible();
+  // Everyone on this desk was read today, so nobody is stale yet.
+  await expect(page.getByText("Nobody is stale.")).toBeVisible();
+});
+
+test("import from a CSV: preview, tick what you vouch for, approved facts; export is free", async ({ page }) => {
+  await page.goto("/import");
+  await expect(page.getByRole("heading", { name: "Import and export" })).toBeVisible();
+  const csv = [
+    "Full Name,Email,City,Current Company,Job Title,Last Contacted",
+    'Maria Importer,maria.importer@example.com,"Berlin, Germany",Acme Space,Senior DevOps Engineer,2023-01-15',
+    "No Way To Reach,,London,,,",
+  ].join("\n");
+  await page.getByLabel("CSV file").setInputFiles({ name: "ats-export.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });
+  await page.getByRole("button", { name: "Preview" }).click();
+  await expect(page).toHaveURL(/\/import\//);
+  await expect(page.locator(".import-rows").first()).toContainText("Maria Importer");
+  await expect(page.locator("details.band")).toContainText("cannot use");
+  await page.getByRole("button", { name: "Import ticked rows" }).click();
+  const imported = page.locator(".import-rows li", { hasText: "Maria Importer" });
+  await expect(imported).toContainText("imported");
+  await imported.getByRole("link", { name: "open" }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Maria Importer");
+  // The old system's "last contacted" is a note, never contact.
+  await expect(page.locator("section.relationship")).toContainText("Last contacted: never");
+  await expect(page.locator("section.relationship .timeline")).toContainText("not counted as contact");
+  await page.goto("/import");
+  const download = page.waitForEvent("download");
+  await page.getByRole("link", { name: "Download everyone as CSV" }).click();
+  expect((await download).suggestedFilename()).toBe("maindscout-people.csv");
+});
+
 test("a typed contact is saved as an approved fact", async ({ page }) => {
   await openJob(page, /InSAR Processing Specialist/);
   await page.locator("summary", { hasText: /Do not submit \(\d+\)/ }).click();
@@ -338,7 +444,8 @@ test("a CV with no job joins the pool and is put on a job later", async ({ page 
   await page.getByRole("button", { name: "Put on job" }).click();
   await expect(page.locator(".people li", { hasText: "InSAR Processing Specialist" })).toContainText(/Do not submit|Priority|Review later/);
   await page.goto("/people?show=pool");
-  await expect(page.getByText("Nobody is waiting without a job.")).toBeVisible();
+  // Theodor has left the pool (people imported earlier may still be waiting in it).
+  await expect(page.locator("tbody tr", { hasText: "Theodor" })).toHaveCount(0);
 });
 
 test("forgetting a person needs a typed confirmation, then leaves nothing", async ({ page }) => {

@@ -305,3 +305,178 @@ export async function setStrength(claimId: string, path: string, form: FormData)
   await idempotent(() => apiJson(`/v1/requirements/${claimId}/strength`, { strength: String(form.get("strength")) }));
   revalidatePath(path);
 }
+
+/** Capture an answer from the call (the outcome comes from the button pressed). */
+export async function answerBrief(itemId: string, path: string, form: FormData): Promise<void> {
+  const outcome = String(form.get("outcome") || "noted");
+  const answer = String(form.get("answer") || "").trim();
+  await idempotent(() => apiJson(`/v1/brief/${itemId}/answer`, { outcome, answer: answer || null }));
+  revalidatePath(path);
+}
+
+export async function briefAsked(itemId: string, path: string): Promise<void> {
+  await idempotent(() => apiJson(`/v1/brief/${itemId}/asked`, {}));
+  revalidatePath(path);
+}
+
+export async function briefDismiss(itemId: string, path: string): Promise<void> {
+  await idempotent(() => apiJson(`/v1/brief/${itemId}/dismiss`, {}));
+  revalidatePath(path);
+}
+
+// --- relationship memory (Slice 4) ---
+
+/** Log a call, email, meeting, message or note with a person or a client. */
+export async function logActivity(subject: "candidates" | "companies", subjectId: string, path: string, _: FormState, form: FormData): Promise<FormState> {
+  const body: Record<string, unknown> = {
+    kind: String(form.get("kind") || "note"), summary: String(form.get("summary") || "").trim(),
+    direction: String(form.get("direction") || "") || null,
+    occurred_at: String(form.get("occurred_at") || "") || null,
+    job_id: String(form.get("job_id") || "") || null,
+    contact_id: String(form.get("contact_id") || "") || null,
+  };
+  if (!body.summary) return { error: "Write what happened, in a line." };
+  try {
+    await apiJson(`/v1/${subject}/${subjectId}/activities`, body);
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  return { message: "Logged." };
+}
+
+export async function removeActivity(activityId: string, path: string): Promise<void> {
+  await idempotent(() => api(`/v1/activities/${activityId}`, { method: "DELETE" }));
+  revalidatePath(path);
+}
+
+export async function tagPerson(candidateId: string, path: string, form: FormData): Promise<void> {
+  const tag = String(form.get("tag") || "").trim();
+  if (!tag) return;
+  await idempotent(() => apiJson(`/v1/candidates/${candidateId}/tags`, { tag }));
+  revalidatePath(path);
+  revalidatePath("/people");
+}
+
+export async function untagPerson(candidateId: string, tag: string, path: string): Promise<void> {
+  await idempotent(() => api(`/v1/candidates/${candidateId}/tags/${encodeURIComponent(tag)}`, { method: "DELETE" }));
+  revalidatePath(path);
+  revalidatePath("/people");
+}
+
+export async function addContact(companyId: string, path: string, _: FormState, form: FormData): Promise<FormState> {
+  const body = Object.fromEntries(["name", "role", "email", "phone", "linkedin"].map((k) => [k, String(form.get(k) || "").trim() || null]));
+  if (!body.name) return { error: "A contact needs a name." };
+  try {
+    await apiJson(`/v1/companies/${companyId}/contacts`, body);
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  return { message: "Contact added." };
+}
+
+export async function removeContact(contactId: string, path: string): Promise<void> {
+  await idempotent(() => api(`/v1/contacts/${contactId}`, { method: "DELETE" }));
+  revalidatePath(path);
+}
+
+/** Lift a client's block, with a note saying why. */
+export async function liftBlock(blockId: string, path: string, form: FormData): Promise<void> {
+  const note = String(form.get("note") || "").trim();
+  if (!note) return;
+  await idempotent(() => apiJson(`/v1/blocks/${blockId}/lift`, { note }));
+  revalidatePath(path);
+}
+
+// --- import (Slice 4, step 4) ---
+
+export async function uploadImport(form: FormData): Promise<void> {
+  const file = form.get("file");
+  if (!(file instanceof File) || !file.size) return;
+  const body = new FormData();
+  body.append("file", file);
+  body.append("kind", String(form.get("kind") || "candidates"));
+  const batch = await api<{ id: string }>("/v1/imports", { method: "POST", body });
+  redirect(`/import/${batch.id}`);
+}
+
+export async function importRows(batchId: string, path: string, form: FormData): Promise<void> {
+  const row_ids = form.getAll("row").map(String);
+  if (!row_ids.length) return;
+  await apiJson(`/v1/imports/${batchId}/import`, { row_ids });
+  revalidatePath(path);
+  revalidatePath("/people");
+}
+
+export async function acceptImportQuote(batchId: string, path: string): Promise<void> {
+  await idempotent(() => apiJson(`/v1/imports/${batchId}/quote/accept`, {}));
+  revalidatePath(path);
+}
+
+// --- messages and mailbox (Slice 4, step 5): drafts only; you send from your own mailbox ---
+
+export type MessageState = FormState & { link?: string };
+
+export async function draftMessage(candidateId: string, path: string, _: FormState, form: FormData): Promise<FormState> {
+  const kind = String(form.get("kind") || "candidate_outreach");
+  const contact = String(form.get("contact_id") || "");
+  const [contactId, contactJob] = contact ? contact.split("|") : [null, null];
+  const body = {
+    kind, candidate_id: candidateId, contact_id: contactId,
+    job_id: contactJob || String(form.get("job_id") || "") || null,
+    note: String(form.get("note") || "").trim() || null,
+  };
+  if (kind === "client_submission" && !contactId) return { error: "Choose who at the client it goes to." };
+  try {
+    await apiJson("/v1/messages", body);
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  return { message: "Drafted below. Read it, edit it, then put it in your drafts." };
+}
+
+export async function editMessage(messageId: string, path: string, _: MessageState, form: FormData): Promise<MessageState> {
+  try {
+    await api(`/v1/messages/${messageId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subject: String(form.get("subject") || ""), body: String(form.get("body") || "") }),
+    });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  return { message: "Saved." };
+}
+
+export async function messageToMailbox(messageId: string, path: string, _: MessageState): Promise<MessageState> {
+  let link: string | undefined;
+  try {
+    link = (await apiJson<{ open: string | null }>(`/v1/messages/${messageId}/mailbox`, {})).open ?? undefined;
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  return { message: "In your drafts. Send it from there.", link };
+}
+
+export async function markMessage(messageId: string, what: "sent" | "replied", path: string): Promise<void> {
+  await idempotent(() => apiJson(`/v1/messages/${messageId}/${what}`, {}));
+  revalidatePath(path);
+}
+
+export async function connectMailbox(provider: "google" | "microsoft"): Promise<void> {
+  const { url } = await apiJson<{ url: string }>(`/v1/mailbox/connect/${provider}`, {});
+  redirect(url);
+}
+
+export async function disconnectMailbox(): Promise<void> {
+  await idempotent(() => api("/v1/mailbox", { method: "DELETE" }));
+  revalidatePath("/mailbox");
+}
+
+export async function syncMailbox(path: string): Promise<void> {
+  await idempotent(() => apiJson("/v1/mailbox/sync", {}));
+  revalidatePath(path);
+}
