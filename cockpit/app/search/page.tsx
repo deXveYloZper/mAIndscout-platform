@@ -5,7 +5,11 @@ import { DOMAINS, EMPLOYER_KIND_LABEL, FAMILY_LABEL, LEVELS, READING_WORDS } fro
 
 export const metadata = { title: "Search" };
 
-type Result = { candidate_id: string; name: string | null; summary: string; reading: string; met: string[] };
+type Result = { candidate_id: string; name: string | null; summary: string; reading: string; met?: string[];
+  criteria?: { kind: string; label: string; verdict: "met" | "partly" | "missed"; detail: string }[]; met_words?: string };
+type Answer = { filters?: string[]; understood?: string[]; ignored?: string[]; people: Result[] };
+
+const MARK = { met: "✓", partly: "~", missed: "✗" } as const;
 type Company = { id: string; name: string };
 
 const PARAMS = ["family", "related", "min_years", "level", "employer", "domain", "company", "current"];
@@ -14,7 +18,8 @@ export default async function Search({ searchParams }: { searchParams: Promise<R
   const sp = await searchParams;
   const one = (k: string) => (Array.isArray(sp[k]) ? (sp[k] as string[])[0] : (sp[k] as string | undefined)) ?? "";
   const many = (k: string) => (Array.isArray(sp[k]) ? (sp[k] as string[]) : sp[k] ? [sp[k] as string] : []).filter(Boolean);
-  const asked = PARAMS.some((k) => sp[k] !== undefined);
+  const text = one("q").trim();
+  const asked = !text && PARAMS.some((k) => sp[k] !== undefined);
   const q = new URLSearchParams();
   if (one("family")) q.set("family", one("family"));
   q.set("related", asked && one("related") !== "on" ? "false" : "true");
@@ -25,7 +30,7 @@ export default async function Search({ searchParams }: { searchParams: Promise<R
   many("company").forEach((v) => q.append("company", v));
   if (one("current") === "on") q.set("current", "true");
   const [result, jobs, companies] = await Promise.all([
-    asked ? api<{ filters: string[]; people: Result[] }>(`/v1/search?${q}`) : Promise.resolve(null),
+    text ? api<Answer>(`/v1/search?q=${encodeURIComponent(text)}`) : asked ? api<Answer>(`/v1/search?${q}`) : Promise.resolve(null),
     api<JobSummary[]>("/v1/jobs"),
     api<Company[]>("/v1/companies"),
   ]);
@@ -33,7 +38,20 @@ export default async function Search({ searchParams }: { searchParams: Promise<R
   return (
     <>
       <h1>Search the desk</h1>
-      <p className="sub">Find people by what their career shows. Every filter must be met; results come newest first, never ranked by fit. People outside coverage are not searched.</p>
+      <form className="searchbar" method="get" role="search">
+        <input name="q" defaultValue={text} aria-label="Search people" autoFocus
+          placeholder="e.g. senior devops engineer in Germany with at least 3 years working with kubernetes" />
+        <button className="btn primary">Search</button>
+      </form>
+      <p className="hint">Write what you are looking for in your own words: kind of work, level, years, skills, where they live, background, industry, companies. Best matches come first, each with what it meets. People outside coverage are not searched; personality, culture or fit is never a criterion.</p>
+      {result?.understood && (
+        <p className="understood">
+          Understood as: {result.understood.length ? result.understood.map((u) => <span key={u} className="chip">{u}</span>) : <em>nothing to search by: try naming a kind of work or a skill</em>}
+          {result.ignored && result.ignored.length > 0 && <span className="sub"> · left out: {result.ignored.join(", ")}</span>}
+        </p>
+      )}
+      <details className="band" open={asked}>
+        <summary>Refine with filters</summary>
       <form className="panel searchform" method="get">
         <div className="row">
           <label>Kind of work{" "}
@@ -75,11 +93,12 @@ export default async function Search({ searchParams }: { searchParams: Promise<R
           <Link href="/search" className="sub">clear</Link>
         </div>
       </form>
+      </details>
 
       {result && (
         <>
-          <h2>{result.people.length} {result.people.length === 1 ? "person" : "people"}{result.filters.length ? `: ${result.filters.join(", ")}` : ""}</h2>
-          {result.people.length === 0 ? <p className="empty">Nobody on the desk meets all of these. Loosen a filter.</p> : (
+          <h2>{result.people.length} {result.people.length === 1 ? "person" : "people"}{result.filters?.length ? `: ${result.filters.join(", ")}` : text ? ", best matches first" : ""}</h2>
+          {result.people.length === 0 ? <p className="empty">{text ? "Nobody on the desk meets any of this." : "Nobody on the desk meets all of these. Loosen a filter."}</p> : (
             <ul className="results-list">
               {result.people.map((p) => (
                 <li key={p.candidate_id}>
@@ -88,7 +107,15 @@ export default async function Search({ searchParams }: { searchParams: Promise<R
                     <span className="sub"> · {READING_WORDS[p.reading] ?? p.reading}</span>
                   </div>
                   <div className="sub">{p.summary}</div>
-                  <div className="met">{p.met.join(" · ")}</div>
+                  {p.criteria ? (
+                    <div className="criteria">
+                      <span className="sub">{p.met_words}:</span>{" "}
+                      {p.criteria.map((c, i) => (
+                        <span key={i} className={`crit ${c.verdict}`} title={c.detail}>{MARK[c.verdict]} {c.label}</span>
+                      ))}
+                      <div className="why">{p.criteria.filter((c) => c.verdict !== "missed").map((c) => c.detail).join(" · ")}</div>
+                    </div>
+                  ) : <div className="met">{(p.met ?? []).join(" · ")}</div>}
                   {jobs.length > 0 && (
                     <form action={putOnJob.bind(null, p.candidate_id)} className="row">
                       <select name="job" aria-label={`Job to put ${p.name ?? "this person"} on`} defaultValue="">

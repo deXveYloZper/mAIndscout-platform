@@ -221,3 +221,19 @@ table.gaps tr.conflict td:first-child { border-left: 2px solid var(--red); }
 .results-list { list-style: none; padding: 0; }
 .results-list > li { padding: 10px 0; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
 .results-list .met { font-size: 12px; color: var(--cream-dim); }
+
+/* search bar (owner: search in your own words, best matches first) */
+.searchbar { display: flex; gap: 8px; margin: 10px 0 4px; }
+.searchbar input { flex: 1; min-width: 0; font: inherit; font-size: 15px; padding: 10px 12px; background: var(--bg-raise-2);
+  color: inherit; border: 1px solid var(--amber); }
+.understood { margin: 8px 0; }
+.chip { display: inline-block; border: 1px solid var(--line); padding: 1px 8px; margin: 2px 4px 2px 0; font-size: 12px; }
+.crit { font-size: 12px; margin-right: 8px; white-space: nowrap; }
+.crit.met { color: var(--amber); }
+.crit.partly { color: var(--cream); }
+.crit.missed { color: var(--cream-dim); text-decoration: line-through; }
+.criteria { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; }
+.criteria .why { width: 100%; font-size: 12px; color: var(--cream-dim); }
+.crit { white-space: normal; margin-right: 0; }
+.results-list select, .searchform select { max-width: 100%; }
+.results-list .row { flex-wrap: wrap; }

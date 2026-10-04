@@ -4,7 +4,9 @@
 **Code:** `core/maindscout/api/search.py` (filters over career profiles, target-company alumni, a job's filters), `core/maindscout/api/sourcing.py` (`ProfileAdapter`, `profile_query`, source `auto`), `core/maindscout/api/demo.py` (synthetic demo desk), cockpit `app/search/`, job page "Find more people"
 
 ## What
-- **Search the desk** by what careers show: kind of work (including related work by default), at least N years of related work, at least a level by title, at least a year at a kind of employer (start-up, scale-up, large, consultancy…), at least a year in an industry, worked (or still works) at a named company. Every filter must be met. Results come newest first, **never ranked by fit**.
+**Search in your own words** (owner's decision 2026-10-04, [ADR](../../decisions/2026-10-04-search-in-own-words.md)): one search bar; the search is read by a small model (`intelligence/query.py`, about $0.0005, cached per wording) into criteria from the fixed lists and shown as "Understood as"; results are ranked best first by code (`search.ranked`): each criterion met / partly / not met with its reason (kind of work and skills count most), "meets N of M", no score. `GET /v1/search?q=...`. The filters below remain as "Refine with filters".
+
+- **Search the desk** by what careers show: kind of work (including related work by default), at least N years of related work, at least a level by title, at least a year at a kind of employer (start-up, scale-up, large, consultancy…), at least a year in an industry, worked (or still works) at a named company. Every filter must be met. With filters only, results come newest first; a search in words is ranked best first (above).
 - **Target-company alumni:** everyone on the desk who worked at a company, and when.
 - **Sourcing v2:** "Find more people" on a job searches by its hiring profile.
   1. First the alumni of the job's target companies, because the hiring manager named them.
@@ -35,7 +37,7 @@ Plan section 4.7 and phase I6: sourcing as a structured query over profiles and 
 - `GET /v1/jobs/{id}/campaigns` adds `by_profile` (the words of the profile search, when available).
 
 ## Tests
-`core/tests/test_search.py` (5):
+`core/tests/test_nl_search.py` (3): a search in plain words is read into checked criteria (culture fit dropped, unwritten years dropped); results come best first with reasons, the same search is not read twice; verdicts met / partly / missed. `core/tests/test_search.py` (5):
 - every filter must be met, with related work counted by default;
 - the demo desk is synthetic, searchable and erasable, and archived people are never searched;
 - alumni and the search route;

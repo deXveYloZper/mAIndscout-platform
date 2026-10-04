@@ -610,13 +610,33 @@ def set_strength(claim_id: uuid.UUID, body: StrengthBody, org_id: uuid.UUID = De
     return {"id": str(claim.id), "strength": claim.payload["strength"]}
 
 
+_QUERY_CACHE: dict[str, Any] = {}
+
+
 @app.get("/v1/search")
-def search_people(family: str | None = None, related: bool = True, min_years: float | None = None, level: str | None = None,
-                  employer: list[str] = Query(default=[]), domain: list[str] = Query(default=[]),
+def search_people(q: str | None = None, family: str | None = None, related: bool = True, min_years: float | None = None,
+                  level: str | None = None, employer: list[str] = Query(default=[]), domain: list[str] = Query(default=[]),
                   company: list[str] = Query(default=[]), current: bool = False,
-                  org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
-    """Search the desk's people by career profile (structured filters; newest first, never by fit)."""
+                  org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session), llm: LLMClient = Depends(get_llm)):
+    """Search the desk's people. `q`: in the recruiter's own words, read into criteria and ranked best first, each
+    result with its reasons. Without `q`: the structured filters (every one must be met; newest first)."""
     from maindscout.api import search
+
+    if q and q.strip():
+        from maindscout.intelligence import query as reader
+
+        key = " ".join(q.lower().split())
+        parsed = _QUERY_CACHE.get(key)
+        if parsed is None:  # the same search again costs nothing
+            costs.ensure_budget(session, org_id)
+            parsed = reader.read(q.strip(), llm)
+            costs.record(session, org_id, "search_query", parsed.cost)
+            session.commit()
+            if len(_QUERY_CACHE) > 500:
+                _QUERY_CACHE.clear()
+            _QUERY_CACHE[key] = parsed
+        return {"query": q, "understood": search.understood(parsed), "ignored": parsed.ignored,
+                "people": search.ranked(session, org_id, parsed) if not parsed.empty() else []}
 
     f = search.Filters(family=family or None, related=related, min_years=min_years, level=level or None,
                        employer_kinds=[e for e in employer if e], domains=[d for d in domain if d],

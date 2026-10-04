@@ -2,6 +2,7 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-04 — Search in your own words (owner): one search bar, read into criteria by a small model and shown as "Understood as"; results ranked best first by code with ✓ ~ ✗ reasons per criterion; filters kept as "Refine" — [ADR](../decisions/2026-10-04-search-in-own-words.md)
 - 2026-10-04 — I6: people search over career profiles (kind of work, years, level, background, industry, worked at), target-company alumni, "Find more people" by hiring profile (alumni first, then profile matches; matching decides), keyword fallback; Search page; synthetic demo desk (`demo-seed` / `demo-clear`) for testing at size — [people-search](components/people-search.md)
 - 2026-10-04 — **I5 gate GREEN**, declared by the owner; I6 starts — [decision](../decisions/2026-10-04-i5-gate.md)
 - 2026-10-04 — I5: matching v2. Verdict per requirement from career and hiring profiles; tier by visible rules (today's InSAR rule first, not wanted, substitution, domain over seniority, contractor fit, must-have gaps, partly met, strong match); band follows the tier, token triage as fallback; match panel on the person-on-job page; `rematch` — [matching](components/matching.md)
