@@ -17,6 +17,7 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
 - **Costs (`/costs`):** this month's spend against the budget, by purpose and day.
 - **Companies (`/companies`, `/companies/[id]`):** search; who we know at a company (one row per person, all roles); the company's jobs; its public facts, each with the page and quote it came from, and "Research now" ([company-research.md](company-research.md)). Career rows on a person link to their company.
 - **People (`/people`):** everyone, or only those on no job (the pool); upload CVs without a job.
+- **Import (`/import`) ([imports.md](imports.md)):** upload a CSV, preview, tick what you vouch for, free allowance shown, quote beyond it; download everyone as CSV.
 - **Refresh (`/refresh`) ([freshness.md](freshness.md)):** stale people to re-contact, most valuable first with why; stale clients to reconnect with; stale tags on People, person and company pages.
 - **Pipeline ([pipeline.md](pipeline.md)):** "Move to" on the gap table with the notes and reasons each move needs; stage counts on the job page; "blocked by client" tags; blocks with "Lift block" on the person page.
 - **Relationship ([relationship-memory.md](relationship-memory.md)):** on the person and company pages, last contacted / verified, log a call or note, the timeline; tags on people and talent-pool filters on People; contacts at client companies.

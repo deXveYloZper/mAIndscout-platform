@@ -283,3 +283,8 @@ form.inline { display: inline; margin-left: 6px; }
 /* freshness (Slice 4 step 3) */
 .stale-note { color: var(--amber); font-size: 13px; margin: 4px 0 8px; }
 .stale-tag { font-size: 11px; color: var(--amber); border: 1px dashed var(--amber); padding: 0 6px; margin-left: 6px; }
+
+/* import (Slice 4 step 4) */
+.import-rows { list-style: none; padding: 0; }
+.import-rows li { padding: 4px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.import-rows li.invalid, .import-rows li.duplicate { opacity: 0.75; }

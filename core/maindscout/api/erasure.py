@@ -44,6 +44,7 @@ from maindscout.db.models import (
     Activity,
     CandidateTag,
     ClientBlock,
+    ImportRow,
     SuppressionEntry,
 )
 from maindscout.settings import env
@@ -138,6 +139,7 @@ def erase_candidate(session: Session, blobs: BlobStore, org_id: uuid.UUID, candi
     run("activities", delete(Activity).where(Activity.subject_type == "candidate", Activity.subject_id == candidate_id))
     run("tags", delete(CandidateTag).where(CandidateTag.candidate_id == candidate_id))
     run("client_blocks", delete(ClientBlock).where(ClientBlock.candidate_id == candidate_id))
+    run("import_rows", delete(ImportRow).where(ImportRow.candidate_id == candidate_id))
     run("observations", delete(ClaimObservation).where(ClaimObservation.claim_id.in_(claim_ids)))
     run("evidence", delete(Evidence).where(or_(Evidence.claim_id.in_(claim_ids), Evidence.document_id.in_(doc_ids))))
     session.execute(update(Claim).where(Claim.superseded_by.in_(claim_ids)).values(superseded_by=None))
@@ -219,6 +221,7 @@ def verify_erasure(session: Session, blobs: BlobStore, org_id: uuid.UUID, candid
         ("activities", count(Activity, (Activity.subject_type == "candidate") & (Activity.subject_id == candidate_id))),
         ("tags", count(CandidateTag, CandidateTag.candidate_id == candidate_id)),
         ("client blocks", count(ClientBlock, ClientBlock.candidate_id == candidate_id)),
+        ("import rows", count(ImportRow, ImportRow.candidate_id == candidate_id)),
         ("document links", count(DocumentSubject, DocumentSubject.subject_id == candidate_id)),
         ("not-same records", count(NotSame, or_(NotSame.candidate_a == candidate_id, NotSame.candidate_b == candidate_id))),
         ("candidates redirected to this person", count(Candidate, Candidate.merged_into_id == candidate_id)),

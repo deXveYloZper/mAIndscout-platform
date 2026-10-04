@@ -353,6 +353,33 @@ test("the Refresh page lists who to re-contact and which clients to reconnect wi
   await expect(page.getByText("Nobody is stale.")).toBeVisible();
 });
 
+test("import from a CSV: preview, tick what you vouch for, approved facts; export is free", async ({ page }) => {
+  await page.goto("/import");
+  await expect(page.getByRole("heading", { name: "Import and export" })).toBeVisible();
+  const csv = [
+    "Full Name,Email,City,Current Company,Job Title,Last Contacted",
+    'Maria Importer,maria.importer@example.com,"Berlin, Germany",Acme Space,Senior DevOps Engineer,2023-01-15',
+    "No Way To Reach,,London,,,",
+  ].join("\n");
+  await page.getByLabel("CSV file").setInputFiles({ name: "ats-export.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });
+  await page.getByRole("button", { name: "Preview" }).click();
+  await expect(page).toHaveURL(/\/import\//);
+  await expect(page.locator(".import-rows").first()).toContainText("Maria Importer");
+  await expect(page.locator("details.band")).toContainText("cannot use");
+  await page.getByRole("button", { name: "Import ticked rows" }).click();
+  const imported = page.locator(".import-rows li", { hasText: "Maria Importer" });
+  await expect(imported).toContainText("imported");
+  await imported.getByRole("link", { name: "open" }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Maria Importer");
+  // The old system's "last contacted" is a note, never contact.
+  await expect(page.locator("section.relationship")).toContainText("Last contacted: never");
+  await expect(page.locator("section.relationship .timeline")).toContainText("not counted as contact");
+  await page.goto("/import");
+  const download = page.waitForEvent("download");
+  await page.getByRole("link", { name: "Download everyone as CSV" }).click();
+  expect((await download).suggestedFilename()).toBe("maindscout-people.csv");
+});
+
 test("a typed contact is saved as an approved fact", async ({ page }) => {
   await openJob(page, /InSAR Processing Specialist/);
   await page.locator("summary", { hasText: /Do not submit \(\d+\)/ }).click();
@@ -392,7 +419,8 @@ test("a CV with no job joins the pool and is put on a job later", async ({ page 
   await page.getByRole("button", { name: "Put on job" }).click();
   await expect(page.locator(".people li", { hasText: "InSAR Processing Specialist" })).toContainText(/Do not submit|Priority|Review later/);
   await page.goto("/people?show=pool");
-  await expect(page.getByText("Nobody is waiting without a job.")).toBeVisible();
+  // Theodor has left the pool (people imported earlier may still be waiting in it).
+  await expect(page.locator("tbody tr", { hasText: "Theodor" })).toHaveCount(0);
 });
 
 test("forgetting a person needs a typed confirmation, then leaves nothing", async ({ page }) => {

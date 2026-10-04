@@ -24,6 +24,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/inbox">Inbox</Link>
             <Link href="/search">Search</Link>
             <Link href="/refresh">Refresh</Link>
+            <Link href="/import">Import</Link>
             <Link href="/costs">Costs</Link>
           </nav>
         </header>

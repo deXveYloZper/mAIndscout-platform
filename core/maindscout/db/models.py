@@ -577,6 +577,45 @@ class ClientBlock(Base):
     lift_note: Mapped[str | None] = mapped_column(Text)
 
 
+IMPORT_KINDS = ("candidates", "clients")
+IMPORT_ROW_STATUS = ("ready", "duplicate", "invalid", "imported", "skipped", "held")
+
+
+class ImportBatch(Base):
+    """One uploaded file (Slice 4, step 4). Rows are previewed first; only rows the account holder ticks are imported,
+    within the free allowance (100 candidates, 25 clients per account). The rest are held with a quote."""
+
+    __tablename__ = "import_batch"
+    __table_args__ = (CheckConstraint(_in("kind", IMPORT_KINDS), name="import_kind"),)
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    filename: Mapped[str | None] = mapped_column(String)
+    columns: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)  # our field -> the file's column
+    quote_usd: Mapped[float | None] = mapped_column(Numeric(10, 2))
+    quote_accepted_by: Mapped[str | None] = mapped_column(String)
+    quote_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = _created()
+
+
+class ImportRow(Base):
+    __tablename__ = "import_row"
+    __table_args__ = (CheckConstraint(_in("status", IMPORT_ROW_STATUS), name="import_row_status"),
+                      Index("ix_import_row_batch", "batch_id", "row_no"))
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    batch_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("import_batch.id"), nullable=False)
+    row_no: Mapped[int] = mapped_column(nullable=False)
+    data: Mapped[dict] = mapped_column(JSONB, nullable=False)  # our fields, as read
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text)
+    candidate_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("candidate.id", ondelete="SET NULL"))
+    company_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("company.id"))
+    imported_by: Mapped[str | None] = mapped_column(String)
+    imported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class CandidateTag(Base):
     """A tag on a person; a tag is also a talent pool ("insar-pool", "warm-2026")."""
 

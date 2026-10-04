@@ -388,3 +388,28 @@ export async function liftBlock(blockId: string, path: string, form: FormData): 
   await idempotent(() => apiJson(`/v1/blocks/${blockId}/lift`, { note }));
   revalidatePath(path);
 }
+
+// --- import (Slice 4, step 4) ---
+
+export async function uploadImport(form: FormData): Promise<void> {
+  const file = form.get("file");
+  if (!(file instanceof File) || !file.size) return;
+  const body = new FormData();
+  body.append("file", file);
+  body.append("kind", String(form.get("kind") || "candidates"));
+  const batch = await api<{ id: string }>("/v1/imports", { method: "POST", body });
+  redirect(`/import/${batch.id}`);
+}
+
+export async function importRows(batchId: string, path: string, form: FormData): Promise<void> {
+  const row_ids = form.getAll("row").map(String);
+  if (!row_ids.length) return;
+  await apiJson(`/v1/imports/${batchId}/import`, { row_ids });
+  revalidatePath(path);
+  revalidatePath("/people");
+}
+
+export async function acceptImportQuote(batchId: string, path: string): Promise<void> {
+  await idempotent(() => apiJson(`/v1/imports/${batchId}/quote/accept`, {}));
+  revalidatePath(path);
+}

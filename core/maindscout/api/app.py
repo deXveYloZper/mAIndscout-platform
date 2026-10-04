@@ -840,3 +840,68 @@ def refresh_lists(org_id: uuid.UUID = Depends(get_org), session: Session = Depen
 
     return {"person_months": freshness.person_months(), "company_months": freshness.company_months(),
             "people": freshness.recontact(session, org_id), "clients": freshness.reconnect(session, org_id)}
+
+
+# --- import and export (Slice 4, step 4) ---------------------------------------------------------
+
+@app.get("/v1/imports")
+def list_imports(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    from maindscout.api import imports
+
+    return imports.batches(session, org_id)
+
+
+@app.post("/v1/imports", status_code=201)
+async def upload_import(file: UploadFile = File(...), kind: str = Form("candidates"), org_id: uuid.UUID = Depends(get_org),
+                        session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Upload a CSV of candidates or clients: a preview, nothing imported yet."""
+    from maindscout.api import imports
+
+    raw = await file.read()
+    if len(raw) > 10 * 1024 * 1024:
+        raise HTTPException(413, "The file is over 10 MB")
+    batch = imports.upload(session, org_id, kind, file.filename, raw, actor)
+    session.commit()
+    return imports.view(session, batch)
+
+
+@app.get("/v1/imports/{batch_id}")
+def get_import(batch_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    from maindscout.api import imports
+
+    return imports.view(session, imports.get(session, org_id, batch_id))
+
+
+class ImportRowsBody(BaseModel):
+    row_ids: list[uuid.UUID]
+
+
+@app.post("/v1/imports/{batch_id}/import")
+def import_rows(batch_id: uuid.UUID, body: ImportRowsBody, org_id: uuid.UUID = Depends(get_org),
+                session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Import the ticked rows (the account holder vouches for them), within the free allowance."""
+    from maindscout.api import imports
+
+    result = imports.import_rows(session, org_id, batch_id, body.row_ids, actor)
+    session.commit()
+    return {**result, "batch": imports.view(session, imports.get(session, org_id, batch_id))}
+
+
+@app.post("/v1/imports/{batch_id}/quote/accept")
+def accept_import_quote(batch_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                        actor: str = Depends(get_actor)):
+    """Order the paid analysis of the rows beyond the free allowance (compute cost x 1.9)."""
+    from maindscout.api import imports
+
+    result = imports.accept_quote(session, org_id, batch_id, actor)
+    session.commit()
+    return result
+
+
+@app.get("/v1/export/people.csv")
+def export_people(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """The desk's own people as CSV. Always free."""
+    from maindscout.api import imports
+
+    return Response(imports.export_people(session, org_id), media_type="text/csv",
+                    headers={"Content-Disposition": 'attachment; filename="maindscout-people.csv"'})
