@@ -23,7 +23,7 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 | I6 | Sourcing v2 | **gate GREEN** 2026-10-04 ([decision](../decisions/2026-10-04-i6-gate.md)) |
 | I7 | Calibration from real decisions (band changes, pass reasons) | ongoing; first review after about 50 real decisions |
 
-**Current slice:** 4, live desk ([plan](../slice-4/PLAN.md)): unlocked, not started; needs the owner's choices (which ATS, how drafts are sent).
+**Current slice:** 4, ATS core and import ([plan](../slice-4/PLAN.md)): rescoped by the owner (we are the source of truth; import 100 candidates / 25 clients free, more as paid analysis at compute cost + 90%, [decision](../decisions/2026-10-04-source-of-truth-and-imports.md)); plan waiting for approval.
 
 Slice 3 (the Brief, closed): built 2026-10-04 ([brief](components/brief.md)).
 

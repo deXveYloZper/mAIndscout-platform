@@ -37,7 +37,7 @@ Triage may use **proposed** facts. It does not pin official belief. Approving a 
 | **1** | Defendable match | Gap table; pairs persist; coverage floor (no fake composite); mobility as three facts | Slice 0 gate green | [slice-1/PLAN.md](slice-1/PLAN.md) |
 | **2** | Sourcing feeder | When a job’s priority queue is thin, a bounded search feeds **the same** ingest + triage | Slice 1 gate green | [slice-2/PLAN.md](slice-2/PLAN.md) |
 | **3** | Brief | Call checklist on **priority** people; tick → official fact; items stay dead | Slice 2 gate green *or* Slice 1 green if inbound is already enough | [slice-3/PLAN.md](slice-3/PLAN.md) |
-| **4** | Live desk | ATS attach; drafts; inbound halt; client-block | Slice 3 gate green | [slice-4/PLAN.md](slice-4/PLAN.md) |
+| **4** | ATS core and import | Relationship memory; full pipeline to placed; client feedback and block; freshness; import 100 / 25 free, more as paid analysis; drafts with reply halt (rescoped 2026-10-04: [decision](decisions/2026-10-04-source-of-truth-and-imports.md)) | Slice 3 gate green | [slice-4/PLAN.md](slice-4/PLAN.md) |
 | **5** | Depth | Company resolution, research snapshots, critic, embeddings, BD two-stage | Slice 4 green **and** a desk running live reqs | [slice-5/PLAN.md](slice-5/PLAN.md) |
 
 Slice 3 may start in parallel with Slice 2 only if a human records that inbound volume is already enough. Sourcing does not block the Brief if the desk is already talking to priority people.
