@@ -1,6 +1,6 @@
 # Slice 4 — Live desk
 
-**Status: LOCKED.** Do not start until Slice 3’s gate is green.
+**Status: UNLOCKED** 2026-10-04 (Slice 3 gate green, [decision](../decisions/2026-10-04-slice-3-gate.md)). Not started: waiting for the owner's choices.
 
 ---
 
