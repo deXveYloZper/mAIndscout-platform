@@ -10,6 +10,8 @@
     python -m maindscout coverage-check      apply the coverage rule to everyone already on the desk (free)
     python -m maindscout profiles-rebuild [--reclassify]  rebuild career profiles (reclassify: read step labels again, paid)
     python -m maindscout rematch             match every person on every job again (free)
+    python -m maindscout demo-seed [--count 60]  add synthetic demo people ("Demo · ", @example.invalid) for testing
+    python -m maindscout demo-clear          erase every demo person
     python -m maindscout worker [--threads 2] run background tasks (serve also starts workers unless --no-workers)
 """
 
@@ -108,6 +110,9 @@ def main() -> None:
     p_prof = sub.add_parser("profiles-rebuild")
     p_prof.add_argument("--reclassify", action="store_true")
     sub.add_parser("rematch")
+    p_demo = sub.add_parser("demo-seed")
+    p_demo.add_argument("--count", type=int, default=60)
+    sub.add_parser("demo-clear")
     p_reset = sub.add_parser("reset-db")
     p_reset.add_argument("name")
     p_reset.add_argument("--org-id", required=True)
@@ -191,6 +196,23 @@ def main() -> None:
                 changed += retriage_pair(session, pair, {"act": "rematch"}, "system") is not None
             session.commit()
             print(f"bands changed: {changed}")
+    elif args.cmd in ("demo-seed", "demo-clear"):
+        import os
+
+        from maindscout.api import demo
+        from maindscout.db.models import PUBLIC_ORG_ID
+        from maindscout.settings import env
+        from maindscout.storage import LocalBlobStore
+
+        os.environ.setdefault("PROFILE_AUTO", "false")  # profiles are built right here; no background work needed
+        _seed()
+        with make_session_factory(make_engine())() as session:
+            org = session.scalar(select(Org).where(Org.id != PUBLIC_ORG_ID).order_by(Org.created_at))
+            if args.cmd == "demo-seed":
+                print(demo.seed(session, org.id, args.count))
+            else:
+                print(f"erased {demo.clear(session, LocalBlobStore(env('BLOB_DIR')), org.id)} demo people")
+            session.commit()
     elif args.cmd == "reset-db":
         reset_db(args.name, args.org_id)
     elif args.cmd == "eval":

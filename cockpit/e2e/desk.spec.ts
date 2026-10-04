@@ -183,6 +183,18 @@ test("a thin job is refilled from the desk's own people, banded by the same rule
   await expect(page.locator(".history")).toContainText("sourced");
 });
 
+test("the desk is searched in plain words, best matches first, each with its reasons", async ({ page }) => {
+  await page.goto("/search");
+  await expect(page.getByRole("heading", { name: "Search the desk" })).toBeVisible();
+  await page.getByLabel("Search people").fill("senior software engineer with react, based in the UK");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page).toHaveURL(/q=senior/);
+  // The search is read by a model into criteria the recruiter can see, then ranked by code.
+  await expect(page.locator(".understood")).toContainText("Understood as:", { timeout: 60_000 });
+  await expect(page.getByRole("heading", { name: /^\d+ (person|people)/ })).toBeVisible();
+  await expect(page.locator("body")).not.toContainText(/\d+\s*%/);
+});
+
 test("companies from CVs are shared records: who do we know there", async ({ page }) => {
   await page.goto("/companies");
   await expect(page.getByRole("heading", { name: "Companies" })).toBeVisible();

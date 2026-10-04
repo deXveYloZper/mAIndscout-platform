@@ -16,7 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from maindscout.api.process import _ensure_pair
-from maindscout.db.models import Campaign, Candidate, CandidateJob, Claim, Job
+from maindscout.db.models import Campaign, Candidate, CandidateJob, CareerProfile, Claim, Job
 from maindscout.intelligence.triage import supports
 
 DEFAULT_TARGET = 5
@@ -32,7 +32,7 @@ class SourcingError(ValueError):
 class SourceAdapter(Protocol):
     name: str
 
-    def find(self, session: Session, org_id: uuid.UUID, job: Job, tokens: list[str], limit: int) -> list[uuid.UUID]:
+    def find(self, session: Session, org_id: uuid.UUID, job: Job, query: dict, limit: int) -> list[uuid.UUID]:
         """Up to `limit` candidate ids not yet on the job, in a fixed order that is NOT a ranking by fit."""
 
 
@@ -42,7 +42,8 @@ class DeskAdapter:
 
     name = "desk"
 
-    def find(self, session: Session, org_id: uuid.UUID, job: Job, tokens: list[str], limit: int) -> list[uuid.UUID]:
+    def find(self, session: Session, org_id: uuid.UUID, job: Job, query: dict, limit: int) -> list[uuid.UUID]:
+        tokens = query["tokens"]
         on_job = select(CandidateJob.candidate_id).where(CandidateJob.job_id == job.id)
         people = session.scalars(select(Candidate).where(Candidate.org_id == org_id, Candidate.merged_into_id.is_(None),
                                                          Candidate.id.not_in(on_job)).order_by(Candidate.created_at.desc()))
@@ -63,7 +64,44 @@ class DeskAdapter:
         return found
 
 
-ADAPTERS: dict[str, SourceAdapter] = {"desk": DeskAdapter()}
+class ProfileAdapter:
+    """I6: the desk's people by career profile. First the alumni of the job's target companies (the hiring manager
+    named them), then everyone whose profile meets the job's must-haves; newest first within each. The order is by
+    channel, never by fit: matching decides the band of everyone found."""
+
+    name = "profile"
+
+    def find(self, session: Session, org_id: uuid.UUID, job: Job, query: dict, limit: int) -> list[uuid.UUID]:
+        from maindscout.api import coverage, search
+
+        on_job = set(session.scalars(select(CandidateJob.candidate_id).where(CandidateJob.job_id == job.id)))
+        found: list[uuid.UUID] = []
+        channels = []
+        if query.get("targets"):
+            channels.append(search.Filters(company_ids=query["targets"]))
+        channels.append(search.Filters(**query["filters"]))
+        for f in channels:
+            for row in search.search(session, org_id, f, exclude=on_job | set(found)):
+                cid = uuid.UUID(row["candidate_id"])
+                if coverage.would_accept(session, org_id, cid, job):
+                    found.append(cid)
+                    if len(found) >= limit:
+                        return found
+        return found
+
+
+ADAPTERS: dict[str, SourceAdapter] = {"desk": DeskAdapter(), "profile": ProfileAdapter()}
+
+
+def profile_query(session: Session, job: Job) -> dict | None:
+    """The profile search a job's hiring profile gives, or None if it gives nothing to search by."""
+    from maindscout.api import search
+
+    f, targets = search.job_filters(session, job)
+    if not (f.family or f.employer_kinds or f.domains or targets):
+        return None
+    words = f.words() + ([f"alumni of {len(targets)} target compan{'y' if len(targets) == 1 else 'ies'} first"] if targets else [])
+    return {"filters": f.as_dict(), "targets": targets, "words": words}
 
 
 def query_tokens(session: Session, job: Job) -> list[str]:
@@ -80,11 +118,13 @@ def priority_count(session: Session, job_id: uuid.UUID) -> int:
         CandidateJob.job_id == job_id, CandidateJob.triage_band == "priority")) or 0
 
 
-def start(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str, source: str = "desk",
+def start(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str, source: str = "auto",
           cap: int = DEFAULT_CAP, target: int = DEFAULT_TARGET) -> Campaign:
     job = session.get(Job, job_id)
     if job is None or job.org_id != org_id:
         raise LookupError(f"No job {job_id}")
+    if source == "auto":  # the hiring profile when it gives something to search by and people have profiles
+        source = "profile" if profile_query(session, job) and session.scalar(select(func.count()).select_from(CareerProfile)) else "desk"
     if source not in ADAPTERS:
         raise SourcingError(f"Unknown source {source!r}; available: {sorted(ADAPTERS)}")
     if not 1 <= cap <= MAX_CAP or not 1 <= target <= 100:
@@ -93,10 +133,16 @@ def start(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str, so
         raise SourcingError(f"This job already has {target} or more priority people; sourcing is for a thin queue")
     if session.scalar(select(Campaign.id).where(Campaign.job_id == job.id, Campaign.status == "running")):
         raise SourcingError("A campaign is already running for this job")
-    tokens = query_tokens(session, job)
-    if not tokens:
-        raise SourcingError("This job has no must-have skills to search for yet")
-    campaign = Campaign(org_id=org_id, job_id=job.id, source=source, query={"tokens": tokens}, cap=cap,
+    if source == "profile":
+        query = profile_query(session, job)
+        if query is None:
+            raise SourcingError("This job's hiring profile gives nothing to search by yet (no role, background, industry or target companies)")
+    else:
+        tokens = query_tokens(session, job)
+        if not tokens:
+            raise SourcingError("This job has no must-have skills to search for yet")
+        query = {"tokens": tokens}
+    campaign = Campaign(org_id=org_id, job_id=job.id, source=source, query=query, cap=cap,
                         target_priority=target, created_by=actor)
     session.add(campaign)
     session.flush()
@@ -112,7 +158,7 @@ def run(session: Session, campaign: Campaign) -> Campaign:
             return _end(campaign, "stopped", "target_reached")
         if campaign.spent >= campaign.cap:
             return _end(campaign, "stopped", "cap")
-        batch = adapter.find(session, campaign.org_id, job, campaign.query["tokens"], limit=1)
+        batch = adapter.find(session, campaign.org_id, job, campaign.query, limit=1)
         if not batch:
             return _end(campaign, "exhausted", None)
         campaign.spent += 1
