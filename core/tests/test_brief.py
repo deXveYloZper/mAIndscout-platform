@@ -127,3 +127,25 @@ def test_job_questions_come_must_haves_first_and_where_they_live_last():
             {"requirement_id": "3", "requirement": "InSAR", "kind": "skill", "strength": "must", "verdict": "ask", "detail": ""},
             {"requirement_id": "4", "requirement": "Start-up", "kind": "employer", "strength": "strong_plus", "verdict": "gap", "detail": "none"}]
     assert [i.source_key for i in compiler.for_job(rows)] == ["req:3", "req:4", "req:1", "req:2"]
+
+
+def test_every_question_that_needs_it_says_why_in_one_line():
+    from maindscout.domain import brief as compiler
+
+    rows = [{"requirement_id": "1", "requirement": "InSAR", "kind": "skill", "strength": "must", "verdict": "ask", "detail": ""},
+            {"requirement_id": "2", "requirement": "Start-up", "kind": "employer", "strength": "strong_plus", "verdict": "gap", "detail": "none"},
+            {"requirement_id": "3", "requirement": "Unix", "kind": "skill", "strength": "nice", "verdict": "ask", "detail": ""}]
+    items = {i.source_key: i for i in compiler.for_job(rows, "CATALYST", {"2": "intake"})}
+    assert items["req:1"].why == "Required by CATALYST (a must-have); the CV cannot confirm it."
+    assert items["req:2"].why.startswith("The hiring manager asked for this (a strong plus)")
+    assert items["req:3"].why.startswith("Nice to have for CATALYST")
+    person = {i.source_key: i for i in compiler.for_person({"questions": ["What were they doing between Aug 2025 and Mar 2026?"]}, [], False)}
+    gap = next(i for k, i in person.items() if k.startswith("career:"))
+    assert gap.why == "A gap from Aug 2025 to Mar 2026: clients ask, so have the answer ready."
+    assert person["std:salary"].why is None and person["std:location"].why is None, "obvious questions need no reason"
+
+
+def test_the_brief_says_who_this_is_and_why_they_are_on_the_list(client, fake, session):
+    job, cid = priority_job(client, fake)
+    head = brief(client, job, cid)["header"]
+    assert head["band"] == "priority" and head["why"]

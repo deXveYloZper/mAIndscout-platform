@@ -48,7 +48,11 @@ def _sources(session: Session, org_id, pair: CandidateJob) -> list[compiler.Item
                     Claim.status == "proposed", Claim.flags["possible_ocr_identifier"].astext == "true"))]
     lives = coverage.signals(session, org_id, pair.candidate_id)[0]
     items = compiler.for_person(snap.profile if snap else None, suspects, bool(lives))
-    items += compiler.for_job((pair.match or {}).get("rows") or [])
+    job = session.get(Job, pair.job_id)
+    sources = {str(c.id): (c.approved_view or c.payload).get("source") or "ad"
+               for c in session.scalars(select(Claim).where(Claim.subject_id == job.id, Claim.claim_type == "JobRequirementClaim",
+                                                            Claim.status.in_(LIVE)))}
+    items += compiler.for_job((pair.match or {}).get("rows") or [], job.hiring_company or "the company", sources)
     return items
 
 
@@ -81,6 +85,52 @@ def build(session: Session, org_id, job_id: uuid.UUID, candidate_id: uuid.UUID, 
             row.status, row.updated_at = "expired", now
     session.flush()
     return items_for(session, job_id, candidate_id)
+
+
+def header(session: Session, org_id, job_id: uuid.UUID, candidate_id: uuid.UUID) -> dict[str, Any]:
+    """Who this is and why they are on the call list, in two lines (for a recruiter who has never seen them)."""
+    from maindscout.api import profiles
+
+    pair = _pair(session, org_id, job_id, candidate_id)
+    snap = profiles.latest(session, candidate_id)
+    rules = {r["id"]: r for r in (pair.match or {}).get("rules") or []}
+    text = None
+    if "strong_match" in rules:
+        text = "Strong match: every must-have met or only to ask"
+        detail = rules["strong_match"].get("detail") or ""
+        if "strong-plus" in detail:
+            text += f"; {detail}"
+    elif "partial_must" in rules:
+        text = f"Possible match: {rules['partial_must'].get('detail')}"
+    elif "must_gaps" in rules:
+        text = f"Possible match: a must-have is a gap ({rules['must_gaps'].get('detail')})"
+    extras = {"domain_over_seniority": "a strong industry match outweighs one level below",
+              "substitution": "one requirement stands in for another, as the intake allows",
+              "contractor_fit": "long contract engagements fit this contract job"}
+    if text:
+        text += "".join(f"; {words}" for rid, words in extras.items() if rid in rules) + "."
+    else:
+        text = reason_words(pair.triage_reason)
+    return {"summary": snap.profile["summary"] if snap else None, "reading": snap.profile["reading"]["label"] if snap else None,
+            "band": pair.triage_band, "tier": pair.match_tier, "why": text}
+
+
+def reason_words(reason: str | None) -> str | None:
+    """The pair's band reason in plain words (when no matching rule explains it yet)."""
+    if not reason:
+        return None
+    code, _, rest = reason.partition(":")
+    if code == "supported":
+        return f"Has {rest.replace(',', ', ')}, a must-have that decides the band."
+    if code == "no_support_for_must_have":
+        return f"No evidence of {rest}, a must-have that decides the band."
+    if code == "human_override":
+        return f"Set by hand: {rest}"
+    if code == "match":
+        return rest.partition(":")[2] or rest
+    if code == "no_distinctive_requirements":
+        return "The job has no must-have that decides the band yet."
+    return reason
 
 
 def items_for(session: Session, job_id: uuid.UUID, candidate_id: uuid.UUID) -> list[BriefItem]:

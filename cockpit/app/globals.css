@@ -246,3 +246,6 @@ table.gaps tr.conflict td:first-child { border-left: 2px solid var(--red); }
 .brief-item.gone { opacity: 0.6; }
 .brief-item .answer { flex-wrap: wrap; gap: 6px; }
 .brief-item .answer input { min-width: 0; max-width: 100%; }
+
+.brief-head { border-left: 2px solid var(--amber); padding: 4px 10px; margin: 8px 0; }
+.why-line { font-size: 12px; color: var(--cream-dim); font-style: italic; }

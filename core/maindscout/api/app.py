@@ -659,9 +659,9 @@ def get_brief(job_id: uuid.UUID, candidate_id: uuid.UUID, force: bool = False, o
         items = brief.build(session, org_id, job_id, candidate_id, force=force)
     except brief.BriefError as error:
         session.rollback()
-        return {"available": False, "reason": str(error), "items": []}
+        return {"available": False, "reason": str(error), "items": [], "header": brief.header(session, org_id, job_id, candidate_id)}
     session.commit()
-    return {"available": True, "items": [brief.as_dict(i) for i in items]}
+    return {"available": True, "items": [brief.as_dict(i) for i in items], "header": brief.header(session, org_id, job_id, candidate_id)}
 
 
 @app.post("/v1/brief/{item_id}/answer")

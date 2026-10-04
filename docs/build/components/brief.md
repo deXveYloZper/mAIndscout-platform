@@ -19,6 +19,13 @@ A checklist for the recruiter's call with a priority person on a job, compiled f
 
 Must-haves come first.
 
+**Why, in one line** (owner, 2026-10-04): every question that isn't self-explanatory says why it's asked, so a recruiter who has never seen the person can work through Briefs at speed:
+- job questions say who wants it and how much ("Required by CATALYST (a must-have); the CV cannot confirm it", "The hiring manager asked for this (a strong plus)…");
+- career questions say what's unusual ("A gap from Aug 2025 to Mar 2026: clients ask, so have the answer ready");
+- salary, notice period, where they live, and openness to other roles carry no reason.
+
+A two-line header says who the person is (the career profile's summary) and why they're on the call list, in plain words (e.g. "Strong match: every must-have met or only to ask; a strong industry match outweighs one level below").
+
 **Answering:** you capture the answer on the item as confirmed, not met or a note. It becomes an approved fact with you as the source, and the person is re-matched at once. **Nothing is ever sent to anyone.**
 
 ## Why
@@ -52,7 +59,7 @@ Blueprint Feature 9 and the Slice 3 plan: the Brief is the interface of a loop, 
 - `POST /v1/brief/{item}/answer {outcome, answer}`, `POST /v1/brief/{item}/asked`, `POST /v1/brief/{item}/dismiss`.
 
 ## Tests
-`core/tests/test_brief.py` (9):
+`core/tests/test_brief.py` (11), including that every question that needs one says why in a line, and that the header says why the person is on the list:
 - briefs are for priority people by default;
 - person and job questions come from templates;
 - an answer becomes an official fact and settles its requirement;

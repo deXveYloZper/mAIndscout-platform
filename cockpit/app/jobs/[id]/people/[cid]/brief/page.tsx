@@ -6,7 +6,8 @@ export const metadata = { title: "Brief" };
 
 type Item = { id: string; scope: "person" | "job"; kind: string; question: string; why: string | null; status: string;
   outcome: string | null; answer: string | null; answered_by: string | null };
-type Brief = { available: boolean; reason?: string; items: Item[] };
+type Brief = { available: boolean; reason?: string; items: Item[];
+  header?: { summary: string | null; reading: string | null; band: string; tier: string | null; why: string | null } };
 type GapHead = { job: { id: string; title: string }; person: { id: string; name: string | null } };
 
 const OUTCOME: Record<string, string> = { confirmed: "Confirmed", not_met: "Not met", noted: "Noted" };
@@ -15,7 +16,7 @@ function Open({ item, path }: { item: Item; path: string }) {
   return (
     <li className={`brief-item ${item.status}`}>
       <div className="q">{item.question}</div>
-      {item.why && <div className="sub">{item.why}</div>}
+      {item.why && <div className="why-line">Why: {item.why}</div>}
       <form action={answerBrief.bind(null, item.id, path)} className="row answer">
         <input name="answer" aria-label={`Answer: ${item.question}`} placeholder="what they said" size={34} />
         <button className="btn small" name="outcome" value="confirmed">Confirmed</button>
@@ -50,7 +51,13 @@ export default async function BriefPage({ params, searchParams }: { params: Prom
         <Link href={`/jobs/${id}`}>{head.job.title}</Link> · <Link href={`/jobs/${id}/people/${cid}`}>gap table</Link>
       </p>
       <h1>Brief: {head.person.name ?? "name not read"}</h1>
-      <p className="sub">What to ask on the call. Every answer you capture becomes an approved fact with you as the source, and the match is updated at once. Questions about the person are asked once and count for every job. Nothing here is ever sent to anyone.</p>
+      {brief.header && (
+        <div className="brief-head">
+          {brief.header.summary && <div>{brief.header.summary}</div>}
+          {brief.header.why && <div className="sub">On the call list because: {brief.header.why}</div>}
+        </div>
+      )}
+      <p className="hint">What to ask on the call. Every answer you capture becomes an approved fact with you as the source, and the match is updated at once. Questions about the person are asked once and count for every job. Nothing here is ever sent to anyone.</p>
       {!brief.available ? (
         <section className="panel">
           <p>{brief.reason}</p>
