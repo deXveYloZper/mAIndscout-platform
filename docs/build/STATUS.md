@@ -16,7 +16,7 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 | I3 | Career profiles | **gate GREEN** 2026-10-04 ([decision](../decisions/2026-10-04-i3-gate.md)) |
 | I4 | Hiring profiles | **gate GREEN** 2026-10-04 ([decision](../decisions/2026-10-04-i4-gate.md)) |
 | I5 | Matching v2 | **gate GREEN** 2026-10-04 ([decision](../decisions/2026-10-04-i5-gate.md)) |
-| I6 | Sourcing v2 | built 2026-10-04; demo desk for testing; waiting for the owner's test and declaration |
+| I6 | Sourcing v2 | **gate GREEN** 2026-10-04 ([decision](../decisions/2026-10-04-i6-gate.md)) |
 
 **Current slice:** 2, sourcing feeder ([plan](../slice-2/PLAN.md))
 
