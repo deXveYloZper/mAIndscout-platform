@@ -213,3 +213,11 @@ table.gaps tr.conflict td:first-child { border-left: 2px solid var(--red); }
 .verdict.gap, .verdict.against { color: var(--cream-dim); text-decoration: underline; }
 .tiertag { font-size: 11px; color: var(--cream-dim); border: 1px dashed var(--line); padding: 0 6px; margin-left: 6px; }
 .tiertag.strong { color: var(--amber); border-color: var(--amber); }
+
+/* search (I6) */
+.searchform label { display: inline-flex; gap: 6px; align-items: center; }
+.searchform .row { gap: 14px; flex-wrap: wrap; margin-bottom: 8px; }
+.searchform fieldset { border: 0; padding: 0; }
+.results-list { list-style: none; padding: 0; }
+.results-list > li { padding: 10px 0; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+.results-list .met { font-size: 12px; color: var(--cream-dim); }

@@ -183,6 +183,16 @@ test("a thin job is refilled from the desk's own people, banded by the same rule
   await expect(page.locator(".history")).toContainText("sourced");
 });
 
+test("the desk is searched by career profile, every filter met, never ranked by fit", async ({ page }) => {
+  await page.goto("/search");
+  await expect(page.getByRole("heading", { name: "Search the desk" })).toBeVisible();
+  await page.getByLabel("Kind of work").selectOption("software_engineering");
+  await page.getByRole("button", { name: "Search" }).click();
+  await expect(page).toHaveURL(/family=software_engineering/);
+  await expect(page.getByRole("heading", { name: /^\d+ (person|people)/ })).toBeVisible();
+  await expect(page.locator("body")).not.toContainText(/\d+\s*%/);
+});
+
 test("companies from CVs are shared records: who do we know there", async ({ page }) => {
   await page.goto("/companies");
   await expect(page.getByRole("heading", { name: "Companies" })).toBeVisible();

@@ -28,6 +28,8 @@ Vision: "Sourcing exists only to refill a thin priority queue. Sourced people en
 ## Tests
 `core/tests/test_sourcing.py` (8): refill through the same triage; distinctive tokens do not pull generalists in; stop at cap; stop at target and refuse when not thin; a sourced person behaves exactly like an uploaded one; stop and list; no must-have skills refused; no mail route. Eval case `slice-2-gate` on real files. e2e: a thin job refilled from the desk.
 
+Since I6: source `auto` uses the hiring profile ([people-search.md](people-search.md)) when the job has one and the desk has career profiles; the keyword source stays as the fallback.
+
 ## Known limits
 - The desk search reads every person on each step; fine for a desk of thousands, to be indexed before tens of thousands.
 - Campaigns run inside the request (the desk is fast); an external adapter will need a background worker.

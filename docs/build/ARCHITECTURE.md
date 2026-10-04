@@ -33,6 +33,7 @@ Local setup: [core/README.md](../../core/README.md).
 | Career profiles: classify steps, rubric dimensions, QS rank, questions for the call (I3) | built | [career-profiles.md](components/career-profiles.md) |
 | Hiring profiles: ad + intake notes + recruiter edits, by strength; hiring company; target companies (I4) | built | [hiring-profiles.md](components/hiring-profiles.md) |
 | Matching v2: verdict per requirement, tier by visible rules, band follows the tier (I5) | built | [matching.md](components/matching.md) |
+| People search and sourcing v2: profile filters, target-company alumni, demo desk (I6) | built | [people-search.md](components/people-search.md) |
 | Sourcing feeder (Slice 2) | built (desk) | [sourcing.md](components/sourcing.md) |
 | Coverage floor + reserved score (Slice 1) | built | [coverage.md](components/coverage.md) |
 | Gap table (Slice 1) | built | [gap-table.md](components/gap-table.md) |

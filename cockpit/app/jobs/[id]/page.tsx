@@ -10,9 +10,9 @@ import { BAND_LABEL, countryName, reasonWords, STATE_LABEL, TIER_WORDS } from "@
 
 export const metadata = { title: "Job" };
 
-type Campaign = { id: string; source: string; query: { tokens: string[] }; cap: number; spent: number; added: number;
+type Campaign = { id: string; source: string; query: { tokens?: string[]; words?: string[] }; cap: number; spent: number; added: number;
   priority_added: number; status: string; stop_reason: string | null; created_at: string };
-type CampaignList = { priority: number; default_target: number; campaigns: Campaign[] };
+type CampaignList = { priority: number; default_target: number; by_profile: string[] | null; campaigns: Campaign[] };
 
 const STOP_WORDS: Record<string, string> = { cap: "stopped at cap", target_reached: "target reached", human: "stopped by hand" };
 
@@ -101,13 +101,13 @@ export default async function Job({ params }: { params: Promise<{ id: string }> 
       {(thin || sourcing.campaigns.length > 0) && (
         <section className="panel">
           <h3>Find more people {thin ? `(priority is thin: ${sourcing.priority} of ${sourcing.default_target})` : ""}</h3>
-          {thin ? <FindMore action={startCampaign.bind(null, job.id)} tokens={tokens} /> : <p className="sub">Priority has {sourcing.priority}; sourcing is for a thin queue.</p>}
+          {thin ? <FindMore action={startCampaign.bind(null, job.id)} tokens={tokens} byProfile={sourcing.by_profile} /> : <p className="sub">Priority has {sourcing.priority}; sourcing is for a thin queue.</p>}
           <p className="hint">Searches the desk&apos;s own people only. Everyone found is banded by the same rules as an uploaded CV; being found never changes a band.</p>
           {sourcing.campaigns.length > 0 && (
             <ul className="campaigns">
               {sourcing.campaigns.map((c) => (
                 <li key={c.id}>
-                  <span className="sub">{c.created_at.slice(0, 16).replace("T", " ")}</span> · desk · {c.query.tokens.join(", ")} ·
+                  <span className="sub">{c.created_at.slice(0, 16).replace("T", " ")}</span> · {c.source === "profile" ? "by profile" : "desk"} · {(c.query.words ?? c.query.tokens ?? []).join(", ")} ·
                   looked at {c.spent}/{c.cap} · added {c.added} ({c.priority_added} priority) · {c.status === "exhausted" ? "no more matches" : STOP_WORDS[c.stop_reason ?? ""] ?? c.status}
                 </li>
               ))}

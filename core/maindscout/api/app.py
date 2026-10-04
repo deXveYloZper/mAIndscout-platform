@@ -433,7 +433,7 @@ def verify_erase(candidate_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), 
 
 
 class CampaignBody(BaseModel):
-    source: str = "desk"
+    source: str = "auto"
     cap: int = sourcing.DEFAULT_CAP
     target: int = sourcing.DEFAULT_TARGET
 
@@ -453,7 +453,13 @@ def list_campaigns(job_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), sess
     from maindscout.db.models import Campaign
 
     rows = session.scalars(select(Campaign).where(Campaign.job_id == job_id, Campaign.org_id == org_id).order_by(Campaign.created_at.desc()))
+    from maindscout.db.models import CareerProfile, Job
+
+    job = session.get(Job, job_id)
+    profile = sourcing.profile_query(session, job) if job is not None and job.org_id == org_id else None
+    has_profiles = bool(session.scalar(select(CareerProfile.id).where(CareerProfile.org_id == org_id).limit(1)))
     return {"priority": sourcing.priority_count(session, job_id), "default_target": sourcing.DEFAULT_TARGET,
+            "by_profile": profile["words"] if profile and has_profiles else None,
             "campaigns": [sourcing.as_dict(c) for c in rows]}
 
 
@@ -602,3 +608,17 @@ def set_strength(claim_id: uuid.UUID, body: StrengthBody, org_id: uuid.UUID = De
     claim = hiring.set_strength(session, org_id, claim_id, body.strength, actor)
     session.commit()
     return {"id": str(claim.id), "strength": claim.payload["strength"]}
+
+
+@app.get("/v1/search")
+def search_people(family: str | None = None, related: bool = True, min_years: float | None = None, level: str | None = None,
+                  employer: list[str] = Query(default=[]), domain: list[str] = Query(default=[]),
+                  company: list[str] = Query(default=[]), current: bool = False,
+                  org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """Search the desk's people by career profile (structured filters; newest first, never by fit)."""
+    from maindscout.api import search
+
+    f = search.Filters(family=family or None, related=related, min_years=min_years, level=level or None,
+                       employer_kinds=[e for e in employer if e], domains=[d for d in domain if d],
+                       company_ids=[c for c in company if c], current_only=current)
+    return {"filters": f.words(), "people": search.search(session, org_id, f)}

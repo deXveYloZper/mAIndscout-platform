@@ -15,8 +15,8 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 | — | Coverage gate (archive outside EU/EEA/UK/CH/US/CA; light research for big consultancies) | built 2026-10-03 ([ADR](../decisions/2026-10-03-coverage-gate.md)) |
 | I3 | Career profiles | **gate GREEN** 2026-10-04 ([decision](../decisions/2026-10-04-i3-gate.md)) |
 | I4 | Hiring profiles | **gate GREEN** 2026-10-04 ([decision](../decisions/2026-10-04-i4-gate.md)) |
-| I5 | Matching v2 | built 2026-10-04; matches report for the owner's own calls, waiting for the declaration |
-| I6 | Sourcing v2 | |
+| I5 | Matching v2 | **gate GREEN** 2026-10-04 ([decision](../decisions/2026-10-04-i5-gate.md)) |
+| I6 | Sourcing v2 | built 2026-10-04; demo desk for testing; waiting for the owner's test and declaration |
 
 **Current slice:** 2, sourcing feeder ([plan](../slice-2/PLAN.md))
 
