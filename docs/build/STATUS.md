@@ -17,6 +17,7 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 | I4 | Hiring profiles | **gate GREEN** 2026-10-04 ([decision](../decisions/2026-10-04-i4-gate.md)) |
 | I5 | Matching v2 | **gate GREEN** 2026-10-04 ([decision](../decisions/2026-10-04-i5-gate.md)) |
 | I6 | Sourcing v2 | **gate GREEN** 2026-10-04 ([decision](../decisions/2026-10-04-i6-gate.md)) |
+| I7 | Calibration from real decisions (band changes, pass reasons) | ongoing; first review after about 50 real decisions |
 
 **Current slice:** 2, sourcing feeder ([plan](../slice-2/PLAN.md))
 
