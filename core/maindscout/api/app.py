@@ -642,3 +642,54 @@ def search_people(q: str | None = None, family: str | None = None, related: bool
                        employer_kinds=[e for e in employer if e], domains=[d for d in domain if d],
                        company_ids=[c for c in company if c], current_only=current)
     return {"filters": f.words(), "people": search.search(session, org_id, f)}
+
+
+class BriefAnswerBody(BaseModel):
+    outcome: str
+    answer: str | None = None
+
+
+@app.get("/v1/jobs/{job_id}/people/{candidate_id}/brief")
+def get_brief(job_id: uuid.UUID, candidate_id: uuid.UUID, force: bool = False, org_id: uuid.UUID = Depends(get_org),
+              session: Session = Depends(get_session)):
+    """The call checklist for a priority person on a job (compiled and reconciled now). `force` for other bands."""
+    from maindscout.api import brief
+
+    try:
+        items = brief.build(session, org_id, job_id, candidate_id, force=force)
+    except brief.BriefError as error:
+        session.rollback()
+        return {"available": False, "reason": str(error), "items": []}
+    session.commit()
+    return {"available": True, "items": [brief.as_dict(i) for i in items]}
+
+
+@app.post("/v1/brief/{item_id}/answer")
+def answer_brief(item_id: uuid.UUID, body: BriefAnswerBody, org_id: uuid.UUID = Depends(get_org),
+                 session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Capture an answer from the call as an approved fact; the person is matched again at once."""
+    from maindscout.api import brief
+
+    item = brief.answer(session, org_id, item_id, body.outcome, body.answer, actor)
+    session.commit()
+    return brief.as_dict(item)
+
+
+@app.post("/v1/brief/{item_id}/asked")
+def asked_brief(item_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                actor: str = Depends(get_actor)):
+    from maindscout.api import brief
+
+    item = brief.mark_asked(session, org_id, item_id, actor)
+    session.commit()
+    return brief.as_dict(item)
+
+
+@app.post("/v1/brief/{item_id}/dismiss")
+def dismiss_brief(item_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                  actor: str = Depends(get_actor)):
+    from maindscout.api import brief
+
+    item = brief.dismiss(session, org_id, item_id, actor)
+    session.commit()
+    return brief.as_dict(item)

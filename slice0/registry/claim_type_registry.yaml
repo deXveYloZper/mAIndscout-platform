@@ -145,3 +145,14 @@ types:
     notes: >
       I3. Role family, level, domain of one career step, read from the candidate's CV by a model; signals only
       when quoted. Never technologies as domains. A recruiter correction replaces it (human_assertion).
+
+  BriefAnswerClaim:
+    class: observed
+    subject_types: [candidate]
+    natural_key: "candidate_id + topic + job_id"
+    volatility: volatile
+    default_review: individual
+    payload_schema: schemas/brief_answer_claim.schema.json
+    notes: >
+      Slice 3. Captured from a Brief item on the call; born approved as a human assertion. A confirmed or not_met
+      answer to a requirement settles that requirement in matching.

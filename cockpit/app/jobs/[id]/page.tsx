@@ -42,6 +42,7 @@ function People({ jobId, people }: { jobId: string; people: PersonOnJob[] }) {
               <span className="thintag" title={p.coverage.words}>thin</span>
             )}
             {p.open_decisions > 0 && <span className="pill">{p.open_decisions} to review</span>}
+            {p.band === "priority" && <Link className="pill" href={`/jobs/${jobId}/people/${p.candidate_id}/brief`}>Brief</Link>}
           </span>
           <span className="reason">
             {reasonWords(p.reason)}

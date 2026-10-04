@@ -110,6 +110,8 @@ def natural_key(subject_id, claim_type: str, p: dict, valid_from: str | None = N
         return f"{sid}|{p['category']}|{p.get('normalized_token') or _norm_name(p['text_raw'])}"
     if claim_type == "StepClassificationClaim":
         return f"{p['career_claim_id']}|class"
+    if claim_type == "BriefAnswerClaim":
+        return f"{sid}|answer|{p['topic']}|{p.get('job_id') or ''}"
     raise ValueError(f"No natural key for {claim_type}")
 
 
@@ -298,8 +300,10 @@ def _match_now(session: Session, org_id, candidate_id, job: Job):
             for c in _live_claims(session, org_id, "job", job.id, "JobRequirementClaim") if c.payload.get("category") != "process"]
     snap = profiles.latest(session, candidate_id)
     stints, _ = profiles.inputs(session, org_id, candidate_id) if snap else ([], [])
+    from maindscout.api.brief import answers_for
+
     return matching.match(reqs, _gap_rows(session, org_id, job, candidate_id), snap.profile if snap else None, stints,
-                          (coarse.band, coarse.reason))
+                          (coarse.band, coarse.reason), answers_for(session, org_id, candidate_id))
 
 
 def snapshot_pair(session: Session, pair: CandidateJob) -> Score | None:

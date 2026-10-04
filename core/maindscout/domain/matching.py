@@ -180,7 +180,7 @@ def _covers(note: str, text: str) -> bool:
 
 
 def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str, Any] | None, stints: list[Stint],
-          coarse: tuple[str, str]) -> Match:
+          coarse: tuple[str, str], answers: dict[str, dict[str, Any]] | None = None) -> Match:
     """`requirements`: [{id, payload}] (live, no process dates); `gap_rows`: domain.gaps rows for the same job and
     person; `profile`: the latest career profile (or None); `coarse`: the token triage (band, reason) as fallback."""
     by_id = {r["id"]: r["payload"] for r in requirements}
@@ -214,6 +214,15 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
         else:
             v, d = _employment(p, profile)
         rows.append(Verdict(r["id"], p["text_raw"], cat, p["strength"], v, d))
+
+    # Answers captured on the call (the Brief) are the best evidence there is: they settle their requirement.
+    for v in rows:
+        a = (answers or {}).get(v.requirement_id)
+        if a and v.kind != "mobility":
+            said = f": {a['answer']}" if a.get("answer") else ""
+            v.verdict, v.detail = ("strong", f"confirmed on the call{said}") if a["outcome"] == "confirmed" else ("gap", f"not met, said on the call{said}")
+        elif a:
+            v.detail = ("confirmed on the call" if a["outcome"] == "confirmed" else "not met, said on the call") + (f": {a['answer']}" if a.get("answer") else "")
 
     fired: list[dict[str, str]] = []
 

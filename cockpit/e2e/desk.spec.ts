@@ -299,6 +299,25 @@ test("a person's career profile is built in the background: dimensions, question
   await expect(page.getByLabel("Kind of work").first()).toBeVisible();
 });
 
+test("a Brief for the call: answers become official, are not asked again, and nothing is sent", async ({ page }) => {
+  await page.goto(catalystUrl);
+  await openPerson(page, "Ioannis Gkanatsios");
+  await page.getByRole("link", { name: "Brief for the call" }).click();
+  await expect(page.getByRole("heading", { name: /^Brief: Ioannis/ })).toBeVisible();
+  // Priority by default; for anyone else the recruiter can still ask for one.
+  const anyway = page.getByRole("link", { name: "Make a Brief anyway" });
+  if (await anyway.isVisible()) await anyway.click();
+  await expect(page.getByText("Nothing here is ever sent to anyone.")).toBeVisible();
+  const notice = page.locator(".brief-item", { hasText: "Notice period and availability" });
+  await notice.getByRole("textbox").fill("one month");
+  await notice.getByRole("button", { name: "Note it" }).click();
+  const answered = page.locator("section", { has: page.getByRole("heading", { name: /^Answered/ }) });
+  await expect(answered).toContainText("one month");
+  await page.reload();
+  await expect(page.locator(".brief-item.open", { hasText: "Notice period and availability" })).toHaveCount(0);
+  await expect(answered).toContainText("one month");
+});
+
 test("a typed contact is saved as an approved fact", async ({ page }) => {
   await openJob(page, /InSAR Processing Specialist/);
   await page.locator("summary", { hasText: /Do not submit \(\d+\)/ }).click();

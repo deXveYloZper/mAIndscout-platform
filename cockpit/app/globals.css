@@ -237,3 +237,12 @@ table.gaps tr.conflict td:first-child { border-left: 2px solid var(--red); }
 .crit { white-space: normal; margin-right: 0; }
 .results-list select, .searchform select { max-width: 100%; }
 .results-list .row { flex-wrap: wrap; }
+
+/* brief (Slice 3) */
+.brief { list-style: none; padding: 0; }
+.brief-item { padding: 10px 0; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+.brief-item .q { font-weight: 500; }
+.brief-item.asked .q::after { content: "  · asked"; color: var(--cream-dim); font-weight: 400; }
+.brief-item.gone { opacity: 0.6; }
+.brief-item .answer { flex-wrap: wrap; gap: 6px; }
+.brief-item .answer input { min-width: 0; max-width: 100%; }

@@ -2,6 +2,7 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-04 — Slice 3: the Brief. Call checklist compiled from asks, gaps, career questions, contacts and standard questions; open / asked / answered / dismissed / expired, never resurrected; person-wide answers inherited by every job; answers become approved facts and re-match at once; priority by default; no send path — [brief](components/brief.md), [readiness](../slice-3/GATE-READINESS.md)
 - 2026-10-04 — **Slice 2 gate GREEN**, declared by the owner; Slice 3 (Brief) starts — [decision](../decisions/2026-10-04-slice-2-gate.md)
 - 2026-10-04 — **I6 gate GREEN**, declared by the owner; I1–I6 done, I7 (calibration) waits for real decisions — [decision](../decisions/2026-10-04-i6-gate.md)
 - 2026-10-04 — Search in your own words (owner): one search bar, read into criteria by a small model and shown as "Understood as"; results ranked best first by code with ✓ ~ ✗ reasons per criterion; filters kept as "Refine" — [ADR](../decisions/2026-10-04-search-in-own-words.md)

@@ -72,7 +72,8 @@ export default async function PersonOnJob({ params }: { params: Promise<{ id: st
       <h1>{page.person.name ?? "Name not read"}</h1>
       <p className="sub">
         <span className={`bandtag ${page.band}`}>{BAND_LABEL[page.band]}</span> {reasonWords(page.reason)} ·{" "}
-        <Link href={`/people/${page.person.id}`}>Full profile and facts</Link>
+        <Link href={`/people/${page.person.id}`}>Full profile and facts</Link> ·{" "}
+        <Link href={`/jobs/${page.job.id}/people/${page.person.id}/brief`}>Brief for the call</Link>
       </p>
 
       <section className="panel">

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maindscout.local/schemas/brief_answer_claim.schema.json",
+  "title": "BriefAnswerClaim payload",
+  "description": "Slice 3: an answer the recruiter captured on the call, from a Brief item. Born approved (human assertion). outcome confirmed / not_met settles the requirement it answers in matching; noted is information only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "topic",
+    "question",
+    "outcome"
+  ],
+  "properties": {
+    "topic": {
+      "type": "string",
+      "minLength": 1,
+      "description": "the Brief item's key, e.g. std:notice or req:<id>"
+    },
+    "question": {
+      "type": "string",
+      "minLength": 1
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "confirmed",
+        "not_met",
+        "noted"
+      ]
+    },
+    "answer": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "job_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "requirement_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    }
+  }
+}

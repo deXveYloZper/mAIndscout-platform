@@ -504,6 +504,35 @@ class Institution(Base):
     created_at: Mapped[datetime] = _created()
 
 
+BRIEF_STATUS = ("open", "asked", "answered", "dismissed", "expired")
+
+
+class BriefItem(Base):
+    """Slice 3: one question for the call. Keyed to the source that produced it; person-scope items (job_id NULL) are
+    shared by every job the person is on. Answered and dismissed items never come back (regeneration reconciles)."""
+
+    __tablename__ = "brief_item"
+    __table_args__ = (
+        CheckConstraint(_in("status", BRIEF_STATUS), name="brief_status"),
+        Index("ix_brief_candidate", "candidate_id"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate.id"), nullable=False)
+    job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("job.id"))  # NULL: about the person, every job
+    source_key: Mapped[str] = mapped_column(String, nullable=False)
+    kind: Mapped[str] = mapped_column(String, nullable=False)  # requirement | career | contact | mobility | standard
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    why: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="open")
+    outcome: Mapped[str | None] = mapped_column(String)  # confirmed | not_met | noted
+    answer: Mapped[str | None] = mapped_column(Text)
+    answer_claim_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("claim.id"))
+    answered_by: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class CareerProfile(Base):
     """I3: what a career shows, dimension by dimension (domain/profile.py). Append-only snapshots, one per change of
     the facts behind it (inputs_hash). No number anywhere; erased with the person."""

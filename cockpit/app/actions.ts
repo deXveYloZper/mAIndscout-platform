@@ -305,3 +305,21 @@ export async function setStrength(claimId: string, path: string, form: FormData)
   await idempotent(() => apiJson(`/v1/requirements/${claimId}/strength`, { strength: String(form.get("strength")) }));
   revalidatePath(path);
 }
+
+/** Capture an answer from the call (the outcome comes from the button pressed). */
+export async function answerBrief(itemId: string, path: string, form: FormData): Promise<void> {
+  const outcome = String(form.get("outcome") || "noted");
+  const answer = String(form.get("answer") || "").trim();
+  await idempotent(() => apiJson(`/v1/brief/${itemId}/answer`, { outcome, answer: answer || null }));
+  revalidatePath(path);
+}
+
+export async function briefAsked(itemId: string, path: string): Promise<void> {
+  await idempotent(() => apiJson(`/v1/brief/${itemId}/asked`, {}));
+  revalidatePath(path);
+}
+
+export async function briefDismiss(itemId: string, path: string): Promise<void> {
+  await idempotent(() => apiJson(`/v1/brief/${itemId}/dismiss`, {}));
+  revalidatePath(path);
+}

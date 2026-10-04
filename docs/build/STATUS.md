@@ -21,7 +21,9 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 | I6 | Sourcing v2 | **gate GREEN** 2026-10-04 ([decision](../decisions/2026-10-04-i6-gate.md)) |
 | I7 | Calibration from real decisions (band changes, pass reasons) | ongoing; first review after about 50 real decisions |
 
-**Current slice:** 3, the Brief ([plan](../slice-3/PLAN.md)). Slice 2 (sourcing feeder, closed):
+**Current slice:** 3, the Brief ([plan](../slice-3/PLAN.md)): built 2026-10-04 ([brief](components/brief.md)); gate checks met, waiting for the owner's declaration ([readiness](../slice-3/GATE-READINESS.md)).
+
+Slice 2 (sourcing feeder, closed):
 
 | Step | What | State |
 |---|---|---|
