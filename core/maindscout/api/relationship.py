@@ -136,8 +136,22 @@ def timeline(session: Session, org_id, subject_type: str, subject_id, limit: int
             rows.append({"at": _iso(b.updated_at), "type": "brief", "text": f"{b.question} {b.outcome.replace('_', ' ')}{said}",
                          "job": jobs.get(b.job_id), "by": b.answered_by})
     else:
-        for j in session.scalars(select(Job).where(Job.org_id == org_id, Job.hiring_company_id == subject_id)):
+        from maindscout.api.queries import names
+        from maindscout.db.models import CLIENT_STAGES
+
+        company_jobs = list(session.scalars(select(Job).where(Job.org_id == org_id, Job.hiring_company_id == subject_id)))
+        for j in company_jobs:
             rows.append({"at": _iso(j.created_at), "type": "job", "text": f"Job opened: {j.title}", "job": j.title, "by": "system"})
+        events = session.execute(select(PairEvent, CandidateJob.candidate_id, CandidateJob.job_id)
+                                 .join(CandidateJob, CandidateJob.id == PairEvent.pair_id)
+                                 .where(CandidateJob.job_id.in_([j.id for j in company_jobs] or [None]), PairEvent.kind == "state",
+                                        PairEvent.to_value.in_(CLIENT_STAGES + ("client_rejected",)))).all()
+        who = names(session, [cid for _, cid, _ in events])
+        for e, cid, job_id in events:
+            words = e.to_value.replace("_", " ")
+            rows.append({"at": _iso(e.created_at), "type": "pipeline",
+                         "text": f"{who.get(cid) or 'someone'}: {words}" + (f" ({e.reason})" if e.reason else ""),
+                         "job": jobs.get(job_id), "by": e.actor})
     rows.sort(key=lambda r: r["at"] or "", reverse=True)
     return rows[:limit]
 

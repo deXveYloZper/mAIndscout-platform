@@ -380,3 +380,11 @@ export async function removeContact(contactId: string, path: string): Promise<vo
   await idempotent(() => api(`/v1/contacts/${contactId}`, { method: "DELETE" }));
   revalidatePath(path);
 }
+
+/** Lift a client's block, with a note saying why. */
+export async function liftBlock(blockId: string, path: string, form: FormData): Promise<void> {
+  const note = String(form.get("note") || "").trim();
+  if (!note) return;
+  await idempotent(() => apiJson(`/v1/blocks/${blockId}/lift`, { note }));
+  revalidatePath(path);
+}

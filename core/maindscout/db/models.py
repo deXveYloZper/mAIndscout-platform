@@ -49,7 +49,12 @@ CLAIM_STATUS = ("staged", "proposed", "approved", "rejected", "superseded")
 PRECISION = ("exact", "month", "year_only", "ordered_only", "unknown")
 VERIFIABILITY = ("registry", "public_record", "scholarly", "web", "unverifiable")
 TRIAGE_BANDS = ("priority", "review_later", "do_not_submit", "unassigned")
-PAIR_STATES = ("new", "seen", "submitted", "we_passed")
+PAIR_STATES = ("new", "seen", "contacted", "screened", "submitted", "interviewing", "offer", "placed",
+               "we_passed", "withdrawn", "client_rejected")
+# Endings: a pair that is in one of these is closed until someone reopens it (with a note).
+PAIR_ENDINGS = ("placed", "we_passed", "withdrawn", "client_rejected")
+# Stages at which the person is in front of the client: a client block stops all of them.
+CLIENT_STAGES = ("submitted", "interviewing", "offer", "placed")
 RUN_STATUS = ("running", "committed", "failed")
 DECISION_TYPES = ("revision_diff", "duplicate_stint", "contradiction", "identity_note", "company_same")
 
@@ -551,6 +556,25 @@ class Activity(Base):
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_by: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = _created()
+
+
+class ClientBlock(Base):
+    """A client said no to a person: a wall for that person at that client company (every job there), until a person
+    lifts it with a note."""
+
+    __tablename__ = "client_block"
+    __table_args__ = (Index("ix_client_block", "org_id", "company_id", "candidate_id"),)
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("company.id"), nullable=False)
+    candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate.id"), nullable=False)
+    job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("job.id"))
+    reason: Mapped[str] = mapped_column(Text, nullable=False)  # the client's words
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = _created()
+    lifted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lifted_by: Mapped[str | None] = mapped_column(String)
+    lift_note: Mapped[str | None] = mapped_column(Text)
 
 
 class CandidateTag(Base):

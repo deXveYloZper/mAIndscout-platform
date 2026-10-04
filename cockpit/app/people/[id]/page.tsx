@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { addFact, bringBack, eraseCandidate, logActivity, putOnJob, tagPerson, untagPerson } from "@/app/actions";
+import { addFact, bringBack, eraseCandidate, liftBlock, logActivity, putOnJob, tagPerson, untagPerson } from "@/app/actions";
 import { CareerProfile } from "@/components/CareerProfile";
 import { Dates, LogActivity, Timeline } from "@/components/Relationship";
 import { ClaimRow, Status } from "@/components/Claim";
@@ -39,6 +39,16 @@ export default async function Person({ params }: { params: Promise<{ id: string 
         </div>
       )}
       {person.coverage_override && !person.archived && <p className="hint">Brought back by a person: the coverage rule leaves them be.</p>}
+
+      {person.blocks.filter((b) => !b.lifted).map((b) => (
+        <div key={b.id} className="warn archived-note">
+          Blocked at <Link href={`/companies/${b.company_id}`}>{b.company ?? "a client"}</Link>: the client said no ({b.reason}).
+          <form action={liftBlock.bind(null, b.id, path)} className="row">
+            <input name="note" aria-label="Why lift the block" placeholder="why lift it" size={22} required />
+            <button className="btn small">Lift block</button>
+          </form>
+        </div>
+      ))}
 
       <section className="panel relationship">
         <h3>Relationship</h3>

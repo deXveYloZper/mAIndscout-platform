@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import String, func, select
 from sqlalchemy.orm import Session
 
-from maindscout.api import coverage, hiring, profiles, relationship
+from maindscout.api import coverage, hiring, pipeline, profiles, relationship
 from maindscout.db.models import (
     Company,
     Candidate,
@@ -102,6 +102,7 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
         select(Decision.subject_id, func.count()).where(Decision.org_id == org_id, Decision.sealed_at.is_(None))
         .group_by(Decision.subject_id)).all())
     people: dict[str, list[dict[str, Any]]] = {b: [] for b in BANDS}
+    blocked = pipeline.blocked_ids_for_job(session, org_id, job)
     gone = {c.id: c.archived_reason for c in session.scalars(select(Candidate).where(
         Candidate.id.in_([p.candidate_id for p in pairs] or [None]), Candidate.archived_at.is_not(None)))}
     archived = []
@@ -114,7 +115,7 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
             "candidate_id": str(p.candidate_id), "name": who.get(p.candidate_id), "band": p.triage_band,
             "reason": p.triage_reason, "overridden_by": p.band_overridden_by, "open_decisions": open_counts.get(p.candidate_id, 0),
             **_gap_summary(session, org_id, job, p.candidate_id),
-            "state": p.pair_state, "outcome": p.outcome, "match_tier": p.match_tier,
+            "state": p.pair_state, "outcome": p.outcome, "match_tier": p.match_tier, "blocked": p.candidate_id in blocked,
         })
     return {
         "id": str(job.id), "title": job.title, "hiring_company": job.hiring_company, "state": job.state,
@@ -123,6 +124,7 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
         "process_stale": any(c.flags.get("job_process_stale") for c in reqs),
         "people": people,
         "archived": archived,
+        "stages": pipeline.stage_counts(session, job.id),
         "coverage": coverage.summary(session, job),
         "hiring": {"company": hiring.company_summary(session, session.get(Company, job.hiring_company_id) if job.hiring_company_id else None),
                    "intakes": hiring.intakes(session, job.id), "targets": hiring.targets(session, org_id, reqs)},
@@ -151,6 +153,7 @@ def person_page(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID) ->
         "coverage_override": person.coverage_override,
         "profile": profiles.as_view(profiles.latest(session, person.id)),
         "relationship": relationship.summary_for_person(session, org_id, person.id),
+        "blocks": pipeline.blocks_for_person(session, org_id, person.id),
         "classifications": profiles.labels_view(session, org_id, person.id),
         "claims": grouped,
         "jobs": [{"job_id": str(j.id), "title": j.title, "band": p.triage_band, "reason": p.triage_reason} for p, j in pairs],

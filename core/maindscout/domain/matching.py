@@ -25,6 +25,7 @@ MUST = ("must", "deal_breaker")
 
 # The desk's rules, as data: id -> what it says. The order of evaluation is the order of this list.
 RULES: list[dict[str, str]] = [
+    {"id": "client_block", "text": "The client said no to this person: a wall at this client until a person lifts it."},
     {"id": "distinctive_must_missing", "text": "A must-have that decides the band has no evidence: do not submit."},
     {"id": "not_wanted", "text": "The person meets a requirement the hiring manager does not want."},
     {"id": "substitution", "text": "A requirement the intake says can substitute for another is met, so that one counts as met."},
@@ -180,7 +181,7 @@ def _covers(note: str, text: str) -> bool:
 
 
 def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str, Any] | None, stints: list[Stint],
-          coarse: tuple[str, str], answers: dict[str, dict[str, Any]] | None = None) -> Match:
+          coarse: tuple[str, str], answers: dict[str, dict[str, Any]] | None = None, blocked: str | None = None) -> Match:
     """`requirements`: [{id, payload}] (live, no process dates); `gap_rows`: domain.gaps rows for the same job and
     person; `profile`: the latest career profile (or None); `coarse`: the token triage (band, reason) as fallback."""
     by_id = {r["id"]: r["payload"] for r in requirements}
@@ -229,6 +230,10 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
     def fire(rule: str, detail: str) -> None:
         fired.append({"id": rule, "text": RULE_TEXT[rule], "detail": detail})
 
+    # 0. The client said no: a wall.
+    if blocked:
+        fire("client_block", blocked)
+        return Match("unlikely", "do_not_submit", f"match:unlikely:the client said no ({blocked})", rows, fired)
     # 1. Today's rule: a distinctive must-have with no evidence decides the band.
     if coarse[0] == "do_not_submit" and coarse[1].startswith("no_support_for_must_have"):
         fire("distinctive_must_missing", coarse[1].split(":", 1)[-1])

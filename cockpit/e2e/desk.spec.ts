@@ -118,26 +118,32 @@ test("recording a missing must-have as a fact moves the band, and the history sa
   await expect(page.locator(".bandtag").first()).toHaveText("Do not submit");
 });
 
-test("a pair moves seen, passed with a reason, reopened and submitted, all in the history", async ({ page }) => {
+test("a pair moves through the pipeline: passed with a reason, reopened, submitted, all in the history", async ({ page }) => {
   await page.goto(catalystUrl);
   await openPerson(page, "Ioannis Gkanatsios");
   await expect(page.locator(".statetag").first()).toHaveText("new");
-  await page.getByRole("button", { name: "Mark seen" }).click();
+  await page.getByLabel("Move to").selectOption("seen");
+  await page.getByRole("button", { name: "Move" }).click();
   await expect(page.locator(".statetag").first()).toHaveText("seen");
+  await page.getByLabel("Move to").selectOption("we_passed");
   await page.getByLabel("Reason for passing").selectOption("compensation");
-  await page.getByRole("button", { name: "We passed" }).click();
+  await page.getByRole("button", { name: "Move" }).click();
   await expect(page.locator(".statetag").first()).toHaveText("we passed");
-  await page.getByLabel("Reason to reopen").fill("budget raised");
-  await page.getByRole("button", { name: "Reopen" }).click();
-  await page.getByLabel("Submission note").fill("sent to the hiring lead");
-  await page.getByRole("button", { name: "Submitted" }).click();
+  await page.getByLabel("Move to").selectOption("contacted");
+  await page.getByLabel("Note for this move").fill("budget raised");
+  await page.getByRole("button", { name: "Move" }).click();
+  await expect(page.locator(".statetag").first()).toHaveText("contacted");
+  await page.getByLabel("Move to").selectOption("submitted");
+  await page.getByLabel("Note for this move").fill("sent to the hiring lead");
+  await page.getByRole("button", { name: "Move" }).click();
   await expect(page.locator(".statetag").first()).toHaveText("submitted");
   const history = page.locator(".history");
   await expect(history).toContainText("seen → we passed");
-  await expect(history).toContainText("we passed → seen");
-  await expect(history).toContainText("seen → submitted");
+  await expect(history).toContainText("we passed → contacted");
+  await expect(history).toContainText("contacted → submitted");
   await page.goto(catalystUrl);
   await expect(page.locator(".people li", { hasText: "Ioannis" }).locator(".statetag")).toHaveText("submitted");
+  await expect(page.locator(".stages")).toContainText("submitted 1");
 });
 
 test("a stale advertisement warns before anyone is submitted", async ({ page }) => {

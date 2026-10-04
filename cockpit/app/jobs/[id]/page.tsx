@@ -6,7 +6,7 @@ import { HiringProfile } from "@/components/HiringProfile";
 import { Snippet } from "@/components/Claim";
 import { MultiUpload } from "@/components/MultiUpload";
 import { api, apiOr404, type Band, type InboxItem, type JobPage, type PersonOnJob } from "@/lib/api";
-import { BAND_LABEL, countryName, reasonWords, STATE_LABEL, TIER_WORDS } from "@/lib/format";
+import { BAND_LABEL, countryName, PIPELINE, reasonWords, STATE_LABEL, TIER_WORDS } from "@/lib/format";
 
 export const metadata = { title: "Job" };
 
@@ -38,6 +38,7 @@ function People({ jobId, people }: { jobId: string; people: PersonOnJob[] }) {
             <Link href={`/jobs/${jobId}/people/${p.candidate_id}`}>{p.name ?? "name not read"}</Link>
             {p.state && p.state !== "new" && <span className={`statetag ${p.state}`}>{STATE_LABEL[p.state]}</span>}
             {p.match_tier && p.match_tier !== "unclear" && <span className={`tiertag ${p.match_tier}`}>{TIER_WORDS[p.match_tier]}</span>}
+            {p.blocked && <span className="blocktag" title="The client said no to this person">blocked by client</span>}
             {p.coverage && !p.coverage.met && p.coverage.applicable > 0 && (
               <span className="thintag" title={p.coverage.words}>thin</span>
             )}
@@ -90,6 +91,9 @@ export default async function Job({ params }: { params: Promise<{ id: string }> 
         <Link href={`/inbox?job=${job.id}`}>{waiting.length ? `${waiting.length} to review` : "inbox clear"}</Link>
       </p>
       {places.length > 0 && <p className="where">Where: {places.map((p) => p.payload.text_raw).join(" · ")}</p>}
+      <p className="stages" aria-label="Pipeline">
+        {PIPELINE.filter(([k]) => job.stages[k]).map(([k, l]) => <span key={k} className={`statetag ${k}`}>{l} {job.stages[k]}</span>)}
+      </p>
       {job.process_stale && (
         <p className="warn">This posting&apos;s own process dates have passed. Confirm it is still open before submitting anyone.</p>
       )}

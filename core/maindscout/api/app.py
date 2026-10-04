@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from maindscout.api import companies, costs, documents, erasure, process, queries, review, sourcing, tasks
+from maindscout.api import companies, costs, documents, erasure, pipeline, process, queries, review, sourcing, tasks
 from maindscout.api import task_handlers  # noqa: F401 (registers task kinds)
 from maindscout.db.models import Document, ExtractionArtifact, IntelligenceRun, Org
 from maindscout.db.session import make_engine, make_session_factory
@@ -101,6 +101,7 @@ ERRORS: list[tuple[type[Exception], int]] = [
     (reg.UnknownFlagError, 422),
     (reg.UnknownClaimTypeError, 422),
     (pdf.UnreadableDocument, 422),
+    (pipeline.BlockedError, 409),
     (ValueError, 422),
 ]
 for _exc, _code in ERRORS:
@@ -273,7 +274,8 @@ class StateBody(BaseModel):
 @app.post("/v1/jobs/{job_id}/people/{candidate_id}/state")
 def set_pair_state(job_id: uuid.UUID, candidate_id: uuid.UUID, body: StateBody, org_id: uuid.UUID = Depends(get_org),
                    session: Session = Depends(get_session), actor: str = Depends(get_actor)):
-    """Move a pair: seen, submitted (needs a note) or we_passed (needs a reason). Pairs are never deleted."""
+    """Move a pair along the pipeline (new → seen → contacted → screened → submitted → interviewing → offer → placed;
+    or we passed / withdrawn / client rejected). Notes and reasons as the rules say; pairs are never deleted."""
     pair = review.set_state(session, org_id, job_id, candidate_id, body.state, actor, body.reason, body.note)
     session.commit()
     return {"state": pair.pair_state, "outcome": pair.outcome}
@@ -816,3 +818,16 @@ def remove_contact(contact_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), 
 
     relationship.remove_contact(session, org_id, contact_id)
     session.commit()
+
+
+class LiftBody(BaseModel):
+    note: str
+
+
+@app.post("/v1/blocks/{block_id}/lift")
+def lift_block(block_id: uuid.UUID, body: LiftBody, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+               actor: str = Depends(get_actor)):
+    """Lift a client's block (e.g. the client changed its mind), with a note saying why."""
+    b = pipeline.lift(session, org_id, block_id, body.note, actor)
+    session.commit()
+    return {"id": str(b.id), "lifted": b.lifted_at is not None}

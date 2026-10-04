@@ -301,9 +301,12 @@ def _match_now(session: Session, org_id, candidate_id, job: Job):
     snap = profiles.latest(session, candidate_id)
     stints, _ = profiles.inputs(session, org_id, candidate_id) if snap else ([], [])
     from maindscout.api.brief import answers_for
+    from maindscout.api.pipeline import active_block
 
+    block = active_block(session, org_id, job.id, candidate_id)
     return matching.match(reqs, _gap_rows(session, org_id, job, candidate_id), snap.profile if snap else None, stints,
-                          (coarse.band, coarse.reason), answers_for(session, org_id, candidate_id))
+                          (coarse.band, coarse.reason), answers_for(session, org_id, candidate_id),
+                          blocked=block.reason if block is not None else None)
 
 
 def snapshot_pair(session: Session, pair: CandidateJob) -> Score | None:

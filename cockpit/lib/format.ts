@@ -87,7 +87,13 @@ export function countryName(code: string): string {
 }
 
 
-export const STATE_LABEL: Record<string, string> = { new: "new", seen: "seen", submitted: "submitted", we_passed: "we passed" };
+// The pipeline, in order (Slice 4); the last four are endings.
+export const PIPELINE: [string, string][] = [
+  ["new", "new"], ["seen", "seen"], ["contacted", "contacted"], ["screened", "screened"], ["submitted", "submitted"],
+  ["interviewing", "interviewing"], ["offer", "offer"], ["placed", "placed"],
+  ["we_passed", "we passed"], ["withdrawn", "withdrawn"], ["client_rejected", "client rejected"],
+];
+export const STATE_LABEL: Record<string, string> = Object.fromEntries(PIPELINE);
 
 export const PASS_REASONS: [string, string][] = [
   ["skills", "Skills"],
@@ -95,7 +101,6 @@ export const PASS_REASONS: [string, string][] = [
   ["location", "Location / right to work"],
   ["compensation", "Compensation"],
   ["candidate_not_interested", "Candidate not interested"],
-  ["client_rejected", "Client rejected"],
   ["duplicate", "Duplicate"],
   ["other", "Other"],
 ];

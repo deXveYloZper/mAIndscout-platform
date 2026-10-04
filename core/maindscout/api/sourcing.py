@@ -43,12 +43,17 @@ class DeskAdapter:
     name = "desk"
 
     def find(self, session: Session, org_id: uuid.UUID, job: Job, query: dict, limit: int) -> list[uuid.UUID]:
+        from maindscout.api.pipeline import blocked_ids_for_job
+
         tokens = query["tokens"]
+        blocked = blocked_ids_for_job(session, org_id, job)
         on_job = select(CandidateJob.candidate_id).where(CandidateJob.job_id == job.id)
         people = session.scalars(select(Candidate).where(Candidate.org_id == org_id, Candidate.merged_into_id.is_(None),
                                                          Candidate.id.not_in(on_job)).order_by(Candidate.created_at.desc()))
         found: list[uuid.UUID] = []
         for person in people:
+            if person.id in blocked:
+                continue
             claims = list(session.scalars(select(Claim).where(Claim.subject_id == person.id, Claim.status.in_(LIVE),
                                                               Claim.claim_type.in_(("SkillClaim", "CareerStepClaim")))))
             skills = [c.payload["normalized_skill"] for c in claims if c.claim_type == "SkillClaim"]
@@ -74,7 +79,10 @@ class ProfileAdapter:
     def find(self, session: Session, org_id: uuid.UUID, job: Job, query: dict, limit: int) -> list[uuid.UUID]:
         from maindscout.api import coverage, search
 
+        from maindscout.api.pipeline import blocked_ids_for_job
+
         on_job = set(session.scalars(select(CandidateJob.candidate_id).where(CandidateJob.job_id == job.id)))
+        on_job |= blocked_ids_for_job(session, org_id, job)  # the client said no to them: never sourced for this client
         found: list[uuid.UUID] = []
         channels = []
         if query.get("targets"):

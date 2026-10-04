@@ -79,6 +79,7 @@ export type JobSummary = {
 
 export type PersonOnJob = {
   match_tier?: string | null;
+  blocked?: boolean;
   candidate_id: string;
   name: string | null;
   band: Band;
@@ -97,6 +98,7 @@ export type JobPage = JobSummary & {
   people: Record<Band, PersonOnJob[]>;
   archived: { candidate_id: string; name: string | null; reason: string | null }[];
   coverage: { desk: string[]; from_ad: string[]; opened: string[]; names: Record<string, string> };
+  stages: Record<string, number>;
   hiring: {
     company: { id: string; name: string; kind?: string | null; stage?: string | null; team?: string | null; founded?: string | null;
       hq?: string | null; domains?: string[]; status?: string | null } | null;
@@ -116,6 +118,8 @@ export type PersonPage = {
   coverage_override: boolean;
   profile: CareerProfile | null;
   classifications: Record<string, StepLabel>;
+  blocks: { id: string; company_id: string; company: string | null; reason: string; at: string | null; by: string;
+    lifted: boolean; lift_note: string | null }[];
   relationship: { last_contacted: string | null; last_verified: string | null; tags: string[];
     timeline: { at: string | null; type: string; text: string; direction?: string | null; job?: string | null; contact?: string | null;
       by?: string | null; id?: string; removable?: boolean }[] };

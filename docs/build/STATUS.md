@@ -28,8 +28,8 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 | Step | What | State |
 |---|---|---|
 | 1 | Relationship memory | built 2026-10-04 ([relationship-memory](components/relationship-memory.md)) |
-| 2 | Full pipeline, submissions, client feedback and block | next |
-| 3 | Freshness | |
+| 2 | Full pipeline, submissions, client feedback and block | built 2026-10-05 ([pipeline](components/pipeline.md)) |
+| 3 | Freshness | next |
 | 4 | Import (100 / 25 free, more paid) | |
 | 5 | Drafts, reply halt | |
 

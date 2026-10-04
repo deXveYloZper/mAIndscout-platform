@@ -273,3 +273,9 @@ form.inline { display: inline; margin-left: 6px; }
 .addcontact { gap: 6px; flex-wrap: wrap; margin: 6px 0; }
 .addcontact input { min-width: 0; max-width: 100%; }
 .relationship h4 { margin: 12px 0 4px; font-size: 13px; color: var(--cream-dim); }
+
+/* pipeline (Slice 4 step 2) */
+.stages { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+.blocktag { font-size: 11px; color: var(--amber); border: 1px solid var(--amber); padding: 0 6px; margin-left: 6px; }
+.statetag.placed { color: var(--amber); border-color: var(--amber); }
+.statetag.client_rejected, .statetag.withdrawn { color: var(--cream-dim); }
