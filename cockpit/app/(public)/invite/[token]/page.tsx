@@ -13,7 +13,7 @@ export default async function Invite({ params }: { params: Promise<{ token: stri
     info = await apiPublic<Info>(`/v1/auth/invites/${encodeURIComponent(token)}`);
   } catch (e) {
     return (
-      <section className="signin">
+      <section>
         <h1>This link doesn't work</h1>
         <p className="err">{e instanceof ApiError ? e.message : "The platform did not answer."}</p>
       </section>
@@ -21,7 +21,7 @@ export default async function Invite({ params }: { params: Promise<{ token: stri
   }
   const reset = info.purpose === "reset";
   return (
-    <section className="signin">
+    <section>
       <h1>{reset ? "Set a new password" : `Join ${info.desk}`}</h1>
       <p className="sub">
         {reset ? <>For {info.email}. Two-step verification is switched off and can be set up again after you sign in.</>

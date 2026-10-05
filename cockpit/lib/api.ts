@@ -282,3 +282,13 @@ export async function currentUser(): Promise<Me | null> {
     return null;
   }
 }
+
+/** For extras that must never break a page (e.g. the sidebar's counts): the answer, or null on any failure. */
+export async function apiOptional<T>(path: string): Promise<T | null> {
+  try {
+    const res = await fetch(`${BASE}${path}`, { headers: await headers(), cache: "no-store" });
+    return res.ok ? ((await res.json()) as T) : null;
+  } catch {
+    return null;
+  }
+}

@@ -28,6 +28,7 @@ export async function createJob(_: FormState, form: FormData): Promise<FormState
     return fail(e);
   }
   revalidatePath("/");
+  revalidatePath("/jobs");
   redirect(`/jobs/${jobId}`);
 }
 
@@ -66,6 +67,7 @@ export async function resolveDecision(decisionId: string, action: string, claimI
 export async function refreshAfterUpload(jobId: string | null): Promise<void> {
   revalidatePath(jobId ? `/jobs/${jobId}` : "/people");
   revalidatePath("/");
+  revalidatePath("/jobs");
 }
 
 export async function putOnJob(candidateId: string, form: FormData): Promise<void> {
@@ -140,7 +142,8 @@ export async function eraseCandidate(candidateId: string, _: FormState, form: Fo
     return { error: `Erasure did NOT complete. Still found: ${result.survivors.join("; ")}` };
   }
   revalidatePath("/");
-  redirect("/?erased=1");
+  revalidatePath("/jobs");
+  redirect("/jobs?erased=1");
 }
 
 

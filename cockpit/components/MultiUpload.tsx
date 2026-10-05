@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { checkTasks, queueCv, refreshAfterUpload, type TaskView } from "@/app/actions";
 import { BAND_LABEL, reasonWords } from "@/lib/format";
 import type { Band } from "@/lib/api";
+import { DropZone } from "./DropZone";
 
 type Row = { file: string; taskId?: string; error?: string; task?: TaskView };
 
@@ -56,16 +57,16 @@ export function MultiUpload({ jobId }: { jobId: string | null }) {
   const busy = uploading || pending.length > 0;
   const done = rows.filter((r) => r.task?.status === "done").length;
   return (
-    <form onSubmit={start} className="upload" aria-busy={busy}>
-      <input type="file" name="file" accept="application/pdf,.pdf" multiple required disabled={uploading}
-        onChange={(e) => setFiles(Array.from(e.target.files ?? []))} aria-label="CV files (PDF)" />
-      <button type="submit" className="btn primary" disabled={uploading || !files.length}>
-        {uploading ? "Uploading…" : files.length > 1 ? `Read and band ${files.length} CVs` : "Read and band"}
-      </button>
-      <p className="hint">
-        Files are stored at once and read in the background (about 15 s each, several at a time); you can leave this page.{" "}
-        {jobId ? "Each person is placed in a band against this job. A band is not a score." : "People join the pool with no job; put them on a job from their page."}
-      </p>
+    <form onSubmit={start} className="upload-form" aria-busy={busy}>
+      <DropZone title="Drop CVs here" label="CV files (PDF)" multiple required disabled={uploading} onFiles={setFiles}
+        hint={`PDFs, as many as you like. Read in the background (about 15 s each); you can leave this page. ${jobId
+          ? "Each person is placed in a band against this job. A band is not a score."
+          : "People join the pool with no job; put them on a job from their page."}`} />
+      <div className="row">
+        <button type="submit" className="btn primary" disabled={uploading || !files.length}>
+          {uploading ? "Uploading…" : files.length > 1 ? `Read and band ${files.length} CVs` : "Read and band"}
+        </button>
+      </div>
       {busy && rows.length > 0 && <p className="sub" role="status">Reading {done} of {rows.length} done…</p>}
       {rows.length > 0 && (
         <ul className="results" aria-live="polite">

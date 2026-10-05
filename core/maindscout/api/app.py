@@ -1256,3 +1256,29 @@ def reset_member(user_id: uuid.UUID, p: auth.Principal = Depends(require_owner),
     out = auth.reset_link(session, p.org_id, user_id, p.email)
     session.commit()
     return out
+
+
+# --- navigation: sidebar counts, ⌘K lookup, Today (design plan) ----------------------------------------------------
+
+@app.get("/v1/nav")
+def nav(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """Counts for the sidebar (cheap: a few aggregates)."""
+    from maindscout.api import overview
+
+    return overview.nav_counts(session, org_id)
+
+
+@app.get("/v1/lookup")
+def lookup(q: str = Query("", max_length=200), org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """People, jobs and companies whose name contains `q` (for ⌘K)."""
+    from maindscout.api import overview
+
+    return overview.lookup(session, org_id, q)
+
+
+@app.get("/v1/today")
+def today(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """The start of the day: priority people per job, decisions waiting, people going stale, recent activity."""
+    from maindscout.api import overview
+
+    return overview.today(session, org_id)

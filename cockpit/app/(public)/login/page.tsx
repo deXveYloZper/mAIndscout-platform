@@ -9,8 +9,9 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
   const params = await searchParams;
   const code = params.step === "code" && (await cookies()).get(TICKET_COOKIE)?.value;
   return (
-    <section className="signin">
-      <h1>Sign in</h1>
+    <section>
+      <h1>{code ? "One more step" : "Welcome back"}</h1>
+      {!params.ended && !params.ready && <p className="sub">{code ? "Enter the code from your authenticator app." : "Sign in to your desk."}</p>}
       {params.ended && <p className="sub">Your session has ended. Sign in again.</p>}
       {params.ready && <p className="ok">Done. Sign in with your new password.</p>}
       {code ? <CodeForm action={signInCode} /> : <SignInForm action={signIn} />}
