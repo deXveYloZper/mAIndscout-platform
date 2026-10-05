@@ -349,15 +349,20 @@ def export_people(session: Session, org_id) -> str:
     w = _SafeWriter(csv.writer(out))
     w.writerow(["name", "email", "phone", "linkedin", "location", "current company", "current title", "tags", "jobs",
                 "last contacted", "facts last verified"])
+    # Two queries for the whole desk (facts, dates) instead of three per person.
+    facts: dict[uuid.UUID, list[Claim]] = {}
+    for c in session.scalars(select(Claim).where(Claim.org_id == org_id, Claim.subject_type == "candidate",
+                                                 Claim.status.in_(("proposed", "approved")),
+                                                 Claim.claim_type.in_(("ContactClaim", "LocationClaim", "CareerStepClaim")))):
+        facts.setdefault(c.subject_id, []).append(c)
+    dates = relationship.last_dates_many(session, org_id, "candidate")
     for p in queries.list_people(session, org_id):
         cid = uuid.UUID(p["id"])
-        claims = list(session.scalars(select(Claim).where(Claim.org_id == org_id, Claim.subject_id == cid,
-                                                          Claim.status.in_(("proposed", "approved")))))
+        claims = facts.get(cid, [])
         contact = {c.payload.get("kind"): c.payload.get("value") for c in claims if c.claim_type == "ContactClaim"}
         place = next((c.payload.get("place_raw") for c in claims if c.claim_type == "LocationClaim" and c.payload.get("kind", "current") == "current"), "")
         current = next((c for c in claims if c.claim_type == "CareerStepClaim" and c.valid_to is None), None)
-        lc = relationship.last_contacted(session, org_id, "candidate", cid)
-        lv = relationship.last_verified(session, org_id, cid)
+        lc, lv = (dates.get(cid) or {}).get("contacted"), (dates.get(cid) or {}).get("verified")
         w.writerow([p["name"] or "", contact.get("email", ""), contact.get("phone", ""), contact.get("linkedin", ""), place,
                     current.payload["company"]["raw_name"] if current else "", current.payload["title_raw"] if current else "",
                     "; ".join(p["tags"]), "; ".join(f"{j['title']} ({j['band']})" for j in p["jobs"]),

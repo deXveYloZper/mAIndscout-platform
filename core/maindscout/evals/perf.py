@@ -70,9 +70,13 @@ def seed(people: int = 3000, jobs: int = 20, per_job: int = 150, seed_value: int
             name = f"{rnd.choice(names)} {rnd.choice(['Labs', 'Systems', 'Analytics', 'Space', 'Health', 'Pay', 'Cloud'])} {i}"
             session.add(Company(name=name, normalized=name.lower(), research_status="identified", hq_country=rnd.choice(["GB", "DE", "NL", "US"])))
         session.flush()
-        print(demo.seed(session, PERF_ORG, people, seed_value))
         session.commit()
-        print(f"people seeded in {time.perf_counter() - t0:.0f}s")
+        batch = 250  # commit as we go, and keep the session small (one huge transaction slows down as it grows)
+        for start in range(0, people, batch):
+            demo.seed(session, PERF_ORG, min(batch, people - start), seed_value + start, number_from=start)
+            session.commit()
+            session.expunge_all()
+            print(f"  {min(start + batch, people)} people, {time.perf_counter() - t0:.0f}s", flush=True)
 
         all_people = [c for (c,) in session.execute(select(Claim.subject_id).where(
             Claim.org_id == PERF_ORG, Claim.claim_type == "IdentityClaim"))]
@@ -89,10 +93,13 @@ def seed(people: int = 3000, jobs: int = 20, per_job: int = 150, seed_value: int
             made_jobs.append(job)
         session.commit()
         t1 = time.perf_counter()
-        for job in made_jobs:
+        for n, job in enumerate(made_jobs, start=1):
+            job = session.get(Job, job.id)
             for cid in rnd.sample(all_people, k=min(per_job, len(all_people))):
                 process._ensure_pair(session, PERF_ORG, cid, job, {"act": "perf_seed"})
             session.commit()
+            session.expunge_all()
+            print(f"  job {n}/{len(made_jobs)} matched, {time.perf_counter() - t1:.0f}s", flush=True)
         print(f"{len(made_jobs) * per_job} pairs matched in {time.perf_counter() - t1:.0f}s")
 
         # Review cards and timelines, so the inbox and person pages have something to show.

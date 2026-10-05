@@ -104,6 +104,32 @@ def last_verified(session: Session, org_id, candidate_id) -> datetime | None:
     return max([d for d in (approved, cv) if d], default=None)
 
 
+def last_dates_many(session: Session, org_id, subject_type: str = "candidate") -> dict[uuid.UUID, dict[str, datetime | None]]:
+    """last_contacted and last_verified for every subject of a kind at once: four grouped queries for the whole desk,
+    the same rules as the single-subject functions above."""
+    out: dict[uuid.UUID, dict[str, datetime | None]] = {}
+
+    def put(rows, field: str) -> None:
+        for sid, when in rows:
+            if when is not None:
+                slot = out.setdefault(sid, {"contacted": None, "verified": None})
+                slot[field] = max(d for d in (slot[field], when) if d)
+
+    put(session.execute(select(Activity.subject_id, func.max(Activity.occurred_at)).where(
+        Activity.org_id == org_id, Activity.subject_type == subject_type, Activity.kind.in_(CONTACT_KINDS))
+        .group_by(Activity.subject_id)), "contacted")
+    if subject_type == "candidate":
+        put(session.execute(select(BriefItem.candidate_id, func.max(BriefItem.updated_at)).where(
+            BriefItem.org_id == org_id, BriefItem.status == "answered").group_by(BriefItem.candidate_id)), "contacted")
+        put(session.execute(select(Claim.subject_id, func.max(Claim.approved_at)).where(
+            Claim.org_id == org_id, Claim.subject_type == "candidate", Claim.status == "approved").group_by(Claim.subject_id)), "verified")
+        put(session.execute(select(DocumentSubject.subject_id, func.max(Document.created_at))
+                            .join(Document, Document.id == DocumentSubject.document_id)
+                            .where(DocumentSubject.org_id == org_id, DocumentSubject.subject_type == "candidate")
+                            .group_by(DocumentSubject.subject_id)), "verified")
+    return out
+
+
 # --- timeline -------------------------------------------------------------------------------------
 
 

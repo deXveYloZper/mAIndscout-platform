@@ -65,6 +65,15 @@ def of_person(session: Session, org_id, candidate_id, now: datetime | None = Non
     return _status(max([d for d in dates if d], default=None), person_months(), now)
 
 
+def people_status(session: Session, org_id, now: datetime | None = None) -> dict[uuid.UUID, dict[str, Any]]:
+    """of_person for everyone on the desk at once (a handful of queries, not two per person)."""
+    now = now or datetime.now(timezone.utc)
+    dates = relationship.last_dates_many(session, org_id, "candidate")
+    months = person_months()
+    ids = session.scalars(select(Candidate.id).where(Candidate.org_id == org_id))
+    return {cid: _status(max([d for d in (dates.get(cid) or {}).values() if d], default=None), months, now) for cid in ids}
+
+
 def of_company(session: Session, org_id, company: Company, now: datetime | None = None) -> dict[str, Any]:
     now = now or datetime.now(timezone.utc)
     dates = [relationship.last_contacted(session, org_id, "company", company.id), company.researched_at]
@@ -86,16 +95,16 @@ def recontact(session: Session, org_id, limit: int = 50, now: datetime | None = 
     tags: dict[uuid.UUID, list[str]] = {}
     for cid, tag in session.execute(select(CandidateTag.candidate_id, CandidateTag.tag).where(CandidateTag.org_id == org_id)):
         tags.setdefault(cid, []).append(tag)
+    status = people_status(session, org_id, now)
+    people = [p for p in people if status[p.id]["status"] == "stale"]
+    readings = profiles.latest_readings(session, [p.id for p in people])
     rows = []
     for person in people:
-        fresh = of_person(session, org_id, person.id, now)
-        if fresh["status"] != "stale":
-            continue
+        fresh = status[person.id]
         mine = [p for p in pairs.get(person.id, []) if p.pair_state not in ("we_passed", "withdrawn", "client_rejected", "placed")]
         priority = [live[p.job_id].title for p in mine if p.triage_band == "priority"]
         strong = [live[p.job_id].title for p in mine if p.match_tier == "strong" and live[p.job_id].title not in priority]
-        snap = profiles.latest(session, person.id)
-        reading = snap.profile["reading"]["label"] if snap else None
+        reading = readings.get(person.id)
         why = []
         if priority:
             why.append(f"priority on {', '.join(priority[:2])}")
@@ -143,6 +152,6 @@ def reconnect(session: Session, org_id, now: datetime | None = None) -> list[dic
 
 def stale_ids(session: Session, org_id) -> set[uuid.UUID]:
     """People who are stale now (for tags on lists)."""
-    now = datetime.now(timezone.utc)
+    status = people_status(session, org_id)
     return {p for p in session.scalars(select(Candidate.id).where(Candidate.org_id == org_id, Candidate.archived_at.is_(None)))
-            if of_person(session, org_id, p, now)["status"] == "stale"}
+            if status[p]["status"] == "stale"}

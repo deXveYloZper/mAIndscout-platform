@@ -284,6 +284,19 @@ def latest(session: Session, candidate_id) -> CareerProfile | None:
                           .order_by(CareerProfile.computed_at.desc(), CareerProfile.id.desc()).limit(1))
 
 
+def latest_readings(session: Session, candidate_ids: list) -> dict[uuid.UUID, str | None]:
+    """The latest profile reading ("strong", "unclear", …) of many people in one query."""
+    from sqlalchemy.dialects.postgresql import distinct_on
+
+    if not candidate_ids:
+        return {}
+    newest = (select(CareerProfile.candidate_id, CareerProfile.profile["reading"]["label"].astext.label("label"))
+              .where(CareerProfile.candidate_id.in_(candidate_ids))
+              .ext(distinct_on(CareerProfile.candidate_id))
+              .order_by(CareerProfile.candidate_id, CareerProfile.computed_at.desc(), CareerProfile.id.desc()))
+    return {cid: label for cid, label in session.execute(newest)}
+
+
 def run(session: Session, org_id, candidate_id, client_factory, task_id: uuid.UUID | None = None,
         search_factory=None) -> dict[str, Any]:
     """The background task: classify what is new (paid, once), then build (free)."""
