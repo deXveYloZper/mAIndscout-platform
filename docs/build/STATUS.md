@@ -25,7 +25,7 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 | I6 | Sourcing v2 | **gate GREEN** 2026-10-04 ([decision](../decisions/2026-10-04-i6-gate.md)) |
 | I7 | Calibration from real decisions (band changes, pass reasons) | ongoing; first review after about 50 real decisions |
 
-**Access** ([plan](../access/PLAN.md), approved 2026-10-05): built 2026-10-05 ([access](components/access.md)). Personal sign-in with two-step codes (required for owners), desks and roles, members page; the shared operator token and `X-Actor` are gone. Hosting and HTTPS are a separate decision; until then everything listens on this machine only.
+**Access** ([plan](../access/PLAN.md), approved 2026-10-05): built 2026-10-05 ([access](components/access.md)). Personal sign-in with optional two-step codes, desks and roles, members page; the shared operator token and `X-Actor` are gone. Hosting and HTTPS are a separate decision; until then everything listens on this machine only.
 
 **Slice 4 (closed):** ATS core and import ([plan](../slice-4/PLAN.md)): rescoped by the owner (we are the source of truth; import 100 candidates / 25 clients free, more as paid analysis at compute cost + 90%, [decision](../decisions/2026-10-04-source-of-truth-and-imports.md)); plan approved 2026-10-04.
 

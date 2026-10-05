@@ -4,7 +4,8 @@
 - Sessions: a random token; only its SHA-256 is stored. A web session ends after 12 hours idle or 14 days; an API
   token (for scripts) lasts until revoked. Removing a member or resetting a password ends their sessions.
 - Two-step codes: standard TOTP (RFC 6238, 30 s, 6 digits); the secret is encrypted with AUTH_KEY; a code is never
-  accepted twice. Required for owners, optional for recruiters.
+  accepted twice. Optional for everyone (the owner's choice, 2026-10-05); `OWNER_TWO_STEP=required` makes owners set
+  them up before anything else.
 - Guessing: 5 wrong tries for one email (or from one address) within 15 minutes lock it for 15 minutes. The answer
   never says whether an email exists.
 """
@@ -63,6 +64,10 @@ class Locked(Exception):
 
 class AccessError(ValueError):
     """A request that cannot be done as asked (422)."""
+
+
+def owners_need_two_step() -> bool:
+    return (env("OWNER_TWO_STEP", "optional") or "optional").strip().lower() == "required"
 
 
 def _now() -> datetime:
@@ -191,7 +196,7 @@ def confirm_totp(session: Session, user: AppUser, code: str) -> None:
 
 
 def disable_totp(session: Session, user: AppUser, password: str, org_roles: list[str]) -> None:
-    if "owner" in org_roles:
+    if "owner" in org_roles and owners_need_two_step():
         raise Forbidden("Owners must keep two-step verification on")
     if not verify_password(password, user.password_hash):
         raise AccessError("Wrong password")
@@ -341,8 +346,8 @@ class Principal:
 
     @property
     def needs_two_step(self) -> bool:
-        """An owner without two-step codes may only set them up."""
-        return self.role == "owner" and not self.totp_enabled
+        """With OWNER_TWO_STEP=required, an owner without two-step codes may only set them up."""
+        return self.role == "owner" and not self.totp_enabled and owners_need_two_step()
 
 
 def resolve(session: Session, token: str | None, desk: str | None = None) -> Principal:

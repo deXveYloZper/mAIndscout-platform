@@ -7,7 +7,7 @@
 - cockpit `app/login/`, `app/invite/`, `app/account/`, `app/members/`, `components/AccessForms.tsx`, `lib/api.ts`.
 
 ## What
-- **Sign in** with email and password. Owners (and any recruiter who turns it on) also enter a six-digit code from an authenticator app.
+- **Sign in** with email and password. Anyone who turns on two-step verification also enters a six-digit code from an authenticator app. It is optional for everyone (the owner's decision, 2026-10-05); `OWNER_TWO_STEP=required` in `core/.env` makes it compulsory for owners again.
 - **The caller is always the signed-in user.** Everything approved, moved, sent or erased is recorded under their email. No header can claim otherwise.
 - **Desks:** a user can belong to several desks and switch between them. A request for a desk they don't belong to is refused (403), whatever the headers say. The public-knowledge org is never a desk.
 - **Roles:**
@@ -32,8 +32,7 @@ The [code review](../../decisions/2026-10-05-external-code-review.md) found one 
   - TOTP (RFC 6238; SHA-1, 6 digits, 30 s, ±1 step);
   - the secret is encrypted with a key derived from `AUTH_KEY`;
   - a code is never accepted twice;
-  - an owner without codes can reach only the account routes until they are set up;
-  - owners can't switch them off.
+  - with `OWNER_TWO_STEP=required`: an owner without codes can reach only the account routes until they are set up, and owners can't switch them off.
 - **Sessions:**
   - a random token; only its SHA-256 is stored;
   - web sessions end after 12 hours idle or 14 days;
@@ -42,7 +41,7 @@ The [code review](../../decisions/2026-10-05-external-code-review.md) found one 
 - **Sign-in with a code:** the password step returns a ticket (HMAC with `AUTH_KEY`, 5 minutes), and the code step exchanges it for a session.
 - **Cockpit:**
   - the session lives in an httpOnly, SameSite=Lax cookie (`Secure` when `COOKIE_SECURE=true`), read only by server code and never by page scripts;
-  - every page asks the API; a 401 goes to sign-in (`/login`, or `/login?ended=1` when a session had existed); an owner without codes goes to `/account`. The redirect is page-level: Next's middleware redirects turn `127.0.0.1` into `localhost`, which hold different cookies.
+  - every page asks the API; a 401 goes to sign-in (`/login`, or `/login?ended=1` when a session had existed); (with owner codes required) an owner without codes goes to `/account`. The redirect is page-level: Next's middleware redirects turn `127.0.0.1` into `localhost`, which hold different cookies.
 - **Reset links** set a new password, clear two-step codes (a lost phone is the usual reason) and end all of the person's sessions. An owner can therefore take over a recruiter's sign-in by using the link themselves. That was accepted with owner-issued resets (no email service yet).
 - **Bootstrap:** `python -m maindscout init` creates `AUTH_KEY` and says how to create the first owner. `python -m maindscout user create --email … --name … --role owner` prints a one-time link to set the password. There is never a default password.
 
@@ -69,7 +68,7 @@ The [code review](../../decisions/2026-10-05-external-code-review.md) found one 
 - a wrong password and an unknown email get the same answer;
 - guessing locks;
 - the password-then-code flow, with codes never reused and forged tickets refused;
-- an owner without codes can only set them up; owners can't switch codes off;
+- by default an owner signs in with a password alone; with owner codes required, an owner without codes can only set them up and can't switch them off;
 - idle, expired and signed-out sessions end; a password change ends other sessions;
 - the actor is the signed-in user whatever `X-Actor` says;
 - desks and personal tokens are scoped;

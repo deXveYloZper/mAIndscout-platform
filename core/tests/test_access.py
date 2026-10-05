@@ -83,7 +83,15 @@ def test_a_forged_ticket_is_refused(client):
     assert bare().post("/v1/auth/login/code", json={"ticket": "e30.abc", "code": auth.totp_code(TOTP)}).status_code == 401
 
 
-def test_an_owner_without_two_step_codes_can_only_set_them_up(client, session, org):
+def test_by_default_an_owner_signs_in_with_a_password_alone(client, session, org):
+    user, _ = auth.create_user(session, "plain-owner@desk.test", "Plain Owner", org.id, "owner", password=PASSWORD)
+    token = bare().post("/v1/auth/login", json={"email": user.email, "password": PASSWORD}).json()["token"]
+    assert bare().get("/v1/jobs", headers=as_user(token)).status_code == 200
+    assert bare().get("/v1/auth/me", headers=as_user(token)).json()["needs_two_step"] is False
+
+
+def test_with_owner_two_step_required_an_owner_without_codes_can_only_set_them_up(client, session, org, monkeypatch):
+    monkeypatch.setenv("OWNER_TWO_STEP", "required")
     user, _ = auth.create_user(session, "new-owner@desk.test", "New Owner", org.id, "owner", password=PASSWORD)
     token = bare().post("/v1/auth/login", json={"email": user.email, "password": PASSWORD}).json()["token"]
     assert bare().get("/v1/jobs", headers=as_user(token)).status_code == 403
@@ -96,7 +104,8 @@ def test_an_owner_without_two_step_codes_can_only_set_them_up(client, session, o
     assert bare().get("/v1/jobs", headers=as_user(token)).status_code == 200
 
 
-def test_owners_cannot_switch_two_step_codes_off_but_recruiters_can(client, session, org):
+def test_owners_cannot_switch_two_step_codes_off_when_required_but_recruiters_can(client, session, org, monkeypatch):
+    monkeypatch.setenv("OWNER_TWO_STEP", "required")
     owner_token = client.headers["Authorization"].removeprefix("Bearer ")
     assert bare().post("/v1/auth/two-step/disable", headers=as_user(owner_token), json={"password": PASSWORD}).status_code == 403
     rec = recruiter(session, org)
