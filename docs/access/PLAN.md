@@ -1,6 +1,6 @@
 # Access: logins, desks and sessions
 
-**Status: DRAFT**, waiting for the owner's approval. Required before the desk is reachable from anywhere but this machine (from the [code review](../decisions/2026-10-05-external-code-review.md)). Needs no model calls.
+**Status: APPROVED** 2026-10-05 by the owner, with the three recommendations: email and password; two-step codes optional for recruiters and required for owners; owner-issued reset links. Required before the desk is reachable from anywhere but this machine (from the [code review](../decisions/2026-10-05-external-code-review.md)). Needs no model calls.
 
 ---
 

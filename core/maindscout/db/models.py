@@ -806,3 +806,81 @@ class CostEntry(Base):
     subject_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))  # cleared by erasure
     task_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     created_at: Mapped[datetime] = _created()
+
+
+# --- access: people, desks, sessions (access plan, 2026-10-05) ----------------------------------------------------
+
+ROLES = ("owner", "recruiter")
+SESSION_KINDS = ("web", "api")
+INVITE_PURPOSES = ("invite", "reset")
+
+
+class AppUser(Base):
+    """A person who signs in. Not a candidate: candidates never have accounts."""
+
+    __tablename__ = "app_user"
+    id: Mapped[uuid.UUID] = _pk()
+    email: Mapped[str] = mapped_column(String, nullable=False, unique=True)  # lowercased
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    password_hash: Mapped[str | None] = mapped_column(String)  # scrypt; None until the invite is accepted
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    totp_secret_enc: Mapped[str | None] = mapped_column(String)  # encrypted with AUTH_KEY
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    totp_last_step: Mapped[int | None] = mapped_column(BigInteger)  # a code is never accepted twice
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created()
+
+
+class Membership(Base):
+    __tablename__ = "membership"
+    __table_args__ = (UniqueConstraint("user_id", "org_id"), CheckConstraint(_in("role", ROLES), name="membership_role"))
+    id: Mapped[uuid.UUID] = _pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id"), nullable=False)
+    org_id: Mapped[uuid.UUID] = _org()
+    role: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = _created()
+
+
+class UserSession(Base):
+    """A signed-in browser (web) or a personal API token (api). Only a hash of the token is stored."""
+
+    __tablename__ = "user_session"
+    __table_args__ = (CheckConstraint(_in("kind", SESSION_KINDS), name="session_kind"),)
+    id: Mapped[uuid.UUID] = _pk()
+    token_hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id"), nullable=False)
+    org_id: Mapped[uuid.UUID] = _org()
+    kind: Mapped[str] = mapped_column(String, nullable=False, default="web")
+    label: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime] = _created()
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Invite(Base):
+    """A one-time link: to join a desk (invite) or to set a new password (reset). Only a hash is stored."""
+
+    __tablename__ = "invite"
+    __table_args__ = (CheckConstraint(_in("role", ROLES), name="invite_role"),
+                      CheckConstraint(_in("purpose", INVITE_PURPOSES), name="invite_purpose"))
+    id: Mapped[uuid.UUID] = _pk()
+    token_hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    org_id: Mapped[uuid.UUID] = _org()
+    email: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[str] = mapped_column(String, nullable=False)
+    purpose: Mapped[str] = mapped_column(String, nullable=False, default="invite")
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = _created()
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class LoginAttempt(Base):
+    """Failed sign-ins per email and per address, to slow down and lock guessing."""
+
+    __tablename__ = "login_attempt"
+    key: Mapped[str] = mapped_column(String, primary_key=True)  # "email:…" or "ip:…"
+    failures: Mapped[int] = mapped_column(nullable=False, default=0)
+    first_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

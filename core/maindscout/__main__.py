@@ -13,6 +13,12 @@
     python -m maindscout demo-seed [--count 60]  add synthetic demo people ("Demo · ", @example.invalid) for testing
     python -m maindscout demo-clear          erase every demo person
     python -m maindscout worker [--threads 2] run background tasks (serve also starts workers unless --no-workers)
+    python -m maindscout user create --email E --name N [--org UUID] [--role owner|recruiter]
+                                             add a member; prints a one-time link to set the password
+                                             (--password-env VAR / --totp-env VAR: read them from the environment,
+                                             for e2e; a password is never typed on the command line)
+    python -m maindscout user link --email E [--org UUID]   a new one-time link to set a password (clears two-step codes)
+    python -m maindscout token create --email E [--org UUID] --label L [--days N]   a personal API token for scripts
 """
 
 from __future__ import annotations
@@ -55,9 +61,23 @@ def _ensure_mailbox_key() -> None:
     print(f"MAILBOX_KEY created in {ENV_FILE}. Back it up with the database.")
 
 
+def _ensure_auth_key() -> None:
+    """Signs sign-in tickets and encrypts two-step secrets. Lose it and two-step codes must be set up again."""
+    import secrets
+
+    from maindscout.settings import ENV_FILE, env
+
+    if env("AUTH_KEY"):
+        return
+    with open(ENV_FILE, "a", encoding="utf-8") as f:
+        f.write("\nAUTH_KEY=" + secrets.token_urlsafe(48) + "\n")
+    print(f"AUTH_KEY created in {ENV_FILE}. Back it up with the database.")
+
+
 def init(org_name: str) -> None:
     _ensure_suppression_key()
     _ensure_mailbox_key()
+    _ensure_auth_key()
     command.upgrade(Config(str(Path(__file__).resolve().parents[1] / "alembic.ini")), "head")
     with make_session_factory(make_engine())() as session:
         writer.seed_registries(session)
@@ -68,6 +88,11 @@ def init(org_name: str) -> None:
             org = writer.create_org(session, org_name)
         session.commit()
         print(f"org id: {org.id}  ({org.name})")
+        from maindscout.db.models import Membership
+
+        if not session.scalar(select(Membership).where(Membership.org_id == org.id)):
+            print("No one can sign in yet. Create the owner:\n"
+                  f"  python -m maindscout user create --email you@example.com --name \"Your Name\" --org {org.id} --role owner")
 
 
 def _seed() -> None:
@@ -97,6 +122,41 @@ def _start_mailbox_clock(factory, every: int = 300) -> None:
             time.sleep(every)
 
     threading.Thread(target=loop, name="mailbox-clock", daemon=True).start()
+
+
+def _access_command(args) -> None:
+    import os
+    import uuid
+
+    from maindscout.api import auth
+    from maindscout.db.models import PUBLIC_ORG_ID, AppUser, Membership
+
+    if getattr(args, "database", None):
+        from maindscout.db.session import database_url
+
+        os.environ["DATABASE_URL"] = database_url().rsplit("/", 1)[0] + "/" + args.database
+    _seed()
+    with make_session_factory(make_engine())() as session:
+        org_id = uuid.UUID(args.org) if args.org else session.scalar(
+            select(Org.id).where(Org.id != PUBLIC_ORG_ID).order_by(Org.created_at))
+        if args.cmd == "token":
+            print(auth.create_api_token(session, args.email, org_id, args.label, args.days))
+            print("Shown once. Send it as `Authorization: Bearer <token>`.")
+        elif args.action == "create":
+            password = os.environ.get(args.password_env) if args.password_env else None
+            totp = os.environ.get(args.totp_env) if args.totp_env else None
+            user, link = auth.create_user(session, args.email, args.name or args.email.split("@")[0], org_id, args.role,
+                                          password, totp)
+            print(f"{user.email} is a{'n' if args.role == 'owner' else ''} {args.role} of desk {org_id}")
+            if link:
+                print(f"Set the password (valid 24 hours): {link}")
+        else:
+            user = session.scalar(select(AppUser).where(AppUser.email == args.email.strip().lower()))
+            member = user and session.scalar(select(Membership).where(Membership.user_id == user.id, Membership.org_id == org_id))
+            if not member:
+                raise SystemExit("No such member of that desk")
+            print(f"Set a new password (valid 24 hours): {auth.reset_link(session, org_id, user.id, 'command line')['link']}")
+        session.commit()
 
 
 def reset_db(name: str, org_id: str) -> None:
@@ -149,6 +209,21 @@ def main() -> None:
     p_demo = sub.add_parser("demo-seed")
     p_demo.add_argument("--count", type=int, default=60)
     sub.add_parser("demo-clear")
+    p_user = sub.add_parser("user")
+    p_user.add_argument("action", choices=["create", "link"])
+    p_user.add_argument("--email", required=True)
+    p_user.add_argument("--name", default=None)
+    p_user.add_argument("--org", default=None)
+    p_user.add_argument("--role", default="recruiter", choices=["owner", "recruiter"])
+    p_user.add_argument("--password-env", default=None)
+    p_user.add_argument("--totp-env", default=None)
+    p_user.add_argument("--database", default=None)
+    p_token = sub.add_parser("token")
+    p_token.add_argument("action", choices=["create"])
+    p_token.add_argument("--email", required=True)
+    p_token.add_argument("--org", default=None)
+    p_token.add_argument("--label", required=True)
+    p_token.add_argument("--days", type=int, default=None)
     p_reset = sub.add_parser("reset-db")
     p_reset.add_argument("name")
     p_reset.add_argument("--org-id", required=True)
@@ -249,6 +324,8 @@ def main() -> None:
             else:
                 print(f"erased {demo.clear(session, LocalBlobStore(env('BLOB_DIR')), org.id)} demo people")
             session.commit()
+    elif args.cmd in ("user", "token"):
+        _access_command(args)
     elif args.cmd == "reset-db":
         reset_db(args.name, args.org_id)
     elif args.cmd == "eval":
