@@ -317,39 +317,54 @@ def _contradictions(session: Session, org_id, candidate_id, decisions: list[uuid
                                        [("left", a.id), ("right", b.id)]).id)
 
 
-def _triage_now(session: Session, org_id, candidate_id, job: Job) -> triage.Triage:
-    requirements = [c.payload for c in _live_claims(session, org_id, "job", job.id, "JobRequirementClaim")]
-    skills = [c.payload["normalized_skill"] for c in _live_claims(session, org_id, "candidate", candidate_id, "SkillClaim")]
-    titles = [c.payload["title_raw"] for c in _live_claims(session, org_id, "candidate", candidate_id, "CareerStepClaim")]
+def pair_inputs(session: Session, org_id, candidate_id, job: Job) -> tuple[list[Claim], list[Claim]]:
+    """Everything matching reads from the database: the job's live requirements and the person's live facts."""
+    from maindscout.api.queries import live_requirements
+
+    mine = list(session.scalars(select(Claim).where(Claim.org_id == org_id, Claim.subject_id == candidate_id, Claim.status.in_(LIVE))))
+    return live_requirements(session, job.id), mine
+
+
+def _triage_now(session: Session, org_id, candidate_id, job: Job, inputs: tuple[list[Claim], list[Claim]] | None = None) -> triage.Triage:
+    reqs, mine = inputs or pair_inputs(session, org_id, candidate_id, job)
+    requirements = [c.payload for c in reqs]
+    skills = [c.payload["normalized_skill"] for c in mine if c.claim_type == "SkillClaim"]
+    titles = [c.payload["title_raw"] for c in mine if c.claim_type == "CareerStepClaim"]
     return triage.triage(requirements, skills, titles)
 
 
-def _match_now(session: Session, org_id, candidate_id, job: Job):
-    """Matching v2: the career profile against the hiring profile; token triage is rule 1 and the fallback."""
+def _match_now(session: Session, org_id, candidate_id, job: Job, rows=None, coarse: triage.Triage | None = None,
+               inputs: tuple[list[Claim], list[Claim]] | None = None):
+    """Matching v2: the career profile against the hiring profile; token triage is rule 1 and the fallback.
+    `inputs` (pair_inputs), `rows` (the gap table) and `coarse` (token triage) may be passed in when already known."""
     from maindscout.api import profiles
-    from maindscout.api.queries import _gap_rows
+    from maindscout.api.queries import _gap_rows_many
     from maindscout.domain import matching
 
-    coarse = _triage_now(session, org_id, candidate_id, job)
-    reqs = [{"id": str(c.id), "payload": c.approved_view or c.payload}
-            for c in _live_claims(session, org_id, "job", job.id, "JobRequirementClaim") if c.payload.get("category") != "process"]
+    inputs = inputs or pair_inputs(session, org_id, candidate_id, job)
+    coarse = coarse or _triage_now(session, org_id, candidate_id, job, inputs)
+    if rows is None:
+        rows = _gap_rows_many(session, org_id, job, [candidate_id], with_snippets=False,
+                              preloaded=(inputs[0], {candidate_id: inputs[1]}))[candidate_id]
+    reqs = [{"id": str(c.id), "payload": c.approved_view or c.payload} for c in inputs[0] if c.payload.get("category") != "process"]
     snap = profiles.latest(session, candidate_id)
     stints, _ = profiles.inputs(session, org_id, candidate_id) if snap else ([], [])
     from maindscout.api.brief import answers_for
     from maindscout.api.pipeline import active_block
 
     block = active_block(session, org_id, job.id, candidate_id)
-    return matching.match(reqs, _gap_rows(session, org_id, job, candidate_id), snap.profile if snap else None, stints,
+    return matching.match(reqs, rows, snap.profile if snap else None, stints,
                           (coarse.band, coarse.reason), answers_for(session, org_id, candidate_id),
                           blocked=block.reason if block is not None else None)
 
 
-def snapshot_pair(session: Session, pair: CandidateJob) -> Score | None:
+def snapshot_pair(session: Session, pair: CandidateJob, rows=None) -> Score | None:
     """Store what the machine considered for this pair (breakdown + coverage, never a value), only when it changed."""
-    from maindscout.api.queries import _gap_rows
+    from maindscout.api.queries import _gap_rows_many
     from maindscout.domain import coverage
 
-    rows = _gap_rows(session, pair.org_id, session.get(Job, pair.job_id), pair.candidate_id)
+    if rows is None:
+        rows = _gap_rows_many(session, pair.org_id, session.get(Job, pair.job_id), [pair.candidate_id], with_snippets=False)[pair.candidate_id]
     digest = coverage.claim_set_hash(rows)
     latest = session.scalar(select(Score.claim_set_hash).where(Score.candidate_id == pair.candidate_id, Score.job_id == pair.job_id)
                             .order_by(Score.computed_at.desc(), Score.id.desc()).limit(1))
@@ -366,15 +381,20 @@ def snapshot_pair(session: Session, pair: CandidateJob) -> Score | None:
 def retriage_pair(session: Session, pair: CandidateJob, cause: dict, actor: str = "system") -> PairEvent | None:
     """Recompute the band from live facts. Records a history event when it changes. A band set by hand stays.
     Either way, a new breakdown snapshot is stored if the facts behind the pair changed."""
-    snapshot_pair(session, pair)
+    from maindscout.api.queries import _gap_rows_many
+
     job = session.get(Job, pair.job_id)
-    m = _match_now(session, pair.org_id, pair.candidate_id, job)
+    inputs = pair_inputs(session, pair.org_id, pair.candidate_id, job)  # two queries; everything below is derived
+    rows = _gap_rows_many(session, pair.org_id, job, [pair.candidate_id], with_snippets=False,
+                          preloaded=(inputs[0], {pair.candidate_id: inputs[1]}))[pair.candidate_id]
+    snapshot_pair(session, pair, rows)
+    coarse = _triage_now(session, pair.org_id, pair.candidate_id, job, inputs)
+    m = _match_now(session, pair.org_id, pair.candidate_id, job, rows, coarse, inputs)
     pair.match_tier, pair.match = m.tier, m.as_dict()  # kept up to date even when a person set the band
     if pair.band_overridden_by:
         session.flush()
         return None
     if m.band is None:  # unclear: the coarse band stands
-        coarse = _triage_now(session, pair.org_id, pair.candidate_id, job)
         result = triage.Triage(coarse.band, coarse.reason)
     else:
         result = triage.Triage(m.band, m.reason)

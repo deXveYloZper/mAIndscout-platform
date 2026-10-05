@@ -276,20 +276,28 @@ def _gap_rows(session: Session, org_id: uuid.UUID, job: Job, candidate_id: uuid.
     return _gap_rows_many(session, org_id, job, [candidate_id])[candidate_id]
 
 
-def _gap_rows_many(session: Session, org_id: uuid.UUID, job: Job, candidate_ids: list[uuid.UUID]) -> dict[uuid.UUID, list]:
+def live_requirements(session: Session, job_id: uuid.UUID) -> list[Claim]:
+    return list(session.scalars(select(Claim).where(Claim.subject_id == job_id, Claim.claim_type == "JobRequirementClaim",
+                                                    Claim.status.in_(LIVE)).order_by(Claim.created_at, Claim.natural_key)))
+
+
+def _gap_rows_many(session: Session, org_id: uuid.UUID, job: Job, candidate_ids: list[uuid.UUID],
+                   with_snippets: bool = True, preloaded: tuple[list, dict] | None = None) -> dict[uuid.UUID, list]:
     """The gap table of each person against one job: one query for the requirements, one for everyone's facts, one
-    for their evidence (not three per person)."""
+    for their evidence (not three per person). Matching and snapshots never show snippets: they skip the evidence."""
     from maindscout.domain import gaps
 
-    reqs = list(session.scalars(select(Claim).where(Claim.subject_id == job.id, Claim.claim_type == "JobRequirementClaim",
-                                                    Claim.status.in_(LIVE)).order_by(Claim.created_at, Claim.natural_key)))
+    if preloaded is not None:  # (the job's live requirements, {candidate: live claims}), e.g. from process.pair_inputs
+        reqs, claims = preloaded[0], {cid: list(preloaded[1].get(cid, [])) for cid in candidate_ids}
+    else:
+        reqs = live_requirements(session, job.id)
+        claims = {cid: [] for cid in candidate_ids}
     requirements = [{"id": str(r.id), "payload": r.payload} for r in reqs]
-    claims: dict[uuid.UUID, list[Claim]] = {cid: [] for cid in candidate_ids}
-    if candidate_ids:
+    if candidate_ids and preloaded is None:
         for c in session.scalars(select(Claim).where(Claim.org_id == org_id, Claim.subject_id.in_(candidate_ids),
                                                      Claim.status.in_(LIVE))):
             claims[c.subject_id].append(c)
-    ev = evidence_for(session, [c.id for cs in claims.values() for c in cs])
+    ev = evidence_for(session, [c.id for cs in claims.values() for c in cs]) if with_snippets else defaultdict(list)
     out = {}
     for cid, mine in claims.items():
         facts = [gaps.Fact(str(c.id), c.claim_type, c.approved_view or c.payload, c.status, c.valid_from, c.valid_to,

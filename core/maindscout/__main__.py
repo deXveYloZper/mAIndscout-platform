@@ -18,6 +18,8 @@
                                              (--password-env VAR / --totp-env VAR: read them from the environment,
                                              for e2e; a password is never typed on the command line)
     python -m maindscout user link --email E [--org UUID]   a new one-time link to set a password (clears two-step codes)
+    python -m maindscout perf-seed [--people 3000]   a synthetic desk in maindscout_perf (free; see evals/perf.py)
+    python -m maindscout perf-check          time every main screen and count its database queries
     python -m maindscout token create --email E [--org UUID] --label L [--days N]   a personal API token for scripts
 """
 
@@ -169,8 +171,8 @@ def reset_db(name: str, org_id: str) -> None:
 
     from maindscout.db.session import database_url
 
-    if not re.fullmatch(r"[a-z0-9_]+_(e2e|test|eval)", name):
-        raise SystemExit("refusing: only databases named *_e2e, *_test or *_eval can be reset")
+    if not re.fullmatch(r"[a-z0-9_]+_(e2e|test|eval|perf)", name):
+        raise SystemExit("refusing: only databases named *_e2e, *_test, *_eval or *_perf can be reset")
     admin = create_engine(database_url(), isolation_level="AUTOCOMMIT")
     with admin.connect() as conn:
         conn.execute(text(f"DROP DATABASE IF EXISTS {name} WITH (FORCE)"))
@@ -224,6 +226,11 @@ def main() -> None:
     p_token.add_argument("--org", default=None)
     p_token.add_argument("--label", required=True)
     p_token.add_argument("--days", type=int, default=None)
+    p_pseed = sub.add_parser("perf-seed")
+    p_pseed.add_argument("--people", type=int, default=3000)
+    p_pseed.add_argument("--jobs", type=int, default=20)
+    p_pseed.add_argument("--per-job", type=int, default=150)
+    sub.add_parser("perf-check")
     p_reset = sub.add_parser("reset-db")
     p_reset.add_argument("name")
     p_reset.add_argument("--org-id", required=True)
@@ -324,6 +331,14 @@ def main() -> None:
             else:
                 print(f"erased {demo.clear(session, LocalBlobStore(env('BLOB_DIR')), org.id)} demo people")
             session.commit()
+    elif args.cmd == "perf-seed":
+        from maindscout.evals import perf
+
+        perf.seed(args.people, args.jobs, args.per_job)
+    elif args.cmd == "perf-check":
+        from maindscout.evals import perf
+
+        perf.check()
     elif args.cmd in ("user", "token"):
         _access_command(args)
     elif args.cmd == "reset-db":
