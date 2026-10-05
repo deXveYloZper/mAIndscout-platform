@@ -1,12 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
-import { ApiError, api, apiJson, type ProcessResult } from "@/lib/api";
+import { cookies, headers } from "next/headers";
+import { redirect, unstable_rethrow } from "next/navigation";
+import { ApiError, DESK_COOKIE, SESSION_COOKIE, TICKET_COOKIE, api, apiJson, apiPublic, apiRaw, type ProcessResult } from "@/lib/api";
 
 export type FormState = { error?: string; message?: string };
 
 function fail(error: unknown): FormState {
+  unstable_rethrow(error); // "sign in again" and other redirects must not be swallowed as form errors
   return { error: error instanceof ApiError ? error.message : "Something went wrong. Try again." };
 }
 
@@ -479,4 +481,152 @@ export async function disconnectMailbox(): Promise<void> {
 export async function syncMailbox(path: string): Promise<void> {
   await idempotent(() => apiJson("/v1/mailbox/sync", {}));
   revalidatePath(path);
+}
+
+// --- access: sign in, account, members ---
+
+const COOKIE = { httpOnly: true, sameSite: "lax" as const, secure: process.env.COOKIE_SECURE === "true", path: "/" };
+
+async function forwardedFor(): Promise<string | null> {
+  return (await headers()).get("x-forwarded-for");
+}
+
+async function startSession(token: string): Promise<void> {
+  const jar = await cookies();
+  jar.set(SESSION_COOKIE, token, { ...COOKIE, maxAge: 14 * 24 * 3600 });
+  jar.delete(TICKET_COOKIE);
+}
+
+export async function signIn(_: FormState, form: FormData): Promise<FormState> {
+  const email = String(form.get("email") || "").trim();
+  const password = String(form.get("password") || "");
+  if (!email || !password) return { error: "Enter your email and password." };
+  let result: { token?: string; needs_code?: boolean; ticket?: string };
+  try {
+    result = await apiPublic("/v1/auth/login", { email, password }, await forwardedFor());
+  } catch (e) {
+    return fail(e);
+  }
+  if (result.needs_code && result.ticket) {
+    (await cookies()).set(TICKET_COOKIE, result.ticket, { ...COOKIE, maxAge: 300 });
+    redirect("/login?step=code");
+  }
+  await startSession(result.token!);
+  redirect("/");
+}
+
+export async function signInCode(_: FormState, form: FormData): Promise<FormState> {
+  const ticket = (await cookies()).get(TICKET_COOKIE)?.value;
+  if (!ticket) redirect("/login");
+  let token: string;
+  try {
+    token = (await apiPublic<{ token: string }>("/v1/auth/login/code", { ticket, code: String(form.get("code") || "") },
+      await forwardedFor())).token;
+  } catch (e) {
+    return fail(e);
+  }
+  await startSession(token);
+  redirect("/");
+}
+
+export async function signOut(): Promise<void> {
+  try {
+    await apiRaw("/v1/auth/logout", { method: "POST" });
+  } catch (e) {
+    unstable_rethrow(e);
+  }
+  const jar = await cookies();
+  jar.delete(SESSION_COOKIE);
+  jar.delete(DESK_COOKIE);
+  redirect("/login");
+}
+
+export async function switchDesk(form: FormData): Promise<void> {
+  const desk = String(form.get("desk") || "");
+  if (/^[0-9a-f-]{36}$/i.test(desk)) (await cookies()).set(DESK_COOKIE, desk, { ...COOKIE, maxAge: 14 * 24 * 3600 });
+  redirect("/");
+}
+
+export async function acceptInvite(token: string, _: FormState, form: FormData): Promise<FormState> {
+  const password = String(form.get("password") || "");
+  if (form.has("repeat") && password !== String(form.get("repeat"))) return { error: "The two passwords differ." };
+  try {
+    await apiPublic(`/v1/auth/invites/${encodeURIComponent(token)}/accept`,
+      { password, name: String(form.get("name") || "").trim() || null });
+  } catch (e) {
+    return fail(e);
+  }
+  redirect("/login?ready=1");
+}
+
+export async function changePassword(_: FormState, form: FormData): Promise<FormState> {
+  const next = String(form.get("new") || "");
+  if (next !== String(form.get("repeat") || "")) return { error: "The two new passwords differ." };
+  try {
+    await apiRaw("/v1/auth/password", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ current: String(form.get("current") || ""), new: next }) });
+  } catch (e) {
+    return fail(e);
+  }
+  return { message: "Password changed. Your other sessions have ended." };
+}
+
+export type TwoStepState = FormState & { secret?: string; uri?: string };
+
+export async function startTwoStep(_: TwoStepState): Promise<TwoStepState> {
+  try {
+    return await apiJson<{ secret: string; uri: string }>("/v1/auth/two-step/start", {});
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function confirmTwoStep(_: FormState, form: FormData): Promise<FormState> {
+  try {
+    await apiRaw("/v1/auth/two-step/confirm", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: String(form.get("code") || "") }) });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath("/account");
+  redirect("/account?two_step=on");
+}
+
+export async function endOtherSessions(): Promise<void> {
+  await apiJson("/v1/auth/sessions/end-others", {});
+  revalidatePath("/account");
+}
+
+export type LinkState = FormState & { link?: string };
+
+export async function inviteMember(_: LinkState, form: FormData): Promise<LinkState> {
+  try {
+    const out = await apiJson<{ link: string; email: string }>("/v1/members/invites",
+      { email: String(form.get("email") || "").trim(), role: String(form.get("role") || "recruiter") });
+    revalidatePath("/members");
+    return { message: `Invitation for ${out.email}, valid 7 days. Copy the link and send it yourself:`, link: out.link };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function resetMember(userId: string, _: LinkState): Promise<LinkState> {
+  try {
+    const out = await apiJson<{ link: string; email: string }>(`/v1/members/${userId}/reset`, {});
+    return { message: `A new sign-in link for ${out.email}, valid 24 hours. It also clears their two-step codes:`, link: out.link };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function setMemberRole(userId: string, form: FormData): Promise<void> {
+  // Not idempotent(): "a desk needs at least one owner" must be shown, not swallowed.
+  await apiRaw(`/v1/members/${userId}`, { method: "PATCH", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role: String(form.get("role") || "recruiter") }) });
+  revalidatePath("/members");
+}
+
+export async function removeMember(userId: string): Promise<void> {
+  await apiRaw(`/v1/members/${userId}`, { method: "DELETE" });
+  revalidatePath("/members");
 }

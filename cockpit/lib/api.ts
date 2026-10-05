@@ -1,9 +1,16 @@
-// Server-side client for the platform API. Never import this from a client component:
-// it reads the operator token from the server environment. `server-only` makes the build fail if one tries
-// (type-only imports are erased and stay allowed).
+// Server-side client for the platform API. Never import this from a client component: it reads the signed-in
+// user's session from an httpOnly cookie. `server-only` makes the build fail if one tries (type-only imports are
+// erased and stay allowed).
 import "server-only";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
 const BASE = process.env.MAINDSCOUT_API ?? "http://127.0.0.1:8765";
+
+/** The session token (httpOnly: never readable by page scripts) and the chosen desk. */
+export const SESSION_COOKIE = "ms_session";
+export const DESK_COOKIE = "ms_desk";
+export const TICKET_COOKIE = "ms_ticket";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -12,24 +19,41 @@ export class ApiError extends Error {
   }
 }
 
-function headers(extra?: HeadersInit): Headers {
-  const token = process.env.OPERATOR_TOKEN;
-  const org = process.env.ORG_ID;
-  if (!token || !org) throw new ApiError(500, "Cockpit is not configured: set OPERATOR_TOKEN and ORG_ID in cockpit/.env.local");
+async function headers(extra?: HeadersInit): Promise<Headers> {
+  const jar = await cookies();
   const h = new Headers(extra);
-  h.set("Authorization", `Bearer ${token}`);
-  h.set("X-Org-Id", org);
+  const token = jar.get(SESSION_COOKIE)?.value;
+  const desk = jar.get(DESK_COOKIE)?.value;
+  if (token) h.set("Authorization", `Bearer ${token}`);
+  if (desk) h.set("X-Org-Id", desk);
   return h;
 }
 
+/** Calls without a session (sign in, invite links). */
+export async function apiPublic<T>(path: string, body?: unknown, forwardedFor?: string | null): Promise<T> {
+  const h = new Headers({ "Content-Type": "application/json" });
+  if (forwardedFor) h.set("X-Forwarded-For", forwardedFor);
+  const res = await fetch(`${BASE}${path}`, { method: body === undefined ? "GET" : "POST", headers: h, cache: "no-store",
+    body: body === undefined ? undefined : JSON.stringify(body) });
+  if (!res.ok) throw new ApiError(res.status, await detailOf(res));
+  return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+}
+
+async function detailOf(res: Response): Promise<string> {
+  let detail: unknown = res.statusText;
+  try {
+    detail = (await res.json()).detail ?? detail;
+  } catch {}
+  return typeof detail === "string" ? detail : JSON.stringify(detail);
+}
+
 export async function apiRaw(path: string, init: RequestInit = {}): Promise<Response> {
-  const res = await fetch(`${BASE}${path}`, { ...init, headers: headers(init.headers), cache: "no-store" });
+  const res = await fetch(`${BASE}${path}`, { ...init, headers: await headers(init.headers), cache: "no-store" });
   if (!res.ok) {
-    let detail = res.statusText;
-    try {
-      detail = (await res.json()).detail ?? detail;
-    } catch {}
-    throw new ApiError(res.status, typeof detail === "string" ? detail : JSON.stringify(detail));
+    const detail = await detailOf(res);
+    if (res.status === 401) redirect("/login?ended=1"); // not signed in, or the session ended
+    if (res.status === 403 && detail.includes("two-step")) redirect("/account?setup=1"); // an owner must set up codes first
+    throw new ApiError(res.status, detail);
   }
   return res;
 }
@@ -229,3 +253,29 @@ export type CareerProfile = {
 };
 export type StepLabel = { claim_id: string; status: string; career_claim_id: string; role_family: string; level: string | null;
   domains: string[]; signals: string[] };
+
+export type Me = {
+  id: string;
+  email: string;
+  name: string;
+  desk: string;
+  role: "owner" | "recruiter";
+  desks: { id: string; name: string; role: string }[];
+  two_step: boolean;
+  needs_two_step: boolean;
+};
+
+export type Member = { id: string | null; email: string; name: string | null; role: string; two_step?: boolean;
+  disabled?: boolean; joined?: string | null; invited?: boolean; expires_at?: string };
+
+/** Who is signed in, or null (no redirect: the layout uses it on the sign-in page too). */
+export async function currentUser(): Promise<Me | null> {
+  const h = await headers();
+  if (!h.get("Authorization")) return null;
+  try {
+    const res = await fetch(`${BASE}/v1/auth/me`, { headers: h, cache: "no-store" });
+    return res.ok ? ((await res.json()) as Me) : null;
+  } catch {
+    return null;
+  }
+}

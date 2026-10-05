@@ -69,9 +69,9 @@ Bound to this machine, that is tolerable. Reachable by anyone else, it isn't.
 
 ## Gate
 
-- [ ] No API route works without a valid session or personal token (except health, login, invite acceptance and the mailbox callback); a test lists every route and checks it.
-- [ ] A user can't read or change another desk's data by any header or id.
-- [ ] Every recorded "by" is the signed-in user; `X-Actor` and `OPERATOR_TOKEN` are gone from code and docs.
-- [ ] Wrong passwords lock; sessions expire; removal ends sessions at once.
-- [ ] The session token can't be read by browser scripts.
-- [ ] Core and e2e suites green with real sign-in.
+- [x] No API route works without a valid session or personal token (except health, login, invite acceptance and the mailbox callback); a test lists every route and checks it.
+- [x] A user can't read or change another desk's data by any header or id.
+- [x] Every recorded "by" is the signed-in user; `X-Actor` and `OPERATOR_TOKEN` are gone from code and docs.
+- [x] Wrong passwords lock; sessions expire; removal ends sessions at once.
+- [x] The session token can't be read by browser scripts.
+- [ ] Core and e2e suites green with real sign-in. (Core green, and the e2e sign-in step passes on a production build. The rest of the e2e suite uses the real model and waits until credits are back.)

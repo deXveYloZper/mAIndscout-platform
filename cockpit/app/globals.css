@@ -297,3 +297,11 @@ form.inline { display: inline; margin-left: 6px; }
 .message-edit input, .message-edit textarea { width: 100%; background: var(--bg-raise-2); border: 1px solid var(--line); padding: 6px; }
 .message-body { white-space: pre-wrap; font: inherit; margin: 6px 0; color: var(--cream-dim); }
 .mailbox-providers { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+
+/* access (sign in, account, members) */
+.signin { max-width: 380px; margin: 48px auto; }
+.stack { display: grid; gap: 10px; }
+.stack label { display: grid; gap: 4px; color: var(--cream-dim); font-size: 13px; }
+.stack input { width: 100%; }
+.secret { font-family: ui-monospace, monospace; letter-spacing: 0.08em; background: var(--bg-raise-2); padding: 4px 8px; word-break: break-all; }
+.who { gap: 12px; font-size: 13px; }

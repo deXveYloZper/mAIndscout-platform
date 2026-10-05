@@ -1,12 +1,13 @@
 import { connectMailbox, disconnectMailbox, syncMailbox } from "@/app/actions";
-import { api, type MailboxStatus } from "@/lib/api";
+import { api, currentUser, type MailboxStatus } from "@/lib/api";
 
 export const metadata = { title: "Mailbox" };
 
 const NAME = { google: "Gmail", microsoft: "Outlook" } as const;
 
 export default async function Mailbox({ searchParams }: { searchParams: Promise<{ connected?: string; error?: string }> }) {
-  const [{ connected, error }, box] = await Promise.all([searchParams, api<MailboxStatus>("/v1/mailbox")]);
+  const [{ connected, error }, box, me] = await Promise.all([searchParams, api<MailboxStatus>("/v1/mailbox"), currentUser()]);
+  const owner = me?.role === "owner";
   return (
     <>
       <h1>Mailbox</h1>
@@ -27,12 +28,14 @@ export default async function Mailbox({ searchParams }: { searchParams: Promise<
           </p>
           <div className="row">
             <form action={syncMailbox.bind(null, "/mailbox")}><button className="btn small">Look now</button></form>
-            <form action={disconnectMailbox}><button className="btn small">Disconnect</button></form>
+            {owner && <form action={disconnectMailbox}><button className="btn small">Disconnect</button></form>}
           </div>
           <p className="hint">Disconnecting deletes the stored sign-in. Drafts already in your mailbox stay there.</p>
         </section>
       ) : (
-        <section className="panel">
+        !owner ? (
+          <section className="panel"><p className="sub">No mailbox is connected. A desk owner connects Gmail or Outlook.</p></section>
+        ) : <section className="panel">
           <h3>Connect a mailbox</h3>
           <div className="mailbox-providers">
             {(["google", "microsoft"] as const).map((p) => {
