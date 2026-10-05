@@ -25,7 +25,7 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 | I6 | Sourcing v2 | **gate GREEN** 2026-10-04 ([decision](../decisions/2026-10-04-i6-gate.md)) |
 | I7 | Calibration from real decisions (band changes, pass reasons) | ongoing; first review after about 50 real decisions |
 
-**Before the desk is reachable from outside this machine** (from the [code review](../decisions/2026-10-05-external-code-review.md)): per-desk credentials instead of one operator token, the actor taken from a real session rather than `X-Actor`, and a cockpit login. Until then, the API, database and cockpit listen on this machine only.
+**Before the desk is reachable from outside this machine** (from the [code review](../decisions/2026-10-05-external-code-review.md)): per-desk credentials instead of one operator token, the actor taken from a real session rather than `X-Actor`, and a cockpit login. Until then, the API, database and cockpit listen on this machine only. Plan: [access/PLAN.md](../access/PLAN.md) (draft, waiting for the owner's approval).
 
 **Slice 4 (closed):** ATS core and import ([plan](../slice-4/PLAN.md)): rescoped by the owner (we are the source of truth; import 100 candidates / 25 clients free, more as paid analysis at compute cost + 90%, [decision](../decisions/2026-10-04-source-of-truth-and-imports.md)); plan approved 2026-10-04.
 
