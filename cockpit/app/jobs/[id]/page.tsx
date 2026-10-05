@@ -94,6 +94,9 @@ export default async function Job({ params }: { params: Promise<{ id: string }> 
       <p className="stages" aria-label="Pipeline">
         {PIPELINE.filter(([k]) => job.stages[k]).map(([k, l]) => <span key={k} className={`statetag ${k}`}>{l} {job.stages[k]}</span>)}
       </p>
+      {job.rematching && (
+        <p className="hint" role="status">Re-matching everyone on this job after the change to its requirements. Bands update in a moment: reload to see them.</p>
+      )}
       {job.process_stale && (
         <p className="warn">This posting&apos;s own process dates have passed. Confirm it is still open before submitting anyone.</p>
       )}

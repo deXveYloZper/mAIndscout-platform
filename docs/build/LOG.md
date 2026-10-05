@@ -2,6 +2,7 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-05 — Performance: a 3,000-person benchmark desk (`perf-seed` / `perf-check`); missing indexes added (migration 0023); per-person loops batched (people list 66 s → 2.3 s, companies 57 s → 0.24 s, Refresh 36 s → 1.6 s, export 105 s → 3.4 s, jobs list 13 s → 0.27 s, all-jobs inbox 14 s → 0.5 s); matching uses half the queries; jobs over 40 people re-match in the background — [performance](components/performance.md)
 - 2026-10-05 — Model recordings: `LLM_REPLAY=auto|replay|record` records every model answer once and replays it for free (e2e: `npm run e2e:free`); sign-in redirects keep the browser's address — [model-recordings](components/model-recordings.md)
 - 2026-10-05 — Access: personal sign-in (scrypt passwords, two-step codes required for owners, lockout after 5 wrong tries), sessions in an httpOnly cookie, desks and roles, members page with one-time links; the shared token and declared actor are gone — [access](components/access.md)
 - 2026-10-05 — Letter-spaced PDF text repaired at read time (one real CV went from 32 refused facts to 0 bad quotes; 5 of 27 new CVs affected, all others unchanged) — [ingestion](components/ingestion.md)

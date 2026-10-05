@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from maindscout.api import writer
-from maindscout.api.process import natural_key, retriage_candidate, retriage_job
+from maindscout.api.process import natural_key, rematch_job, retriage_candidate
 from maindscout.db.models import Candidate, CandidateJob, Claim, ClaimObservation, Decision, DecisionItem, Evidence, Job, PairEvent
 from maindscout.domain import stints
 
@@ -70,7 +70,7 @@ def retriage_after(session: Session, claim: Claim, act: str, actor: str) -> None
 
             profiles.build(session, claim.org_id, claim.subject_id)  # code only: a person's correction shows at once
     elif claim.subject_type == "job":
-        retriage_job(session, claim.org_id, claim.subject_id, cause, actor)
+        rematch_job(session, claim.org_id, claim.subject_id, cause, actor)
         if (claim.payload.get("mobility") or {}).get("facet") == "residence":
             from maindscout.db.models import Job
 

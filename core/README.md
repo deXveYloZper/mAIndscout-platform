@@ -10,6 +10,7 @@ python -m pytest                     # creates and migrates a throwaway maindsco
 python -m maindscout init            # migrate, seed, create the org; prints the org id
 python -m maindscout serve           # API on http://127.0.0.1:8765 (docs at /docs) + 2 background workers
 python -m maindscout worker          # (optional) more background workers in their own process
+python -m maindscout perf-seed && python -m maindscout perf-check   # timings on a 3,000-person synthetic desk (free)
 python -m maindscout eval --with-tests  # golden eval over test_artifacts (real model, a few cents)
 cd ../cockpit && npm run e2e         # cockpit end to end (fresh maindscout_e2e database; model answers replayed when recorded)
 npm run e2e:free                     # replay only: costs nothing (see docs/build/components/model-recordings.md)

@@ -66,6 +66,15 @@ def profile_job(session: Session, task: Task) -> dict[str, Any]:
     return hiring.from_ad(session, uuid.UUID(task.payload["job_id"]), llm_factory(), force=bool(task.payload.get("force")), task_id=task.id)
 
 
+@handler("rematch_job")
+def rematch_job(session: Session, task: Task) -> dict[str, Any]:
+    from maindscout.api.process import retriage_job
+
+    p = task.payload
+    return {"band_changes": len(retriage_job(session, task.org_id, uuid.UUID(p["job_id"]), p.get("cause") or {"act": "rematch"},
+                                             p.get("actor") or "system"))}
+
+
 @handler("mailbox_sync")
 def mailbox_sync(session: Session, task: Task) -> dict[str, Any]:
     return messages.sync(session, task.org_id)

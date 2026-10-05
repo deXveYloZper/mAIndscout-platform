@@ -417,9 +417,33 @@ def retriage_candidate(session: Session, org_id, candidate_id, cause: dict, acto
     return [e for e in (retriage_pair(session, p, cause, actor) for p in pairs) if e]
 
 
+INLINE_JOB_REMATCH = 40  # up to this many people, a job re-matches before the request returns (about 2 s)
+
+
 def retriage_job(session: Session, org_id, job_id, cause: dict, actor: str) -> list[PairEvent]:
     pairs = session.scalars(select(CandidateJob).where(CandidateJob.org_id == org_id, CandidateJob.job_id == job_id))
     return [e for e in (retriage_pair(session, p, cause, actor) for p in pairs) if e]
+
+
+def rematch_job(session: Session, org_id, job_id, cause: dict, actor: str) -> dict[str, Any]:
+    """A change to a job's requirements: re-match everyone on it. Small jobs at once; bigger ones in the background
+    (matching takes about 0.1 s a person, so 600 people would hold the request for a minute)."""
+    from sqlalchemy import func
+
+    from maindscout.api import tasks
+
+    n = session.scalar(select(func.count()).select_from(CandidateJob).where(CandidateJob.org_id == org_id, CandidateJob.job_id == job_id)) or 0
+    if n <= INLINE_JOB_REMATCH:
+        return {"rematched": len(retriage_job(session, org_id, job_id, cause, actor)), "background": False}
+    task = tasks.enqueue(session, org_id, "rematch_job", {"job_id": str(job_id), "cause": cause, "actor": actor},
+                         priority=40, dedupe_key=f"rematch:{job_id}")
+    return {"people": n, "background": True, "task_id": str(task.id)}
+
+
+def rematching(session: Session, job_id) -> bool:
+    from maindscout.db.models import Task
+
+    return session.scalar(select(Task.id).where(Task.dedupe_key == f"rematch:{job_id}", Task.status.in_(("queued", "running"))).limit(1)) is not None
 
 
 def _ensure_pair(session: Session, org_id, candidate_id, job: Job, cause: dict | None = None) -> CandidateJob:

@@ -123,6 +123,7 @@ export type JobPage = JobSummary & {
   source_document_id: string | null;
   requirements: ClaimView[];
   process_stale: boolean;
+  rematching?: boolean;
   people: Record<Band, PersonOnJob[]>;
   archived: { candidate_id: string; name: string | null; reason: string | null }[];
   coverage: { desk: string[]; from_ad: string[]; opened: string[]; names: Record<string, string> };

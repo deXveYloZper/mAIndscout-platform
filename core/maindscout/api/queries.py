@@ -97,6 +97,12 @@ def list_jobs(session: Session, org_id: uuid.UUID) -> list[dict[str, Any]]:
              "to_review": sum(1 for i in items if (i.get("subject") or {}).get("id") in priority[j.id])} for j in jobs]
 
 
+def _rematching(session: Session, job_id) -> bool:
+    from maindscout.api.process import rematching
+
+    return rematching(session, job_id)
+
+
 def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str, Any]:
     job = session.get(Job, job_id)
     if job is None or job.org_id != org_id:
@@ -131,6 +137,7 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
         "source_document_id": str(job.source_document_id) if job.source_document_id else None,
         "requirements": [claim_view(c, ev[c.id]) for c in reqs],
         "process_stale": any(c.flags.get("job_process_stale") for c in reqs),
+        "rematching": _rematching(session, job.id),
         "people": people,
         "archived": archived,
         "stages": pipeline.stage_counts(session, job.id),
@@ -213,6 +220,13 @@ def inbox(session: Session, org_id: uuid.UUID, job_id: uuid.UUID | None = None, 
     claim_ids = [i.claim_id for its in links.values() for i in its]
     claims = {c.id: c for c in session.scalars(select(Claim).where(Claim.id.in_(claim_ids or [None])))}
     ev = evidence_for(session, list(claims))
+    # "Who is this?" cards: the possible matches' names and each person's CV, two queries for all cards.
+    notes = [d for d in decisions if d.type == "identity_note"]
+    note_names = names(session, list({uuid.UUID(i) for d in notes for i in d.context.get("candidate_ids", [])}))
+    note_docs = dict(session.execute(
+        select(DocumentSubject.subject_id, func.min(func.cast(DocumentSubject.document_id, String)))
+        .where(DocumentSubject.subject_id.in_([d.subject_id for d in notes] or [None]))
+        .group_by(DocumentSubject.subject_id)).all()) if notes else {}
     for d in decisions:
         sides = [_side(claims[i.claim_id], ev[i.claim_id]) for i in links[d.id]]
         entry = {"id": str(d.id), "kind": d.type, "blocking": d.type in BLOCKING, "created_at": _iso(d.created_at),
@@ -221,10 +235,8 @@ def inbox(session: Session, org_id: uuid.UUID, job_id: uuid.UUID | None = None, 
             entry["subject"] = {"id": d.context.get("candidate_id"), "name": who.get(uuid.UUID(d.context["candidate_id"])) if d.context.get("candidate_id") else None}
         if d.type == "identity_note":
             others = [uuid.UUID(i) for i in d.context.get("candidate_ids", [])]
-            known = names(session, others)
-            entry["possibly"] = [{"id": str(i), "name": known.get(i)} for i in others]
-            doc = session.scalar(select(Document.id).join(Evidence, Evidence.document_id == Document.id)
-                                 .join(Claim, Claim.id == Evidence.claim_id).where(Claim.subject_id == d.subject_id).limit(1))
+            entry["possibly"] = [{"id": str(i), "name": note_names.get(i)} for i in others]
+            doc = note_docs.get(d.subject_id)
             entry["document_id"] = str(doc) if doc else None
         if d.type == "revision_diff":
             old, new = d.context.get("old_view", {}), d.context.get("new_view", {})
