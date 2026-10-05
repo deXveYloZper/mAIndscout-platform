@@ -4,7 +4,7 @@
 **Code:**
 - `core/maindscout/api/auth.py`; routes in `api/app.py`; migration `0022`;
 - CLI `user` and `token`;
-- cockpit `middleware.ts`, `app/login/`, `app/invite/`, `app/account/`, `app/members/`, `components/AccessForms.tsx`, `lib/api.ts`.
+- cockpit `app/login/`, `app/invite/`, `app/account/`, `app/members/`, `components/AccessForms.tsx`, `lib/api.ts`.
 
 ## What
 - **Sign in** with email and password. Owners (and any recruiter who turns it on) also enter a six-digit code from an authenticator app.
@@ -42,8 +42,7 @@ The [code review](../../decisions/2026-10-05-external-code-review.md) found one 
 - **Sign-in with a code:** the password step returns a ticket (HMAC with `AUTH_KEY`, 5 minutes), and the code step exchanges it for a session.
 - **Cockpit:**
   - the session lives in an httpOnly, SameSite=Lax cookie (`Secure` when `COOKIE_SECURE=true`), read only by server code and never by page scripts;
-  - the middleware sends anyone without a cookie to `/login`; the API is the real check;
-  - a 401 from the API goes to sign-in; an owner without codes goes to `/account`.
+  - every page asks the API; a 401 goes to sign-in (`/login`, or `/login?ended=1` when a session had existed); an owner without codes goes to `/account`. The redirect is page-level: Next's middleware redirects turn `127.0.0.1` into `localhost`, which hold different cookies.
 - **Reset links** set a new password, clear two-step codes (a lost phone is the usual reason) and end all of the person's sessions. An owner can therefore take over a recruiter's sign-in by using the link themselves. That was accepted with owner-issued resets (no email service yet).
 - **Bootstrap:** `python -m maindscout init` creates `AUTH_KEY` and says how to create the first owner. `python -m maindscout user create --email … --name … --role owner` prints a one-time link to set the password. There is never a default password.
 

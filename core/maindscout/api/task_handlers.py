@@ -16,14 +16,21 @@ from maindscout.settings import env
 from maindscout.storage import LocalBlobStore
 
 # Replaced in tests; the real client otherwise.
-llm_factory: Callable[[], LLMClient] = lambda: XaiClient()
+def _chat_client() -> LLMClient:
+    from maindscout.intelligence.recording import wrap_chat
+
+    return wrap_chat(XaiClient)
+
+
+llm_factory: Callable[[], LLMClient] = _chat_client
 blob_factory: Callable[[], Any] = lambda: LocalBlobStore(env("BLOB_DIR"))
 
 
 def _search_client():
+    from maindscout.intelligence.recording import wrap_search
     from maindscout.intelligence.research import XaiSearchClient
 
-    return XaiSearchClient()
+    return wrap_search(XaiSearchClient)
 
 
 search_factory: Callable[[], Any] = _search_client

@@ -2,6 +2,7 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-05 — Model recordings: `LLM_REPLAY=auto|replay|record` records every model answer once and replays it for free (e2e: `npm run e2e:free`); sign-in redirects keep the browser's address — [model-recordings](components/model-recordings.md)
 - 2026-10-05 — Access: personal sign-in (scrypt passwords, two-step codes required for owners, lockout after 5 wrong tries), sessions in an httpOnly cookie, desks and roles, members page with one-time links; the shared token and declared actor are gone — [access](components/access.md)
 - 2026-10-05 — Letter-spaced PDF text repaired at read time (one real CV went from 32 refused facts to 0 bad quotes; 5 of 27 new CVs affected, all others unchanged) — [ingestion](components/ingestion.md)
 - 2026-10-05 — Slice 4 gate declared GREEN by the owner — [decision](../decisions/2026-10-05-slice-4-gate.md)

@@ -41,6 +41,7 @@ Local setup: [core/README.md](../../core/README.md).
 | Import (CSV; 100 / 25 free, vouched; quote beyond) and free export (Slice 4) | built | [imports.md](components/imports.md) |
 | Messages: drafts, Gmail / Outlook drafts, sent / reply detection, follow-ups (Slice 4) | built | [messages.md](components/messages.md) |
 | Access: sign-in, two-step codes, desks, roles, members | built | [access.md](components/access.md) |
+| Model recordings: record once, replay free (tests, e2e, eval) | built | [model-recordings.md](components/model-recordings.md) |
 | Sourcing feeder (Slice 2) | built (desk) | [sourcing.md](components/sourcing.md) |
 | Coverage floor + reserved score (Slice 1) | built | [coverage.md](components/coverage.md) |
 | Gap table (Slice 1) | built | [gap-table.md](components/gap-table.md) |

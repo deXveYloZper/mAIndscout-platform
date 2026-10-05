@@ -64,7 +64,9 @@ def get_blobs() -> BlobStore:
 
 @lru_cache
 def get_llm() -> LLMClient:
-    return XaiClient()
+    from maindscout.intelligence.recording import wrap_chat
+
+    return wrap_chat(XaiClient)  # LLM_REPLAY: record once, replay for free (tests, e2e)
 
 
 def _principal(session: Session, authorization: str | None, x_org_id: str | None) -> auth.Principal:

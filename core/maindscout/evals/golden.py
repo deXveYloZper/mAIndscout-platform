@@ -673,7 +673,9 @@ def main(folder: Path | None = None, with_tests: bool = False) -> int:
     out_dir = CORE / "eval-reports"
     out_dir.mkdir(exist_ok=True)
     stamp = datetime.now().strftime("%Y-%m-%d-%H%M")
-    checks, meta = evaluate(folder, XaiClient(), out_dir / f"blobs-{stamp}")
+    from maindscout.intelligence.recording import wrap_chat
+
+    checks, meta = evaluate(folder, wrap_chat(XaiClient), out_dir / f"blobs-{stamp}")
     tests = run_pytest() if with_tests else None
     full = out_dir / f"golden-{stamp}.md"
     summary = out_dir / f"golden-{stamp}-summary.md"

@@ -51,7 +51,9 @@ export async function apiRaw(path: string, init: RequestInit = {}): Promise<Resp
   const res = await fetch(`${BASE}${path}`, { ...init, headers: await headers(init.headers), cache: "no-store" });
   if (!res.ok) {
     const detail = await detailOf(res);
-    if (res.status === 401) redirect("/login?ended=1"); // not signed in, or the session ended
+    // Not signed in, or the session ended: to sign-in. (A page-level redirect keeps the address the browser used;
+    // Next's middleware redirects would turn 127.0.0.1 into localhost, which holds different cookies.)
+    if (res.status === 401) redirect((await cookies()).get(SESSION_COOKIE) ? "/login?ended=1" : "/login");
     if (res.status === 403 && detail.includes("two-step")) redirect("/account?setup=1"); // an owner must set up codes first
     throw new ApiError(res.status, detail);
   }
