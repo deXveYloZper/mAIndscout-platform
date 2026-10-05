@@ -425,7 +425,7 @@ def process_document(session: Session, blobs: BlobStore, client: LLMClient, *, o
     doc = session.get(Document, document_id)
     if doc is None or doc.org_id != org_id:
         raise LookupError(f"No document {document_id}")
-    artifact = documents.extract_document(session, blobs, doc.id)
+    artifact = documents.extract_document(session, blobs, doc.id, refresh=force)
     if as_of is not None:
         doc.as_of, doc.as_of_basis = as_of, "override"
 

@@ -86,11 +86,32 @@ def _annotations(page: Any, number: int) -> list[Annotation]:
     return found
 
 
+TEXT_REPAIR_VERSION = "2"  # bump when the repairs below change; a forced re-read then reads the file again
+
+
+def _unspace_line(line: str) -> str:
+    """Some PDFs (tracked-out designer CVs) store every letter as its own word: "S p a n i s h  ( n a t i v e )".
+    On such a line, a single space is inside a word and two or more separate words. Ordinary lines are left alone:
+    only a line of at least 6 pieces, 80% of them single characters, is rejoined."""
+    pieces = line.split(" ")
+    solid = [p for p in pieces if p]
+    singles = sum(len(p) == 1 for p in solid)
+    short_word = 3 <= len(solid) == singles and len(line.strip()) <= 40  # "K y r a", "P w C"
+    if not short_word and (len(solid) < 6 or singles < 0.8 * len(solid)):
+        return line
+    words = re.split(r" {2,}", line.strip())
+    return " ".join(w.replace(" ", "") for w in words)
+
+
+def repair_text(text: str) -> str:
+    return "\n".join(_unspace_line(line) for line in text.split("\n"))
+
+
 def extract_pdf(data: bytes) -> ExtractionResult:
     try:
         reader = PdfReader(io.BytesIO(data))
         pages = list(reader.pages)
-        texts = [(page.extract_text() or "").strip() for page in pages]
+        texts = [repair_text((page.extract_text() or "").strip()) for page in pages]
     except (PyPdfError, ValueError, KeyError, OSError) as error:
         raise UnreadableDocument(f"Could not read PDF: {error}") from error
 
@@ -120,7 +141,7 @@ def extract_pdf(data: bytes) -> ExtractionResult:
         needs_vision=bool(reasons),
         needs_vision_reasons=reasons,
         created=_pdf_date(meta.get("/CreationDate")) if meta else None,
-        extractor={"name": "pypdf", "version": pypdf_version},
+        extractor={"name": "pypdf", "version": pypdf_version, "text_repair": TEXT_REPAIR_VERSION},
     )
 
 

@@ -31,6 +31,8 @@ Milestone D (extract claims), which reads artifacts, never raw bytes.
 ## Tests
 `core/tests/test_ingestion.py` (pure), `test_documents.py` (database, generated PDFs), `test_real_artifacts.py` (runs every PDF in `test_artifacts`; skipped if the folder is absent; nothing is copied into the repo). Result on 2026-10-02: all 13 files (11 CVs, 2 job ads) upload and extract.
 
+- **Letter-spaced text is repaired** (2026-10-05): some designer CVs store every letter as its own word ("S p a n i s h  ( n a t i v e )"), so no quote could ever match. A line that is mostly single characters is rejoined, with two or more spaces as word breaks; ordinary lines are untouched. `text_repair` is recorded with the reading, and a forced re-read refreshes a reading made before the current repair.
+
 ## Known limits
 - Word documents, images and scans are not read yet (scans are flagged `needs_vision` and stay unread).
 - Images stored as inline PDF image data are not detected; embedded image objects are.

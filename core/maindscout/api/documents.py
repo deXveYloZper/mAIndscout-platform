@@ -56,8 +56,9 @@ def upload_document(
     return document, False
 
 
-def extract_document(session: Session, blobs: BlobStore, document_id: uuid.UUID) -> ExtractionArtifact:
-    """Read the text layer once; later calls return the same artifact."""
+def extract_document(session: Session, blobs: BlobStore, document_id: uuid.UUID, refresh: bool = False) -> ExtractionArtifact:
+    """Read the text layer once; later calls return the same artifact. With `refresh` (a forced re-read), a PDF read
+    before the current text repairs is read again and its artifact updated in place."""
     document = session.get(Document, document_id)
     if document is None:
         raise LookupError(f"No document {document_id}")
@@ -66,10 +67,19 @@ def extract_document(session: Session, blobs: BlobStore, document_id: uuid.UUID)
             ExtractionArtifact.document_id == document_id, ExtractionArtifact.method == "text_layer"
         )
     )
-    if existing:
+    stale = (existing is not None and refresh and document.media_type == "application/pdf"
+             and (existing.produced_with or {}).get("text_repair") != pdf.TEXT_REPAIR_VERSION)
+    if existing and not stale:
         return existing
 
     result = pdf.extract(blobs.get(document.storage_key), document.media_type)
+    if stale:
+        existing.content, existing.annotations = result.text, [_annotation_dict(a) for a in result.annotations]
+        existing.content_sha = hashlib.sha256(result.text.encode("utf-8")).hexdigest()
+        existing.produced_with = {**result.extractor, "pages": result.pages, "needs_vision_reasons": result.needs_vision_reasons}
+        document.needs_vision = result.needs_vision
+        session.flush()
+        return existing
     artifact = ExtractionArtifact(
         org_id=document.org_id,
         document_id=document.id,

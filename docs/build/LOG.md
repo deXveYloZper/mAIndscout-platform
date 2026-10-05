@@ -2,6 +2,7 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-05 — Letter-spaced PDF text repaired at read time (one real CV went from 32 refused facts to 0 bad quotes; 5 of 27 new CVs affected, all others unchanged) — [ingestion](components/ingestion.md)
 - 2026-10-05 — Slice 4 gate declared GREEN by the owner — [decision](../decisions/2026-10-05-slice-4-gate.md)
 - 2026-10-05 — External code review: every finding checked, most fixed. A shared contact merges only when names agree; tighter span check (dates, phones, names) and no invented end dates; approved views never rewritten; erasure fails loud and reaches import rows, tasks and client notes; uploads typed by their bytes and never served as pages; formula-safe export; narrower Gmail scope; stuck tasks reclaimed; faster jobs list and job page; database and cockpit bound to this machine — [review](../decisions/2026-10-05-external-code-review.md)
 - 2026-10-05 — Slice 4 step 5: messages. Drafts from approved facts, the public job and the call only (internal words refused); put in your Gmail or Outlook drafts, never sent by the desk; sent and replies noticed and logged; follow-ups drafted after 4 days, stopped by any reply — [messages](components/messages.md), [mailbox setup](connections/mailbox-setup.md)
