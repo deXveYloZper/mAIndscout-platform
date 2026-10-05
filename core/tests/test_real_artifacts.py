@@ -26,5 +26,8 @@ def test_real_file_uploads_and_extracts(session, org, tmp_path, path):
     )
     assert blobs.get(doc.storage_key) == data
     artifact = documents.extract_document(session, blobs, doc.id)
-    assert len(artifact.content.strip()) > 500, "text layer is suspiciously small"
+    if not artifact.content.strip():  # an image-only (scanned) PDF: allowed, but it must be flagged for vision
+        assert doc.needs_vision and "no_text_layer" in artifact.produced_with["needs_vision_reasons"]
+    else:
+        assert len(artifact.content.strip()) > 500, "text layer is suspiciously small"
     assert doc.status == "extracted"
