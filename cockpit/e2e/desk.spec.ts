@@ -494,7 +494,9 @@ test("a CV with no job joins the pool and is put on a job later", async ({ page 
   await expect(page.getByText("Not on any job yet (in the pool).")).toBeVisible();
   await page.getByLabel("Job to put this person on").selectOption({ label: "InSAR Processing Specialist" });
   await page.getByRole("button", { name: "Put on job" }).click();
-  await expect(page.locator(".people li", { hasText: "InSAR Processing Specialist" })).toContainText(/Do not submit|Priority|Review later/);
+  // Shown as a job if it fits (or something happened on it); a plain "Do not submit" is not shown outside the job.
+  await expect(page.locator(".people li", { hasText: "InSAR Processing Specialist" })
+    .or(page.getByText(/No open job on the desk matches them yet/))).toBeVisible();
   await page.goto("/people?show=pool");
   // Theodor has left the pool (people imported earlier may still be waiting in it).
   await expect(page.locator("tbody tr", { hasText: "Theodor" })).toHaveCount(0);

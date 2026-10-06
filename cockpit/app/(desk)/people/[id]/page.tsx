@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Briefcase, FileText, MapPin, MessageSquareText } from "lucide-react";
+import { Briefcase, FileText, MapPin, MessageSquareText, Phone } from "lucide-react";
 import { addFact, bringBack, draftMessage, editMessage, eraseCandidate, liftBlock, logActivity, markMessage, messageToMailbox, putOnJob, syncMailbox,
   tagPerson, untagPerson } from "@/app/actions";
 import { DraftMessage, MessageCard } from "@/components/Messages";
@@ -9,7 +9,7 @@ import { ClaimRow, Status } from "@/components/Claim";
 import { EraseForm } from "@/components/EraseForm";
 import { FactForm } from "@/components/FactForm";
 import { api, apiOr404, type JobSummary, type MailboxStatus, type PersonPage } from "@/lib/api";
-import { BAND_LABEL, reasonWords } from "@/lib/format";
+import { BAND_LABEL, jobsWorthShowing, reasonWords } from "@/lib/format";
 
 export const metadata = { title: "Person" };
 
@@ -77,6 +77,7 @@ export default async function Person({ params, searchParams }: { params: Promise
             </form>
           )}
           <div className="row">
+            {!person.archived && <Link href={`${path}/brief`} className="btn small primary"><Phone aria-hidden="true" />Brief for a call</Link>}
             {!person.archived && <Link href={`${path}?tab=messages`} className="btn small"><MessageSquareText aria-hidden="true" />Draft a message</Link>}
             {cv && <a href={`/files/${cv.id}`} target="_blank" rel="noreferrer" className="btn small ghost"><FileText aria-hidden="true" />CV</a>}
           </div>
@@ -117,9 +118,11 @@ export default async function Person({ params, searchParams }: { params: Promise
         <>
           <section className="panel">
             <h3>Jobs</h3>
-            {person.jobs.length === 0 ? <p className="sub">Not on any job yet (in the pool).</p> : (
+            {person.jobs.length === 0 ? <p className="sub">Not on any job yet (in the pool).</p> : jobsWorthShowing(person.jobs).length === 0 ? (
+              <p className="sub">No open job on the desk matches them yet ({person.jobs.length} checked). A Brief call may tell you what they are looking for.</p>
+            ) : (
               <ul className="people">
-                {person.jobs.map((j) => (
+                {jobsWorthShowing(person.jobs).map((j) => (
                   <li key={j.job_id}>
                     <Link href={`/jobs/${j.job_id}/people/${person.id}`}>{j.title}</Link>
                     <span><span className={`bandtag ${j.band}`}>{BAND_LABEL[j.band]}</span></span>

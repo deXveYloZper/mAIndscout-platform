@@ -733,9 +733,27 @@ def get_brief(job_id: uuid.UUID, candidate_id: uuid.UUID, force: bool = False, o
         items = brief.build(session, org_id, job_id, candidate_id, force=force)
     except brief.BriefError as error:
         session.rollback()
-        return {"available": False, "reason": str(error), "items": [], "header": brief.header(session, org_id, job_id, candidate_id)}
+        return {"available": False, "reason": str(error), "items": [], "header": brief.header(session, org_id, job_id, candidate_id),
+                "contacts": brief.contacts(session, org_id, candidate_id)}
     session.commit()
-    return {"available": True, "items": [brief.as_dict(i) for i in items], "header": brief.header(session, org_id, job_id, candidate_id)}
+    return {"available": True, "items": [brief.as_dict(i) for i in items], "header": brief.header(session, org_id, job_id, candidate_id),
+            "contacts": brief.contacts(session, org_id, candidate_id)}
+
+
+@app.get("/v1/candidates/{candidate_id}/brief")
+def get_person_brief(candidate_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """A Brief without a job (anyone, e.g. someone in the pool): the questions about the person, and how to reach them."""
+    from maindscout.api import brief
+
+    try:
+        items = brief.build_person(session, org_id, candidate_id)
+    except brief.BriefError as error:
+        session.rollback()
+        return {"available": False, "reason": str(error), "items": [], "header": brief.person_header(session, org_id, candidate_id),
+                "contacts": brief.contacts(session, org_id, candidate_id)}
+    session.commit()
+    return {"available": True, "items": [brief.as_dict(i) for i in items], "header": brief.person_header(session, org_id, candidate_id),
+            "contacts": brief.contacts(session, org_id, candidate_id)}
 
 
 @app.post("/v1/brief/{item_id}/answer")

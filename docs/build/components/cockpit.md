@@ -35,6 +35,8 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
   - band tiles that act as tabs (Priority, Review later, Do not submit, Archived);
   - section tabs: People, Hiring profile, Find more, Countries;
   - each person as a card with tier, tags, reason, a bar of evidence / to ask / missing / conflict, Brief, and Move (a band change with a reason).
+- **People and person pages show a person's jobs only when they fit** (Priority or Review later) **or something happened on that pair** (contacted, submitted, passed, client answered). A plain "Do not submit" stays on the job page; otherwise the person reads "no match on open jobs" (owner, 2026-10-06).
+- **Brief everywhere:** a Brief button on every People row and every job card, and "Brief for a call" in the person header (a job-free Brief, `/people/[id]/brief`).
 - **Person (`/people/[id]`):**
   - a header card: name, current role, where, freshness, tags, put on a job, draft a message, the CV;
   - section tabs: Overview (jobs, career profile, relationship), Facts, Messages, Timeline, Documents (and Forget).

@@ -140,7 +140,7 @@ export type PersonPage = {
   id: string;
   name: string | null;
   claims: Record<string, ClaimView[]>;
-  jobs: { job_id: string; title: string; band: Band; reason: string | null }[];
+  jobs: { job_id: string; title: string; band: Band; reason: string | null; state?: string }[];
   documents: { id: string; filename: string | null; needs_vision: boolean; as_of: string | null }[];
   open_decisions: string[];
   archived: { at: string; reason: string | null } | null;
@@ -216,7 +216,7 @@ export type PersonSummary = {
   id: string;
   name: string | null;
   created_at: string;
-  jobs: { job_id: string; title: string; band: Band }[];
+  jobs: { job_id: string; title: string; band: Band; state?: string }[];
   document_id: string | null;
   archived: string | null;
   tags: string[];

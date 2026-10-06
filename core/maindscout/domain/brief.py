@@ -27,6 +27,7 @@ STANDARD = [
     ("std:notice", "When could they start? Notice period and availability."),
     ("std:salary", "What are their salary expectations?"),
     ("std:marketable", "Are they open to being put forward for other suitable roles, beyond this one?"),
+    ("std:looking_for", "What are they looking for next: kind of work, level, and on site, hybrid or remote?"),
 ]
 
 STRENGTH_WORDS = {"must": "a must-have", "deal_breaker": "a must-have", "strong_plus": "a strong plus", "nice": "nice to have",

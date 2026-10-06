@@ -65,9 +65,9 @@ function People({ jobId, people }: { jobId: string; people: PersonOnJob[] }) {
             {p.gaps && <GapBar g={p.gaps} />}
           </div>
           <div className="pc-side">
-            {p.band === "priority" && (
-              <Link className="btn small" href={`/jobs/${jobId}/people/${p.candidate_id}/brief`}><MessageSquareText aria-hidden="true" />Brief</Link>
-            )}
+            <Link className="btn small" href={`/jobs/${jobId}/people/${p.candidate_id}/brief${p.band === "priority" ? "" : "?force=1"}`}>
+              <MessageSquareText aria-hidden="true" />Brief
+            </Link>
             <details className="move">
               <summary className="btn small ghost">Move</summary>
               <form action={overrideBand.bind(null, jobId, p.candidate_id)} className="movebox">

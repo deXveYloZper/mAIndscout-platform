@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { MultiUpload } from "@/components/MultiUpload";
 import { api, type PersonSummary } from "@/lib/api";
-import { BAND_LABEL } from "@/lib/format";
+import { BAND_LABEL, jobsWorthShowing } from "@/lib/format";
 
 export const metadata = { title: "People" };
 
@@ -43,7 +43,7 @@ export default async function People({ searchParams }: { searchParams: Promise<{
       ) : (
         <div className="tablewrap">
           <table>
-            <thead><tr><th>Person</th><th>Jobs and bands</th><th className="hide-narrow">Added</th></tr></thead>
+            <thead><tr><th>Person</th><th>Jobs and bands</th><th className="hide-narrow">Added</th><th className="num"><span className="sr-only">Brief</span></th></tr></thead>
             <tbody>
               {people.map((p) => (
                 <tr key={p.id}>
@@ -54,9 +54,11 @@ export default async function People({ searchParams }: { searchParams: Promise<{
                     {p.stale && !p.archived && <span className="stale-tag" title="Not contacted or verified for months">stale</span>}
                   </td>
                   <td>
-                    {p.jobs.length === 0 ? <span className="sub">in the pool</span> : (
+                    {p.jobs.length === 0 ? <span className="sub">in the pool</span> : jobsWorthShowing(p.jobs).length === 0 ? (
+                      <span className="sub" title="Checked against every job they are on: none fits, and nothing happened on them">no match on open jobs</span>
+                    ) : (
                       <span className="joblist">
-                        {p.jobs.map((j) => (
+                        {jobsWorthShowing(p.jobs).map((j) => (
                           <span key={j.job_id}>
                             <Link href={`/jobs/${j.job_id}`}>{j.title}</Link> <span className={`bandtag nowrap ${j.band}`}>{BAND_LABEL[j.band]}</span>
                           </span>
@@ -65,6 +67,7 @@ export default async function People({ searchParams }: { searchParams: Promise<{
                     )}
                   </td>
                   <td className="sub nowrap hide-narrow">{p.created_at.slice(0, 10)}</td>
+                  <td className="num">{!p.archived && <Link href={`/people/${p.id}/brief`} className="btn small ghost above" title="Brief for a call">Brief</Link>}</td>
                 </tr>
               ))}
             </tbody>

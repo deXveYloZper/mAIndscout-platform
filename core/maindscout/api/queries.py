@@ -175,7 +175,8 @@ def person_page(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID) ->
         "client_contacts": messages.contacts_for_jobs(session, org_id, [j for _, j in pairs]),
         "classifications": profiles.labels_view(session, org_id, person.id),
         "claims": grouped,
-        "jobs": [{"job_id": str(j.id), "title": j.title, "band": p.triage_band, "reason": p.triage_reason} for p, j in pairs],
+        "jobs": [{"job_id": str(j.id), "title": j.title, "band": p.triage_band, "reason": p.triage_reason, "state": p.pair_state}
+                 for p, j in pairs],
         "documents": [{"id": str(d.id), "filename": d.filename, "needs_vision": d.needs_vision, "as_of": _iso(d.as_of)}
                       for (d,) in documents],
         "open_decisions": [str(d) for d in session.scalars(select(Decision.id).where(
@@ -267,7 +268,7 @@ def list_people(session: Session, org_id: uuid.UUID) -> list[dict[str, Any]]:
     who = names(session, [p.id for p in people])
     pairs = defaultdict(list)
     for pair, title in session.execute(select(CandidateJob, Job.title).join(Job, Job.id == CandidateJob.job_id).where(CandidateJob.org_id == org_id)):
-        pairs[pair.candidate_id].append({"job_id": str(pair.job_id), "title": title, "band": pair.triage_band})
+        pairs[pair.candidate_id].append({"job_id": str(pair.job_id), "title": title, "band": pair.triage_band, "state": pair.pair_state})
     docs = dict(session.execute(
         select(DocumentSubject.subject_id, func.min(func.cast(DocumentSubject.document_id, String)))
         .where(DocumentSubject.org_id == org_id, DocumentSubject.subject_type == "candidate")

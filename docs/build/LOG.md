@@ -2,6 +2,7 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-06 — Brief for anyone (no job needed) with how to reach them (phone, email, LinkedIn, one click); a person's "Do not submit" jobs shown only on the job page unless something happened; Move popover above the next card — [brief](components/brief.md), [cockpit](components/cockpit.md)
 - 2026-10-06 — Desk design: token-based design system (Plex Sans, Special Elite titles, Plex Mono data), sidebar navigation with live inbox count, Ctrl K palette and keyboard shortcuts, Today home with split-flap counts, drop zones, job page with band tabs and person cards, person page with header card and section tabs, inbox with approve first, errors inside the desk — [cockpit](components/cockpit.md), [plan](../design/PLAN.md)
 - 2026-10-05 — Two-step verification optional for owners too (the owner's decision); `OWNER_TWO_STEP=required` restores the rule — [access](components/access.md)
 - 2026-10-05 — Performance: a 3,000-person benchmark desk (`perf-seed` / `perf-check`); missing indexes added (migration 0023); per-person loops batched (people list 66 s → 2.3 s, companies 57 s → 0.24 s, Refresh 36 s → 1.6 s, export 105 s → 3.4 s, jobs list 13 s → 0.27 s, all-jobs inbox 14 s → 0.5 s); matching uses half the queries; jobs over 40 people re-match in the background — [performance](components/performance.md)

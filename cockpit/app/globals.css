@@ -776,3 +776,19 @@ details.fix[open] > summary { margin-bottom: 8px; }
 /* forms read better at a measure than stretched across the page */
 .panel .stack { max-width: 520px; }
 .panel .stack .btn { justify-self: start; }
+
+/* An open Move popover sits above the cards below it (each card is its own stacking layer while it animates in). */
+.people li.personcard:has(details.move[open]) { position: relative; z-index: 30; }
+.stagger > *:has(details[open]) { z-index: 30; position: relative; }
+
+/* Brief: how to reach them */
+.contactcard { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
+.contactchip {
+  display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: 999px;
+  background: var(--bg-raise-2); border: 1px solid var(--line-strong); color: var(--cream); font-family: var(--mono); font-size: 13px;
+  text-decoration: none !important; transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+.contactchip:hover { border-color: var(--amber-line); background: var(--amber-soft); color: var(--cream); }
+.contactchip svg { width: 15px; height: 15px; color: var(--amber-text); }
+.contactchip.unconfirmed { border-style: dashed; }
+.contactchip em { font-style: normal; font-family: var(--font); font-size: 11px; color: var(--amber-text); }
