@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maindscout.local/schemas/preference_claim.schema.json",
+  "title": "PreferenceClaim payload",
+  "description": "What a candidate said they want next (from a call). One claim per facet; a newer one replaces the older. must = won't consider anything else; prefer = would rather. Never personality, culture or fit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "facet",
+    "strength",
+    "said"
+  ],
+  "properties": {
+    "facet": {
+      "type": "string",
+      "enum": [
+        "company_size",
+        "employer_kind",
+        "setting",
+        "places",
+        "work",
+        "employment"
+      ]
+    },
+    "strength": {
+      "type": "string",
+      "enum": [
+        "must",
+        "prefer"
+      ]
+    },
+    "min": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "company_size: at least this many people"
+    },
+    "max": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "company_size: at most this many people"
+    },
+    "want": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "employer kinds (startup, scaleup, large, consultancy, agency, public_sector, non_profit), settings (onsite, hybrid, remote), places (ISO country codes), role families, or employment (permanent, contract)"
+    },
+    "avoid": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "the same, not wanted"
+    },
+    "level": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "work: the level they want next"
+    },
+    "said": {
+      "type": "string",
+      "minLength": 1,
+      "description": "their own words"
+    }
+  }
+}

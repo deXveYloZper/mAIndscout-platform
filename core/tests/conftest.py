@@ -56,3 +56,18 @@ def org(session):
 @pytest.fixture
 def candidate_id():
     return uuid.uuid4()
+
+
+OWNER = "owner@desk.test"
+PASSWORD = "correct horse battery staple"
+TOTP = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
+
+
+@pytest.fixture
+def owner(session, org, monkeypatch):
+    """The desk's owner, signed up with a password and two-step codes (access plan)."""
+    from maindscout.api import auth
+
+    monkeypatch.setenv("AUTH_KEY", "test-auth-key")
+    user, _ = auth.create_user(session, OWNER, "Desk Owner", org.id, "owner", password=PASSWORD, totp_secret=TOTP)
+    return user

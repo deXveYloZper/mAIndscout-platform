@@ -68,6 +68,32 @@ def test_different_companies_with_similar_names_stay_apart_when_a_human_says_so(
     assert len(client.get("/v1/companies", params={"q": "semantik"}).json()) == 2
 
 
+def test_not_sure_asks_the_person_on_the_call_and_their_answer_settles_it(client, fake, session):
+    person(client, fake, "m@example.com", [step("Copper.co")])
+    cid = person(client, fake, "n@example.com", [step("Copper Technologies")])
+    card = next(i for i in client.get("/v1/inbox", params={"band": "all"}).json() if i["kind"] == "company_same")
+    assert client.post(f"/v1/decisions/{card['id']}/resolve", json={"action": "ask"}).status_code == 200
+    assert not [i for i in client.get("/v1/inbox", params={"band": "all"}).json() if i["kind"] == "company_same"], "left the inbox"
+    assert len(client.get("/v1/companies", params={"q": "copper"}).json()) == 2, "apart until they answer"
+    items = client.get(f"/v1/candidates/{cid}/brief").json()["items"]
+    q = next(i for i in items if i["kind"] == "company")
+    assert q["question"] == "Is Copper Technologies (on their CV) the same company as Copper.co?"
+    client.get(f"/v1/candidates/{cid}/brief")  # the next Brief keeps it
+    assert client.post(f"/v1/brief/{q['id']}/answer", json={"outcome": "confirmed", "answer": "renamed in 2021"}).status_code == 200
+    assert len(client.get("/v1/companies", params={"q": "copper"}).json()) == 1, "yes links them"
+
+
+def test_a_no_on_the_call_keeps_the_companies_apart(client, fake, session):
+    person(client, fake, "o@example.com", [step("Derivco")])
+    cid = person(client, fake, "p@example.com", [step("Derivco Sports")])
+    card = next(i for i in client.get("/v1/inbox", params={"band": "all"}).json() if i["kind"] == "company_same")
+    client.post(f"/v1/decisions/{card['id']}/resolve", json={"action": "ask"})
+    q = next(i for i in client.get(f"/v1/candidates/{cid}/brief").json()["items"] if i["kind"] == "company")
+    client.post(f"/v1/brief/{q['id']}/answer", json={"outcome": "not_met", "answer": "a separate sister company"})
+    assert len(client.get("/v1/companies", params={"q": "derivco"}).json()) == 2
+    assert session.get(Decision, uuid.UUID(card["id"])).resolution["answered"] == "different"
+
+
 def test_who_we_know_at_a_company_is_private_to_each_desk(client, fake, session):
     from maindscout.api import writer
     person(client, fake, "h@example.com", [step("Acme Space")])

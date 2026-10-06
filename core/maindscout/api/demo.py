@@ -78,7 +78,8 @@ def _months_back(d: date, months: int) -> date:
     return date(y, m + 1, 1)
 
 
-def seed(session: Session, org_id: uuid.UUID, count: int = 60, seed_value: int = 42) -> dict[str, int]:
+def seed(session: Session, org_id: uuid.UUID, count: int = 60, seed_value: int = 42, number_from: int = 0) -> dict[str, int]:
+    """`number_from` numbers the people (and their emails) after an earlier batch."""
     from maindscout.api import coverage, profiles
 
     rnd = random.Random(seed_value)
@@ -94,7 +95,7 @@ def seed(session: Session, org_id: uuid.UUID, count: int = 60, seed_value: int =
         session.flush()
         cid = person.id
         _claim(session, org_id, cid, "IdentityClaim", {"full_name": name, "name_variants": []}, f"{cid}|name")
-        email = f"demo{n + 1}@{EMAIL_DOMAIN}"
+        email = f"demo{number_from + n + 1}@{EMAIL_DOMAIN}"
         _claim(session, org_id, cid, "ContactClaim", {"kind": "email", "value": email, "normalized": email,
                                                      "attributable": True, "attribution": "subject"}, f"{cid}|email|{email}")
         place, code = rnd.choice(OUTSIDE) if rnd.random() < 0.08 else rnd.choice(PLACES)

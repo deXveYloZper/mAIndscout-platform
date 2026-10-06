@@ -1,0 +1,79 @@
+import Link from "next/link";
+import { MultiUpload } from "@/components/MultiUpload";
+import { api, type PersonSummary } from "@/lib/api";
+import { BAND_LABEL, jobsWorthShowing } from "@/lib/format";
+
+export const metadata = { title: "People" };
+
+export default async function People({ searchParams }: { searchParams: Promise<{ show?: string; tag?: string }> }) {
+  const { show, tag } = await searchParams;
+  const pool = show === "pool";
+  const query = new URLSearchParams();
+  if (pool) query.set("unassigned", "true");
+  if (tag) query.set("tag", tag);
+  const [people, pools] = await Promise.all([
+    api<PersonSummary[]>(`/v1/candidates${query.size ? `?${query}` : ""}`),
+    api<{ tag: string; people: number }[]>("/v1/tags"),
+  ]);
+  return (
+    <>
+      <h1>People</h1>
+      <p className="sub">Everyone the desk has read. People on no job are the pool: open one to put them on a job.</p>
+      <nav className="tabs">
+        <Link href="/people" aria-current={!pool ? "page" : undefined}>Everyone</Link>
+        <Link href="/people?show=pool" aria-current={pool ? "page" : undefined}>Not on a job</Link>
+      </nav>
+      {pools.length > 0 && (
+        <p className="pools">
+          <span className="sub">Talent pools:</span>{" "}
+          {pools.map((p) => (
+            <Link key={p.tag} href={tag === p.tag ? "/people" : `/people?tag=${encodeURIComponent(p.tag)}`}
+              className={`chip ${tag === p.tag ? "on" : ""}`} aria-current={tag === p.tag ? "page" : undefined}>{p.tag} ({p.people})</Link>
+          ))}
+        </p>
+      )}
+
+      <section className="panel">
+        <h3>Add CVs without a job</h3>
+        <MultiUpload jobId={null} />
+      </section>
+
+      {people.length === 0 ? (
+        <p className="empty">{pool ? "Nobody is waiting without a job." : "Nobody yet."}</p>
+      ) : (
+        <div className="tablewrap">
+          <table>
+            <thead><tr><th>Person</th><th>Jobs and bands</th><th className="hide-narrow">Added</th><th className="num"><span className="sr-only">Brief</span></th></tr></thead>
+            <tbody>
+              {people.map((p) => (
+                <tr key={p.id}>
+                  <td>
+                    <Link href={`/people/${p.id}`}>{p.name ?? "name not read"}</Link>
+                    {p.archived && <span className="bandtag archived" title={p.archived}> archived</span>}
+                    {p.tags.map((t) => <span key={t} className="chip small">{t}</span>)}
+                    {p.stale && !p.archived && <span className="stale-tag" title="Not contacted or verified for months">stale</span>}
+                  </td>
+                  <td>
+                    {p.jobs.length === 0 ? <span className="sub">in the pool</span> : jobsWorthShowing(p.jobs).length === 0 ? (
+                      <span className="sub" title="Checked against every job they are on: none fits, and nothing happened on them">no match on open jobs</span>
+                    ) : (
+                      <span className="joblist">
+                        {jobsWorthShowing(p.jobs).map((j) => (
+                          <span key={j.job_id}>
+                            <Link href={`/jobs/${j.job_id}`}>{j.title}</Link> <span className={`bandtag nowrap ${j.band}`}>{BAND_LABEL[j.band]}</span>
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </td>
+                  <td className="sub nowrap hide-narrow">{p.created_at.slice(0, 10)}</td>
+                  <td className="num">{!p.archived && <Link href={`/people/${p.id}/brief`} className="btn small ghost above" title="Brief for a call">Brief</Link>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}

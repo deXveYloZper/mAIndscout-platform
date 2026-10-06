@@ -23,8 +23,8 @@ JD_FILES = [f for f in FILES if "catalyst" in f.name.lower() or "careers at" in 
 CV_FILES = [f for f in FILES if f not in JD_FILES]
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("RUN_LIVE") != "1" or not FILES or not load_env_key(),
-    reason="set RUN_LIVE=1 with test_artifacts and XAI_API_KEY to run the live check",
+    os.environ.get("RUN_LIVE") != "1" or not FILES or not (load_env_key() or os.environ.get("LLM_REPLAY") == "replay"),
+    reason="set RUN_LIVE=1 with test_artifacts and XAI_API_KEY (or LLM_REPLAY=replay with recordings) to run the live check",
 )
 
 
@@ -35,7 +35,9 @@ def world(engine, tmp_path_factory):
     session = Session(conn, join_transaction_mode="create_savepoint")
     writer.seed_registries(session)
     org = writer.create_org(session, "live")
-    blobs, client = LocalBlobStore(tmp_path_factory.mktemp("blobs")), XaiClient()
+    from maindscout.intelligence.recording import wrap_chat
+
+    blobs, client = LocalBlobStore(tmp_path_factory.mktemp("blobs")), wrap_chat(XaiClient)  # LLM_REPLAY=replay: free
 
     def ingest(path, doc_type, job_id=None):
         doc, _ = documents.upload_document(session, blobs, org_id=org.id, data=path.read_bytes(), filename=path.name,

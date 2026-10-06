@@ -32,7 +32,7 @@ def _in(column: str, values: tuple[str, ...]) -> str:
     return f"{column} IN ({', '.join(repr(v) for v in values)})"
 
 
-DOC_TYPES = ("cv", "jd", "other")
+DOC_TYPES = ("cv", "jd", "transcript", "other")
 DOC_STATUS = ("received", "stored", "extracted", "processed", "needs_human", "reprocessable")
 SOURCE_AUTHORITY = (
     "verified_primary",
@@ -715,6 +715,51 @@ class BriefItem(Base):
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+CALL_REVIEW_STATUS = ("reading", "pending", "applied", "dismissed", "failed")
+
+
+class CallReview(Base):
+    """Calls: what one call transcript said, read once, waiting for one bulk approval. `findings` is a list of lines
+    (brief answers, confirmed / corrected / disputed facts, new facts, preferences, things to ask), each with the
+    candidate's own words and a tick. Applying writes approved facts with the transcript as evidence; erased with
+    the person (and the transcript with their documents)."""
+
+    __tablename__ = "call_review"
+    __table_args__ = (
+        CheckConstraint(_in("status", CALL_REVIEW_STATUS), name="call_review_status"),
+        Index("ix_call_review_candidate", "candidate_id"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate.id"), nullable=False)
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("document.id"), nullable=False)
+    job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("job.id"))  # the job the call was about, if any
+    status: Mapped[str] = mapped_column(String, nullable=False, default="reading")
+    findings: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = _created()
+    resolved_by: Mapped[str | None] = mapped_column(String)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PersonMerge(Base):
+    """Two records of one person made one (a human said "same person"). `moved` lists every row that moved from
+    `drop` to `keep`, with what it was before, so the merge can be undone. Erased with the person."""
+
+    __tablename__ = "person_merge"
+    __table_args__ = (Index("ix_person_merge_keep", "keep_id"),)
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    keep_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate.id"), nullable=False)
+    drop_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate.id"), nullable=False)
+    moved: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    merged_by: Mapped[str] = mapped_column(String, nullable=False)
+    merged_at: Mapped[datetime] = _created()
+    undone_by: Mapped[str | None] = mapped_column(String)
+    undone_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class CareerProfile(Base):
     """I3: what a career shows, dimension by dimension (domain/profile.py). Append-only snapshots, one per change of
     the facts behind it (inputs_hash). No number anywhere; erased with the person."""
@@ -806,3 +851,81 @@ class CostEntry(Base):
     subject_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))  # cleared by erasure
     task_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     created_at: Mapped[datetime] = _created()
+
+
+# --- access: people, desks, sessions (access plan, 2026-10-05) ----------------------------------------------------
+
+ROLES = ("owner", "recruiter")
+SESSION_KINDS = ("web", "api")
+INVITE_PURPOSES = ("invite", "reset")
+
+
+class AppUser(Base):
+    """A person who signs in. Not a candidate: candidates never have accounts."""
+
+    __tablename__ = "app_user"
+    id: Mapped[uuid.UUID] = _pk()
+    email: Mapped[str] = mapped_column(String, nullable=False, unique=True)  # lowercased
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    password_hash: Mapped[str | None] = mapped_column(String)  # scrypt; None until the invite is accepted
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    totp_secret_enc: Mapped[str | None] = mapped_column(String)  # encrypted with AUTH_KEY
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    totp_last_step: Mapped[int | None] = mapped_column(BigInteger)  # a code is never accepted twice
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created()
+
+
+class Membership(Base):
+    __tablename__ = "membership"
+    __table_args__ = (UniqueConstraint("user_id", "org_id"), CheckConstraint(_in("role", ROLES), name="membership_role"))
+    id: Mapped[uuid.UUID] = _pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id"), nullable=False)
+    org_id: Mapped[uuid.UUID] = _org()
+    role: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = _created()
+
+
+class UserSession(Base):
+    """A signed-in browser (web) or a personal API token (api). Only a hash of the token is stored."""
+
+    __tablename__ = "user_session"
+    __table_args__ = (CheckConstraint(_in("kind", SESSION_KINDS), name="session_kind"),)
+    id: Mapped[uuid.UUID] = _pk()
+    token_hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id"), nullable=False)
+    org_id: Mapped[uuid.UUID] = _org()
+    kind: Mapped[str] = mapped_column(String, nullable=False, default="web")
+    label: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime] = _created()
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Invite(Base):
+    """A one-time link: to join a desk (invite) or to set a new password (reset). Only a hash is stored."""
+
+    __tablename__ = "invite"
+    __table_args__ = (CheckConstraint(_in("role", ROLES), name="invite_role"),
+                      CheckConstraint(_in("purpose", INVITE_PURPOSES), name="invite_purpose"))
+    id: Mapped[uuid.UUID] = _pk()
+    token_hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    org_id: Mapped[uuid.UUID] = _org()
+    email: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[str] = mapped_column(String, nullable=False)
+    purpose: Mapped[str] = mapped_column(String, nullable=False, default="invite")
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = _created()
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class LoginAttempt(Base):
+    """Failed sign-ins per email and per address, to slow down and lock guessing."""
+
+    __tablename__ = "login_attempt"
+    key: Mapped[str] = mapped_column(String, primary_key=True)  # "email:…" or "ip:…"
+    failures: Mapped[int] = mapped_column(nullable=False, default=0)
+    first_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

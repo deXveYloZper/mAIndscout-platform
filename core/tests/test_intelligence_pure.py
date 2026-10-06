@@ -58,6 +58,32 @@ def test_linkedin_that_disagrees_with_the_link_is_flagged():
     assert not contacts.judge("linkedin", "linkedin.com/in/jure-domajnko", "Jure Domajnko", anns).possible_ocr_identifier
 
 
+def test_text_that_only_garbles_or_shortens_the_files_own_link_takes_the_link_without_asking():
+    """Real inbox cards (2026-10-06): the text layer spaced out, shortened or only labelled what the link says."""
+    def link(uri):
+        return [{"page": 1, "kind": "link", "uri": uri}]
+
+    cases = [("alice -joanne -fox", "https://www.linkedin.com/in/alice-joanne-fox"),
+             ("LinkedIn", "https://linkedin.com/in/bogdan-stanciu-bcss"),
+             ("linkedin.com/idris-adams", "https://www.linkedin.com/in/idris-adams/"),
+             ("/in/andrewwalsh-tech", "https://linkedin.com/in/andrewwalsh-tech")]
+    for text, uri in cases:
+        v = contacts.judge("linkedin", text, "Some Person", link(uri))
+        assert not v.possible_ocr_identifier and v.use_value == contacts.normalise("linkedin", uri), text
+    # A search link that mentions linkedin.com is not the person's profile: the text stands.
+    v = contacts.judge("linkedin", "linkedin.com/in/gagan-pasricha", "Gagan Pasricha",
+                       link("https://www.google.com/search?q=linkedin.com/in/gagan-pasricha"))
+    assert not v.possible_ocr_identifier and v.use_value is None
+    # A real disagreement is still a question.
+    assert contacts.judge("linkedin", "linkedin.com/in/jsmith", "John Smith", link("https://linkedin.com/in/john-smith-99")).possible_ocr_identifier
+
+
+def test_a_name_with_an_initial_is_not_a_misspelling():
+    for email in ("siketr@hotmail.com", "rsiket@hotmail.com", "siket.r@hotmail.com"):
+        assert not contacts.judge("email", email, "Robert Siket", []).possible_ocr_identifier, email
+    assert contacts.judge("email", "sikett@hotmail.com", "Robert Siket", []).possible_ocr_identifier
+
+
 # --- triage --------------------------------------------------------------------------------------
 
 CATALYST = [{"text_raw": "InSAR processing", "distinctive": True, "strength": "must", "normalized_token": "insar"},

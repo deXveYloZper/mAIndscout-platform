@@ -1,28 +1,28 @@
 """HTTP surface (`/v1`). Thin: checks the caller, then calls the writer, process, review or query functions.
 
-Every request needs `Authorization: Bearer <OPERATOR_TOKEN>` and `X-Org-Id`. One request = one transaction.
+Every request needs `Authorization: Bearer <session or personal token>` (see api/auth.py); `X-Org-Id` may choose
+another desk the user belongs to. The caller is the signed-in user, never a header. One request = one transaction.
 """
 
 from __future__ import annotations
 
-import hmac
 import threading
 import urllib.parse
 import uuid
 from functools import lru_cache
 from typing import Any, Iterator
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from maindscout.api import companies, costs, documents, erasure, pipeline, process, queries, review, sourcing, tasks
+from maindscout.api import auth, companies, costs, documents, erasure, pipeline, process, queries, review, sourcing, tasks
 from maindscout.api import mailbox as mailbox_mod
 from maindscout.api import task_handlers  # noqa: F401 (registers task kinds)
-from maindscout.db.models import Document, ExtractionArtifact, IntelligenceRun, Org
+from maindscout.db.models import Document, ExtractionArtifact, IntelligenceRun
 from maindscout.db.session import make_engine, make_session_factory
 from maindscout.domain import registry as reg
 from maindscout.ingestion import pdf
@@ -64,30 +64,58 @@ def get_blobs() -> BlobStore:
 
 @lru_cache
 def get_llm() -> LLMClient:
-    return XaiClient()
+    from maindscout.intelligence.recording import wrap_chat
+
+    return wrap_chat(XaiClient)  # LLM_REPLAY: record once, replay for free (tests, e2e)
 
 
-def get_actor(x_actor: str | None = Header(default=None)) -> str:
-    return (x_actor or "operator")[:80]
-
-
-def get_org(authorization: str | None = Header(default=None), x_org_id: str | None = Header(default=None),
-            session: Session = Depends(get_session)) -> uuid.UUID:
-    token = env("OPERATOR_TOKEN")
-    if not token:
-        raise HTTPException(503, "OPERATOR_TOKEN is not configured")
-    supplied = (authorization or "").removeprefix("Bearer ").strip()
-    if not hmac.compare_digest(supplied.encode(), token.encode()):
-        raise HTTPException(401, "Bad or missing token")
+def _principal(session: Session, authorization: str | None, x_org_id: str | None) -> auth.Principal:
+    token = (authorization or "").removeprefix("Bearer ").strip() or None
     try:
-        org_id = uuid.UUID(x_org_id or "")
-    except ValueError:
-        raise HTTPException(400, "X-Org-Id header must be an org id") from None
-    from maindscout.db.models import PUBLIC_ORG_ID
+        p = auth.resolve(session, token, x_org_id)
+    except auth.AuthError:
+        session.commit()  # an idle session that just ended stays ended
+        raise
+    if session.dirty:
+        session.commit()  # last seen (at most once a minute)
+    return p
 
-    if org_id == PUBLIC_ORG_ID or session.get(Org, org_id) is None:
-        raise HTTPException(403, "Unknown org")  # the public-knowledge org is not a desk
-    return org_id
+
+def get_principal_any(authorization: str | None = Header(default=None), x_org_id: str | None = Header(default=None),
+                      session: Session = Depends(get_session)) -> auth.Principal:
+    """Signed in, even if an owner still has to set up two-step codes (for the account routes only)."""
+    return _principal(session, authorization, x_org_id)
+
+
+def get_principal(p: auth.Principal = Depends(get_principal_any)) -> auth.Principal:
+    if p.needs_two_step:
+        raise auth.Forbidden("Set up two-step verification first (Account page): owners need it")
+    return p
+
+
+def require_owner(p: auth.Principal = Depends(get_principal)) -> auth.Principal:
+    if p.role != "owner":
+        raise auth.Forbidden("Only a desk owner can do this")
+    return p
+
+
+def get_org(p: auth.Principal = Depends(get_principal)) -> uuid.UUID:
+    return p.org_id
+
+
+def get_actor(p: auth.Principal = Depends(get_principal)) -> str:
+    """Who did it: always the signed-in user (their email), never something the caller declares."""
+    return p.email
+
+
+def _address(request: Request) -> str | None:
+    """The browser's address, for slowing down guessing. The cockpit passes it on; it is trusted only from this
+    machine (the cockpit runs next to the API)."""
+    peer = request.client.host if request.client else None
+    forwarded = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    if peer in ("127.0.0.1", "::1", "testclient") and forwarded:
+        return forwarded[:64]
+    return peer
 
 
 # --- errors -------------------------------------------------------------------------------------
@@ -106,10 +134,15 @@ ERRORS: list[tuple[type[Exception], int]] = [
     (pdf.UnreadableDocument, 422),
     (pipeline.BlockedError, 409),
     (mailbox_mod.MailboxError, 502),
+    (auth.AuthError, 401),
+    (auth.Forbidden, 403),
     (ValueError, 422),
 ]
 for _exc, _code in ERRORS:
     app.add_exception_handler(_exc, lambda request, error, code=_code: JSONResponse({"detail": str(error)}, status_code=code))
+app.add_exception_handler(auth.Locked, lambda request, error: JSONResponse(
+    {"detail": str(error)}, status_code=429,
+    headers={"Retry-After": str(max(1, int((error.until - auth._now()).total_seconds())))}))
 
 
 # --- helpers ------------------------------------------------------------------------------------
@@ -700,9 +733,144 @@ def get_brief(job_id: uuid.UUID, candidate_id: uuid.UUID, force: bool = False, o
         items = brief.build(session, org_id, job_id, candidate_id, force=force)
     except brief.BriefError as error:
         session.rollback()
-        return {"available": False, "reason": str(error), "items": [], "header": brief.header(session, org_id, job_id, candidate_id)}
+        return {"available": False, "reason": str(error), "items": [], "header": brief.header(session, org_id, job_id, candidate_id),
+                "contacts": brief.contacts(session, org_id, candidate_id)}
     session.commit()
-    return {"available": True, "items": [brief.as_dict(i) for i in items], "header": brief.header(session, org_id, job_id, candidate_id)}
+    return {"available": True, "items": [brief.as_dict(i) for i in items], "header": brief.header(session, org_id, job_id, candidate_id),
+            "contacts": brief.contacts(session, org_id, candidate_id)}
+
+
+@app.post("/v1/candidates/{candidate_id}/documents/{document_id}/approve-all")
+def approve_all_from_document(candidate_id: uuid.UUID, document_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org),
+                              session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Approve every proposed fact about this person read from this CV, in one act; questions stay one by one."""
+    out = review.approve_document(session, org_id, candidate_id, document_id, actor)
+    session.commit()
+    return out
+
+
+class MergePeopleBody(BaseModel):
+    other_id: uuid.UUID
+
+
+@app.post("/v1/candidates/{candidate_id}/merge")
+def merge_people(candidate_id: uuid.UUID, body: MergePeopleBody, org_id: uuid.UUID = Depends(get_org),
+                 session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Same person: two records made one (the older is kept). Can be undone."""
+    from maindscout.api import merge
+
+    row = merge.merge(session, org_id, candidate_id, body.other_id, actor)
+    session.commit()
+    return merge.as_dict(row)
+
+
+@app.post("/v1/merges/{merge_id}/undo")
+def undo_merge(merge_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+               actor: str = Depends(get_actor)):
+    from maindscout.api import merge
+
+    row = merge.undo(session, org_id, merge_id, actor)
+    session.commit()
+    return merge.as_dict(row)
+
+
+# --- calls: a transcript becomes one Call review, approved in bulk ------------------------------
+
+
+@app.post("/v1/candidates/{candidate_id}/transcripts", status_code=201)
+async def add_transcript(candidate_id: uuid.UUID, file: UploadFile | None = File(None), text: str | None = Form(None),
+                         job_id: uuid.UUID | None = Form(None), org_id: uuid.UUID = Depends(get_org),
+                         session: Session = Depends(get_session), blobs: BlobStore = Depends(get_blobs),
+                         actor: str = Depends(get_actor)):
+    """A call transcript, as a file (.txt, .vtt, .srt, .docx) or pasted text. Read in the background into a Call review."""
+    from maindscout.api import calls
+
+    if file is not None and file.filename:
+        data, _ = await _read(file)
+        filename = file.filename
+    elif text and text.strip():
+        data, filename = text.encode("utf-8"), "pasted call transcript.txt"
+        if len(data) > MAX_UPLOAD:
+            raise HTTPException(413, "The text is larger than 20 MB")
+    else:
+        raise HTTPException(422, "Send a transcript file or paste the text")
+    row = calls.add_transcript(session, blobs, org_id, candidate_id, data, filename, actor, job_id)
+    session.commit()
+    return calls.as_dict(row, session)
+
+
+@app.get("/v1/candidates/{candidate_id}/calls")
+def person_calls(candidate_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """The person's call reviews (newest first) and what they want, as approved."""
+    from maindscout.api import calls
+
+    calls._person(session, org_id, candidate_id)
+    return {"reviews": [calls.as_dict(r, session) for r in calls.for_person(session, org_id, candidate_id)],
+            "preferences": calls.preferences_view(session, org_id, candidate_id)}
+
+
+@app.get("/v1/call-reviews")
+def waiting_call_reviews(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    from maindscout.api import calls
+
+    return [calls.as_dict(r, session) for r in calls.waiting(session, org_id)]
+
+
+@app.get("/v1/call-reviews/{review_id}")
+def get_call_review(review_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    from maindscout.api import calls
+
+    return calls.as_dict(calls._review(session, org_id, review_id), session)
+
+
+class CallApplyBody(BaseModel):
+    ticked: list[str] | None = None  # None: the default ticks
+
+
+@app.post("/v1/call-reviews/{review_id}/apply")
+def apply_call_review(review_id: uuid.UUID, body: CallApplyBody, org_id: uuid.UUID = Depends(get_org),
+                      session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Approve the ticked lines in one act; the person is matched again once."""
+    from maindscout.api import calls
+
+    row = calls.apply(session, org_id, review_id, actor, body.ticked)
+    session.commit()
+    return calls.as_dict(row, session)
+
+
+@app.post("/v1/call-reviews/{review_id}/dismiss")
+def dismiss_call_review(review_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                        actor: str = Depends(get_actor)):
+    from maindscout.api import calls
+
+    row = calls.dismiss(session, org_id, review_id, actor)
+    session.commit()
+    return calls.as_dict(row, session)
+
+
+@app.post("/v1/call-reviews/{review_id}/retry")
+def retry_call_review(review_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    from maindscout.api import calls
+
+    row = calls.retry(session, org_id, review_id)
+    session.commit()
+    return calls.as_dict(row, session)
+
+
+@app.get("/v1/candidates/{candidate_id}/brief")
+def get_person_brief(candidate_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """A Brief without a job (anyone, e.g. someone in the pool): the questions about the person, and how to reach them."""
+    from maindscout.api import brief
+
+    try:
+        items = brief.build_person(session, org_id, candidate_id)
+    except brief.BriefError as error:
+        session.rollback()
+        return {"available": False, "reason": str(error), "items": [], "header": brief.person_header(session, org_id, candidate_id),
+                "contacts": brief.contacts(session, org_id, candidate_id)}
+    session.commit()
+    return {"available": True, "items": [brief.as_dict(i) for i in items], "header": brief.person_header(session, org_id, candidate_id),
+            "contacts": brief.contacts(session, org_id, candidate_id)}
 
 
 @app.post("/v1/brief/{item_id}/answer")
@@ -925,7 +1093,7 @@ def import_rows(batch_id: uuid.UUID, body: ImportRowsBody, org_id: uuid.UUID = D
 
 @app.post("/v1/imports/{batch_id}/quote/accept")
 def accept_import_quote(batch_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
-                        actor: str = Depends(get_actor)):
+                        actor: str = Depends(get_actor), _owner: auth.Principal = Depends(require_owner)):
     """Order the paid analysis of the rows beyond the free allowance (compute cost x 1.9)."""
     from maindscout.api import imports
 
@@ -952,7 +1120,8 @@ def mailbox_status(org_id: uuid.UUID = Depends(get_org), session: Session = Depe
 
 
 @app.post("/v1/mailbox/connect/{provider}")
-def mailbox_connect(provider: str, org_id: uuid.UUID = Depends(get_org), actor: str = Depends(get_actor)):
+def mailbox_connect(provider: str, org_id: uuid.UUID = Depends(get_org), actor: str = Depends(get_actor),
+                    _owner: auth.Principal = Depends(require_owner)):
     """Where to send the person to sign in to Gmail or Outlook."""
     return {"url": mailbox_mod.authorize_url(org_id, provider, actor)}
 
@@ -975,7 +1144,8 @@ def mailbox_callback(provider: str, code: str | None = None, state: str | None =
 
 
 @app.delete("/v1/mailbox", status_code=204)
-def mailbox_disconnect(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+def mailbox_disconnect(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                       _owner: auth.Principal = Depends(require_owner)):
     mailbox_mod.disconnect(session, org_id)
     session.commit()
 
@@ -1052,3 +1222,198 @@ def message_replied(message_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org),
     m = messages.mark_replied(session, org_id, message_id)
     session.commit()
     return messages.as_dict(m)
+
+
+
+# --- access: sign in, account, members (access plan) ---------------------------------------------------------------
+
+PUBLIC_ROUTES = {"/v1/health", "/v1/auth/login", "/v1/auth/login/code", "/v1/auth/invites/{token}",
+                 "/v1/auth/invites/{token}/accept", "/v1/mailbox/callback/{provider}"}
+
+
+class LoginBody(BaseModel):
+    email: str
+    password: str
+
+
+class CodeBody(BaseModel):
+    ticket: str
+    code: str
+
+
+def _counted(session: Session, call):
+    """Run a sign-in step; a failure's count is kept even though the request fails."""
+    try:
+        result = call()
+    except (auth.AuthError, auth.Locked):
+        session.commit()
+        raise
+    session.commit()
+    return result
+
+
+@app.post("/v1/auth/login")
+def auth_login(body: LoginBody, request: Request, session: Session = Depends(get_session)):
+    """Email and password: a session token, or a ticket for the two-step code."""
+    return _counted(session, lambda: auth.login(session, body.email, body.password, _address(request)))
+
+
+@app.post("/v1/auth/login/code")
+def auth_login_code(body: CodeBody, request: Request, session: Session = Depends(get_session)):
+    return _counted(session, lambda: auth.login_code(session, body.ticket, body.code, _address(request)))
+
+
+@app.post("/v1/auth/logout", status_code=204)
+def auth_logout(p: auth.Principal = Depends(get_principal_any), session: Session = Depends(get_session)):
+    auth.logout(session, p.session_id)
+    session.commit()
+
+
+@app.get("/v1/auth/me")
+def auth_me(p: auth.Principal = Depends(get_principal_any), session: Session = Depends(get_session)):
+    return auth.me(session, p)
+
+
+class PasswordBody(BaseModel):
+    current: str
+    new: str
+
+
+@app.post("/v1/auth/password", status_code=204)
+def auth_password(body: PasswordBody, p: auth.Principal = Depends(get_principal_any), session: Session = Depends(get_session)):
+    """Change your password; your other browser sessions end."""
+    auth.change_password(session, p, body.current, body.new)
+    session.commit()
+
+
+@app.post("/v1/auth/two-step/start")
+def auth_two_step_start(p: auth.Principal = Depends(get_principal_any), session: Session = Depends(get_session)):
+    """A new secret for an authenticator app; it is active only after a code from it is confirmed."""
+    from maindscout.db.models import AppUser
+
+    user = session.get(AppUser, p.user_id)
+    if user.totp_enabled:
+        raise auth.AccessError("Two-step verification is already on")
+    out = auth.start_totp(session, user)
+    session.commit()
+    return out
+
+
+class TwoStepBody(BaseModel):
+    code: str
+
+
+@app.post("/v1/auth/two-step/confirm", status_code=204)
+def auth_two_step_confirm(body: TwoStepBody, p: auth.Principal = Depends(get_principal_any), session: Session = Depends(get_session)):
+    from maindscout.db.models import AppUser
+
+    auth.confirm_totp(session, session.get(AppUser, p.user_id), body.code)
+    session.commit()
+
+
+class DisableBody(BaseModel):
+    password: str
+
+
+@app.post("/v1/auth/two-step/disable", status_code=204)
+def auth_two_step_disable(body: DisableBody, p: auth.Principal = Depends(get_principal), session: Session = Depends(get_session)):
+    from maindscout.db.models import AppUser
+
+    roles = [d["role"] for d in auth.me(session, p)["desks"]]
+    auth.disable_totp(session, session.get(AppUser, p.user_id), body.password, roles)
+    session.commit()
+
+
+@app.post("/v1/auth/sessions/end-others")
+def auth_end_others(p: auth.Principal = Depends(get_principal_any), session: Session = Depends(get_session)):
+    n = auth.revoke_sessions(session, p.user_id, keep=p.session_id, kinds=("web",))
+    session.commit()
+    return {"ended": n}
+
+
+@app.get("/v1/auth/invites/{token}")
+def auth_invite(token: str, session: Session = Depends(get_session)):
+    return auth.invite_info(session, token)
+
+
+class AcceptBody(BaseModel):
+    password: str
+    name: str | None = None
+
+
+@app.post("/v1/auth/invites/{token}/accept")
+def auth_invite_accept(token: str, body: AcceptBody, session: Session = Depends(get_session)):
+    out = auth.accept_invite(session, token, body.password, body.name)
+    session.commit()
+    return out
+
+
+@app.get("/v1/members")
+def get_members(p: auth.Principal = Depends(require_owner), session: Session = Depends(get_session)):
+    return auth.members(session, p.org_id)
+
+
+class InviteBody(BaseModel):
+    email: str
+    role: str = "recruiter"
+
+
+@app.post("/v1/members/invites", status_code=201)
+def invite_member(body: InviteBody, p: auth.Principal = Depends(require_owner), session: Session = Depends(get_session)):
+    """A one-time link to join this desk (valid 7 days). Nothing is emailed: send the link yourself."""
+    out = auth.create_invite(session, p.org_id, body.email, body.role, p.email)
+    session.commit()
+    return out
+
+
+class RoleBody(BaseModel):
+    role: str
+
+
+@app.patch("/v1/members/{user_id}", status_code=204)
+def change_member_role(user_id: uuid.UUID, body: RoleBody, p: auth.Principal = Depends(require_owner),
+                       session: Session = Depends(get_session)):
+    auth.set_role(session, p.org_id, user_id, body.role)
+    session.commit()
+
+
+@app.delete("/v1/members/{user_id}", status_code=204)
+def remove_member(user_id: uuid.UUID, p: auth.Principal = Depends(require_owner), session: Session = Depends(get_session)):
+    """Remove someone from this desk; their sessions for it end at once."""
+    auth.remove_member(session, p.org_id, user_id)
+    session.commit()
+
+
+@app.post("/v1/members/{user_id}/reset", status_code=201)
+def reset_member(user_id: uuid.UUID, p: auth.Principal = Depends(require_owner), session: Session = Depends(get_session)):
+    """A one-time link (24 hours) to set a new password; it also clears two-step codes (a lost phone) and ends the
+    person's sessions once used."""
+    out = auth.reset_link(session, p.org_id, user_id, p.email)
+    session.commit()
+    return out
+
+
+# --- navigation: sidebar counts, ⌘K lookup, Today (design plan) ----------------------------------------------------
+
+@app.get("/v1/nav")
+def nav(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """Counts for the sidebar (cheap: a few aggregates)."""
+    from maindscout.api import overview
+
+    return overview.nav_counts(session, org_id)
+
+
+@app.get("/v1/lookup")
+def lookup(q: str = Query("", max_length=200), org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """People, jobs and companies whose name contains `q` (for ⌘K)."""
+    from maindscout.api import overview
+
+    return overview.lookup(session, org_id, q)
+
+
+@app.get("/v1/today")
+def today(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """The start of the day: priority people per job, decisions waiting, people going stale, recent activity."""
+    from maindscout.api import overview
+
+    return overview.today(session, org_id)

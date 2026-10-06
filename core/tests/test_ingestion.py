@@ -56,3 +56,14 @@ def test_unsupported_media_is_refused():
 
 def test_plain_text_is_accepted():
     assert pdf.extract("hello".encode(), "text/plain").text == "hello"
+
+
+def test_letter_spaced_text_is_rejoined_and_ordinary_text_left_alone():
+    from maindscout.ingestion.pdf import repair_text
+
+    assert repair_text("S p a n i s h  ( n a t i v e )") == "Spanish (native)"
+    assert repair_text("r e n n f 9 3 @ g m a i l . c o m") == "rennf93@gmail.com"
+    assert repair_text("J a n  2 0 2 4  -  P r e s e n t") == "Jan 2024 - Present"
+    assert repair_text("P w C") == "PwC"
+    for ordinary in ("Senior Engineer at Acme, 2019 - 2021", "C / C++ / R / Go / SQL", "A I", "J. R. R. Tolkien fan"):
+        assert repair_text(ordinary) == ordinary

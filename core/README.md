@@ -10,11 +10,13 @@ python -m pytest                     # creates and migrates a throwaway maindsco
 python -m maindscout init            # migrate, seed, create the org; prints the org id
 python -m maindscout serve           # API on http://127.0.0.1:8765 (docs at /docs) + 2 background workers
 python -m maindscout worker          # (optional) more background workers in their own process
+python -m maindscout perf-seed && python -m maindscout perf-check   # timings on a 3,000-person synthetic desk (free)
 python -m maindscout eval --with-tests  # golden eval over test_artifacts (real model, a few cents)
-cd ../cockpit && npm run e2e         # cockpit end to end (fresh maindscout_e2e database, real model)
+cd ../cockpit && npm run e2e         # cockpit end to end (fresh maindscout_e2e database; model answers replayed when recorded)
+npm run e2e:free                     # replay only: costs nothing (see docs/build/components/model-recordings.md)
 ```
 
-Put `OPERATOR_TOKEN=<any long random string>` in `core/.env`; every API call needs it as a Bearer token plus `X-Org-Id`.
+Sign-in is per person: after `init`, create the first owner with `python -m maindscout user create --email you@example.com --name "Your Name" --role owner` and open the printed link to set a password. Scripts use a personal token (`python -m maindscout token create --email … --label …`). See [access](../docs/build/components/access.md).
 
 Model: set `XAI_API_KEY` in `core/.env` (git-ignored); `MONTHLY_BUDGET_USD` caps paid calls (default 25). Live check over real files: `RUN_LIVE=1 python -m pytest tests/test_live_artifacts.py` (costs a few cents).
 

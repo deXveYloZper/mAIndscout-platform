@@ -45,8 +45,10 @@ class DeskAdapter:
     def find(self, session: Session, org_id: uuid.UUID, job: Job, query: dict, limit: int) -> list[uuid.UUID]:
         from maindscout.api.pipeline import blocked_ids_for_job
 
+        from maindscout.api.process import not_wanted_by
+
         tokens = query["tokens"]
-        blocked = blocked_ids_for_job(session, org_id, job)
+        blocked = blocked_ids_for_job(session, org_id, job) | not_wanted_by(session, org_id, job)
         on_job = select(CandidateJob.candidate_id).where(CandidateJob.job_id == job.id)
         people = session.scalars(select(Candidate).where(Candidate.org_id == org_id, Candidate.merged_into_id.is_(None),
                                                          Candidate.id.not_in(on_job)).order_by(Candidate.created_at.desc()))
@@ -82,7 +84,10 @@ class ProfileAdapter:
         from maindscout.api.pipeline import blocked_ids_for_job
 
         on_job = set(session.scalars(select(CandidateJob.candidate_id).where(CandidateJob.job_id == job.id)))
+        from maindscout.api.process import not_wanted_by
+
         on_job |= blocked_ids_for_job(session, org_id, job)  # the client said no to them: never sourced for this client
+        on_job |= not_wanted_by(session, org_id, job)  # they said they will not consider a job like this one
         found: list[uuid.UUID] = []
         channels = []
         if query.get("targets"):

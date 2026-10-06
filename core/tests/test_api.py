@@ -5,14 +5,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from maindscout.api import app as api
-from maindscout.api import writer
+from maindscout.api import auth, writer
 from maindscout.db.models import Claim, Decision
 from maindscout.intelligence.llm import LLMResult
 from maindscout.storage import LocalBlobStore
 from tests.pdfs import text_pdf
 from tests.test_process import CV_LINES, JD_JSON, JD_LINES, cv_json
 
-TOKEN = "test-token"
+from tests.conftest import OWNER, PASSWORD, TOTP  # noqa: E402,F401 (the owner fixture lives in conftest)
 
 
 class RoutingFake:
@@ -32,14 +32,17 @@ def fake():
     return RoutingFake()
 
 
+def signed_in(session, user, org_id) -> str:
+    return auth._start_session(session, user, org_id)["token"]
+
+
 @pytest.fixture
-def client(session, org, tmp_path, fake, monkeypatch):
-    monkeypatch.setenv("OPERATOR_TOKEN", TOKEN)
+def client(session, org, tmp_path, fake, owner):
     api.app.dependency_overrides[api.get_session] = lambda: session
     api.app.dependency_overrides[api.get_blobs] = lambda: LocalBlobStore(tmp_path)
     api.app.dependency_overrides[api.get_llm] = lambda: fake
     c = TestClient(api.app)
-    c.headers.update({"Authorization": f"Bearer {TOKEN}", "X-Org-Id": str(org.id)})
+    c.headers.update({"Authorization": f"Bearer {signed_in(session, owner, org.id)}", "X-Org-Id": str(org.id)})
     yield c
     api.app.dependency_overrides.clear()
 
@@ -67,19 +70,20 @@ def test_health_needs_no_token(client):
     assert TestClient(api.app).get("/v1/health").json() == {"status": "ok"}
 
 
-def test_token_and_org_are_required(client, org):
+def test_a_session_is_required_and_the_desk_must_be_yours(client, org):
     bare = TestClient(api.app)
+    token = client.headers["Authorization"]
     assert bare.get("/v1/jobs").status_code == 401
-    assert bare.get("/v1/jobs", headers={"Authorization": f"Bearer {TOKEN}"}).status_code == 400
-    assert bare.get("/v1/jobs", headers={"Authorization": f"Bearer {TOKEN}", "X-Org-Id": str(uuid.uuid4())}).status_code == 403
-    assert bare.get("/v1/jobs", headers={"Authorization": "Bearer wrong", "X-Org-Id": str(org.id)}).status_code == 401
+    assert bare.get("/v1/jobs", headers={"Authorization": "Bearer wrong"}).status_code == 401
+    assert bare.get("/v1/jobs", headers={"Authorization": token}).status_code == 200  # the session's own desk
+    assert bare.get("/v1/jobs", headers={"Authorization": token, "X-Org-Id": str(uuid.uuid4())}).status_code == 403
 
 
-def test_another_orgs_data_is_not_found(client, session):
+def test_another_desks_data_is_refused(client, session):
     job_id = make_job(client)
     other = writer.create_org(session, "other")
     r = client.get(f"/v1/jobs/{job_id}", headers={"X-Org-Id": str(other.id)})
-    assert r.status_code == 404
+    assert r.status_code == 403
 
 
 # --- documents and jobs ---------------------------------------------------------------------------
@@ -319,7 +323,7 @@ def test_typing_a_missing_must_have_moves_the_band_and_records_why(client):
     insar = next(row for row in after["rows"] if row["token"] == "insar")
     assert insar["status"] == "evidence" and insar["official"] is True
     last = after["history"][-1]
-    assert (last["from"], last["to"], last["cause"]["act"], last["actor"]) == ("do_not_submit", "priority", "typed", "operator")
+    assert (last["from"], last["to"], last["cause"]["act"], last["actor"]) == ("do_not_submit", "priority", "typed", OWNER)
     assert after["history"][0]["cause"]["act"] == "document_processed"
 
 

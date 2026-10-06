@@ -29,3 +29,4 @@ The intelligence track ([plan](../../intelligence/PLAN.md)) needs companies as t
 ## Known limits
 - No company facts yet (domain, stage, funding, size): phase I2.
 - Different offices of one firm written with a city ("KPMG Moscow", "KPMG Toronto") stay separate companies unless a human merges them.
+- 2026-10-06: a "Same company?" card can be handed to the person ("Not sure: ask them on the call"): it becomes a Brief question (kind `company`, kept until answered); a yes merges the companies, a no keeps them apart and is recorded on the card's resolution.

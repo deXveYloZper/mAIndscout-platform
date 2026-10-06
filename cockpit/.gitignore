@@ -4,5 +4,7 @@ node_modules
 *.tsbuildinfo
 next-env.d.ts
 .next-e2e
+.next-design
 test-results
 playwright-report
+playwright/.auth

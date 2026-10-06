@@ -1,6 +1,7 @@
-"""The Brief (Slice 3): compile, reconcile and answer call questions for a person on a job.
+"""The Brief (Slice 3): compile, reconcile and answer call questions for a person, on a job or on their own.
 
-- Default scope: priority people on a job (others on request).
+- Default scope: priority people on a job (others on request). Anyone can also have a Brief without a job (the person
+  questions only: what we need to know about them whatever the job), e.g. someone in the pool who sent a CV.
 - Reconcile, never regenerate: new sources add open items; items whose source is gone expire; answered and dismissed
   items are never brought back.
 - Answering creates a born-approved human assertion (BriefAnswerClaim, or a SkillClaim / LocationClaim when the answer
@@ -38,16 +39,31 @@ def _pair(session: Session, org_id, job_id, candidate_id) -> CandidateJob:
     return pair
 
 
-def _sources(session: Session, org_id, pair: CandidateJob) -> list[compiler.Item]:
+def _person_sources(session: Session, org_id, candidate_id) -> list[compiler.Item]:
     from maindscout.api import coverage, profiles
 
-    snap = profiles.latest(session, pair.candidate_id)
+    snap = profiles.latest(session, candidate_id)
     suspects = [{"claim_id": str(c.id), "kind": c.payload.get("kind"), "value": c.payload.get("value")}
                 for c in session.scalars(select(Claim).where(
-                    Claim.org_id == org_id, Claim.subject_id == pair.candidate_id, Claim.claim_type == "ContactClaim",
+                    Claim.org_id == org_id, Claim.subject_id == candidate_id, Claim.claim_type == "ContactClaim",
                     Claim.status == "proposed", Claim.flags["possible_ocr_identifier"].astext == "true"))]
-    lives = coverage.signals(session, org_id, pair.candidate_id)[0]
+    lives = coverage.signals(session, org_id, candidate_id)[0]
     items = compiler.for_person(snap.profile if snap else None, suspects, bool(lives))
+    return items + _stale_preferences(session, org_id, candidate_id)
+
+
+def _stale_preferences(session: Session, org_id, candidate_id) -> list[compiler.Item]:
+    """What they said they want, said more than about six months ago: ask again (people's wishes change)."""
+    from maindscout.api import calls
+
+    return [compiler.Item(f"pref:{v['facet']}:{v['claim_id']}", "person", "preference",
+                          f"Is this still what they want? {v['summary']}",
+                          f"Said on a call on {v['as_of']}: more than six months ago.")
+            for v in calls.preferences_view(session, org_id, candidate_id) if v["stale"]]
+
+
+def _sources(session: Session, org_id, pair: CandidateJob) -> list[compiler.Item]:
+    items = _person_sources(session, org_id, pair.candidate_id)
     job = session.get(Job, pair.job_id)
     sources = {str(c.id): (c.approved_view or c.payload).get("source") or "ad"
                for c in session.scalars(select(Claim).where(Claim.subject_id == job.id, Claim.claim_type == "JobRequirementClaim",
@@ -64,9 +80,28 @@ def build(session: Session, org_id, job_id: uuid.UUID, candidate_id: uuid.UUID, 
         raise BriefError("This person is archived as outside coverage: bring them back first.")
     if pair.triage_band != "priority" and not force:
         raise BriefError("Briefs are made for priority people; ask for one anyway if you want it.")
-    wanted = {(i.scope, i.source_key): i for i in _sources(session, org_id, pair)}
-    existing = list(session.scalars(select(BriefItem).where(
-        BriefItem.candidate_id == candidate_id, (BriefItem.job_id == job_id) | (BriefItem.job_id.is_(None)))))
+    _reconcile(session, org_id, candidate_id, job_id, _sources(session, org_id, pair))
+    return items_for(session, job_id, candidate_id)
+
+
+def build_person(session: Session, org_id, candidate_id: uuid.UUID) -> list[BriefItem]:
+    """The Brief without a job: the questions about the person, asked once, that count for every job."""
+    person = session.get(Candidate, candidate_id)
+    if person is None or person.org_id != org_id:
+        raise LookupError(f"No candidate {candidate_id}")
+    if person.archived_at is not None:
+        raise BriefError("This person is archived as outside coverage: bring them back first.")
+    _reconcile(session, org_id, candidate_id, None, _person_sources(session, org_id, candidate_id))
+    return list(session.scalars(select(BriefItem).where(BriefItem.candidate_id == candidate_id, BriefItem.job_id.is_(None))
+                                .order_by(BriefItem.created_at, BriefItem.source_key)))
+
+
+def _reconcile(session: Session, org_id, candidate_id, job_id, sources: list[compiler.Item]) -> None:
+    """New sources add open items; items whose source is gone expire; answered and dismissed ones never come back.
+    Without a job, only the person's own items are touched."""
+    wanted = {(i.scope, i.source_key): i for i in sources}
+    scope = (BriefItem.job_id == job_id) | (BriefItem.job_id.is_(None)) if job_id else BriefItem.job_id.is_(None)
+    existing = list(session.scalars(select(BriefItem).where(BriefItem.candidate_id == candidate_id, scope)))
     have = {("job" if b.job_id else "person", b.source_key): b for b in existing}
     now = datetime.now(timezone.utc)
     for key, item in wanted.items():
@@ -80,11 +115,10 @@ def build(session: Session, org_id, job_id: uuid.UUID, candidate_id: uuid.UUID, 
         elif row.status in ALIVE and (row.question, row.why) != (item.question, item.why):
             row.question, row.why, row.updated_at = item.question, item.why, now
     for key, row in have.items():
-        if key not in wanted and row.status in ALIVE:
+        if key not in wanted and row.status in ALIVE and row.kind not in ("call", "company"):  # questions from a call or a card stay until answered
             # Person-wide items are only retired from a person's own sources, which every job compiles the same way.
             row.status, row.updated_at = "expired", now
     session.flush()
-    return items_for(session, job_id, candidate_id)
 
 
 def header(session: Session, org_id, job_id: uuid.UUID, candidate_id: uuid.UUID) -> dict[str, Any]:
@@ -113,6 +147,26 @@ def header(session: Session, org_id, job_id: uuid.UUID, candidate_id: uuid.UUID)
         text = reason_words(pair.triage_reason)
     return {"summary": snap.profile["summary"] if snap else None, "reading": snap.profile["reading"]["label"] if snap else None,
             "band": pair.triage_band, "tier": pair.match_tier, "why": text}
+
+
+def contacts(session: Session, org_id, candidate_id) -> list[dict[str, Any]]:
+    """How to reach them, for the call: every email, phone and LinkedIn read from their files or typed by a person.
+    Unconfirmed ones (the file disagrees with itself) are marked so nobody calls a wrong number with confidence."""
+    order = {"phone": 0, "email": 1, "linkedin": 2}
+    rows = [c for c in session.scalars(select(Claim).where(
+        Claim.org_id == org_id, Claim.subject_id == candidate_id, Claim.claim_type == "ContactClaim", Claim.status.in_(LIVE)))
+        if (c.approved_view or c.payload).get("kind") in order]
+    rows.sort(key=lambda c: (order[(c.approved_view or c.payload)["kind"]], c.status != "approved"))
+    return [{"kind": (c.approved_view or c.payload)["kind"], "value": (c.approved_view or c.payload)["value"],
+             "approved": c.status == "approved", "unconfirmed": bool(c.flags.get("possible_ocr_identifier")) and c.status != "approved"}
+            for c in rows]
+
+
+def person_header(session: Session, org_id, candidate_id: uuid.UUID) -> dict[str, Any]:
+    from maindscout.api import profiles
+
+    snap = profiles.latest(session, candidate_id)
+    return {"summary": snap.profile["summary"] if snap else None, "reading": snap.profile["reading"]["label"] if snap else None}
 
 
 def reason_words(reason: str | None) -> str | None:
@@ -179,6 +233,27 @@ def answer(session: Session, org_id, item_id: uuid.UUID, outcome: str, text: str
             review.approve_claim(session, org_id, target, actor)
         elif outcome == "not_met":
             review.reject_claim(session, org_id, target, actor, "wrong", text)
+    elif item.kind == "company":
+        # "Same company?" asked on the call: yes links the two companies, no keeps them apart.
+        from maindscout.api import companies
+        from maindscout.db.models import Company, Decision
+
+        decision = session.get(Decision, uuid.UUID(item.source_key.split(":", 1)[1]))
+        if decision is not None and outcome in ("confirmed", "not_met"):
+            keep, drop = (session.get(Company, uuid.UUID(decision.context[k]["id"])) for k in ("existing", "new"))
+            if outcome == "confirmed" and keep is not None and drop is not None and drop.merged_into_id is None and keep.id != drop.id:
+                companies.merge(session, keep.id, drop.id, actor, org_id)
+            decision.resolution = {**(decision.resolution or {}), "answered": "same" if outcome == "confirmed" else "different",
+                                   "answered_by": actor, "answer": text}
+    elif item.kind == "preference":
+        # Still what they want: the same preference, said again today. No longer: it goes (they can say what instead).
+        old = session.get(Claim, uuid.UUID(item.source_key.rsplit(":", 1)[1]))
+        if old is not None and old.status == "approved":
+            if outcome == "confirmed":
+                review.assert_claim(session, org_id, actor, subject_type="candidate", subject_id=item.candidate_id,
+                                    claim_type="PreferenceClaim", payload=dict(old.approved_view or old.payload), replaces=old.id)
+            elif outcome == "not_met":
+                review.reject_claim(session, org_id, old.id, actor, "outdated", text)
     elif item.source_key == "std:location" and text and geo.country_in(text):
         claim = review.assert_claim(session, org_id, actor, subject_type="candidate", subject_id=item.candidate_id,
                                     claim_type="LocationClaim",
@@ -201,7 +276,8 @@ def answer(session: Session, org_id, item_id: uuid.UUID, outcome: str, text: str
     session.flush()
     from maindscout.api.process import retriage_candidate
 
-    retriage_candidate(session, org_id, item.candidate_id, {"act": "brief_answer", "item_id": str(item.id)}, actor)
+    if not review.in_batch(session, item.candidate_id):
+        retriage_candidate(session, org_id, item.candidate_id, {"act": "brief_answer", "item_id": str(item.id)}, actor)
     return item
 
 

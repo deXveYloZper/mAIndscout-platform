@@ -2,12 +2,22 @@ import { defineConfig, devices } from "@playwright/test";
 
 // End-to-end tests of the cockpit against a real API, a fresh database and the real model.
 // Local only (needs Docker Postgres, XAI_API_KEY in core/.env, and the test_artifacts folder).
-// Run: npm run e2e   (about 3 minutes, a few cents of model use)
+// Run: npm run e2e        model answers replayed from core/.llm-recordings when recorded, else called and recorded
+//      npm run e2e:free   replay only: costs nothing, fails loudly on any request never recorded
+//      npm run e2e:record call the real model for everything and refresh the recordings (a few cents)
+//
+// A test owner (with two-step codes) is created in the fresh database; `e2e/auth.setup.ts` signs in through the real
+// login page once and every test reuses that session.
 
 const ORG = "00000000-0000-0000-0000-0000000000e2";
-const TOKEN = "e2e-operator-token";
 const API_PORT = 8766;
 const UI_PORT = 3002;
+export const E2E_USER = { email: "e2e-owner@desk.test", password: "copper-lantern-meadow-41", totp: "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP" };
+export const STATE = "playwright/.auth/owner.json";
+// Which npm script ran decides the model mode (LLM_REPLAY, if set, wins).
+const REPLAY = process.env.LLM_REPLAY
+  ?? ({ "e2e:free": "replay", "e2e:record": "record" } as Record<string, string>)[process.env.npm_lifecycle_event ?? ""]
+  ?? "auto";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -21,27 +31,38 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"], viewport: { width: 1366, height: 900 } } }],
+  projects: [
+    { name: "sign-in", testMatch: /auth\.setup\.ts/, use: { ...devices["Desktop Chrome"] } },
+    {
+      name: "chromium",
+      testMatch: /.*\.spec\.ts/,
+      dependencies: ["sign-in"],
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1366, height: 900 }, storageState: STATE },
+    },
+  ],
   webServer: [
     {
-      command: `python -m maindscout reset-db maindscout_e2e --org-id ${ORG} && python -m maindscout serve --port ${API_PORT} --database maindscout_e2e`,
+      command: `python -m maindscout reset-db maindscout_e2e --org-id ${ORG}`
+        + ` && python -m maindscout user create --database maindscout_e2e --org ${ORG} --role owner --email ${E2E_USER.email}`
+        + ` --name "E2E Owner" --password-env E2E_PASSWORD --totp-env E2E_TOTP`
+        + ` && python -m maindscout serve --port ${API_PORT} --database maindscout_e2e`,
       cwd: "../core",
       url: `http://127.0.0.1:${API_PORT}/v1/health`,
       reuseExistingServer: false,
       timeout: 120_000,
       // RESEARCH_AUTO off: e2e must not pay for real company research on every run.
-      env: { OPERATOR_TOKEN: TOKEN, SUPPRESSION_KEY: "e2e-suppression-key", BLOB_DIR: ".blobs-e2e", RESEARCH_AUTO: "false" },
+      env: { SUPPRESSION_KEY: "e2e-suppression-key", AUTH_KEY: "e2e-auth-key", BLOB_DIR: ".blobs-e2e", RESEARCH_AUTO: "false",
+        COCKPIT_URL: `http://127.0.0.1:${UI_PORT}`, E2E_PASSWORD: E2E_USER.password, E2E_TOTP: E2E_USER.totp,
+        LLM_REPLAY: REPLAY },
     },
     {
-      command: `npx next build && npx next start -p ${UI_PORT}`,
-      url: `http://127.0.0.1:${UI_PORT}`,
+      command: `npx next build && npx next start -H 127.0.0.1 -p ${UI_PORT}`,
+      url: `http://127.0.0.1:${UI_PORT}/login`,
       reuseExistingServer: false,
       timeout: 300_000,
       env: {
         NEXT_DIST_DIR: ".next-e2e",
         MAINDSCOUT_API: `http://127.0.0.1:${API_PORT}`,
-        OPERATOR_TOKEN: TOKEN,
-        ORG_ID: ORG,
       },
     },
   ],

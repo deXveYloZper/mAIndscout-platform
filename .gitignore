@@ -15,4 +15,5 @@ node_modules/
 
 # Golden eval reports (full report names real people)
 core/eval-reports/
+core/.llm-recordings/
 core/.blobs-e2e/

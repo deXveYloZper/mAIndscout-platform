@@ -145,10 +145,26 @@ def _d(text: str | None) -> date | None:
 def company_facts(session: Session, company: Company | None) -> rubric.CompanyFacts | None:
     if company is None:
         return None
-    ids = [company.id] + list(session.scalars(select(Company.id).where(Company.merged_into_id == company.id)))
+    return company_facts_many(session, [company]).get(company.id)
+
+
+def company_facts_many(session: Session, companies: list[Company]) -> dict[uuid.UUID, rubric.CompanyFacts | None]:
+    """Public facts of several companies (each with the ones merged into it): two queries, not two per company."""
+    wanted = {c.id for c in companies}
+    owner = {c: c for c in wanted}
+    for child, parent in session.execute(select(Company.id, Company.merged_into_id).where(Company.merged_into_id.in_(wanted or [None]))):
+        owner[child] = parent
+    claims: dict[uuid.UUID, list[Claim]] = {c: [] for c in wanted}
+    for c in session.scalars(select(Claim).where(Claim.org_id == PUBLIC_ORG_ID, Claim.subject_id.in_(list(owner) or [None]),
+                                                 Claim.status.in_(LIVE))):
+        claims[owner[c.subject_id]].append(c)
+    return {cid: _facts_from(rows) for cid, rows in claims.items()}
+
+
+def _facts_from(rows: list[Claim]) -> rubric.CompanyFacts | None:
     facts = rubric.CompanyFacts()
     seen = False
-    for c in session.scalars(select(Claim).where(Claim.org_id == PUBLIC_ORG_ID, Claim.subject_id.in_(ids), Claim.status.in_(LIVE))):
+    for c in rows:
         p, seen = _view(c), True
         if c.claim_type == "CompanyTypeClaim":
             facts.kind = p["type"]
@@ -157,7 +173,7 @@ def company_facts(session: Session, company: Company | None) -> rubric.CompanyFa
         elif c.claim_type == "FundingRoundClaim":
             facts.rounds.append((p["stage"], _d(p.get("date"))))
         elif c.claim_type == "TeamSizeClaim" and p.get("min") is not None:
-            facts.team_min = p["min"]
+            facts.team_min, facts.team_max = p["min"], p.get("max")
         elif c.claim_type == "CompanyStatusClaim":
             facts.status = p["status"]
         elif c.claim_type == "CompanyDomainClaim":
@@ -167,8 +183,11 @@ def company_facts(session: Session, company: Company | None) -> rubric.CompanyFa
 
 def inputs(session: Session, org_id, candidate_id) -> tuple[list[rubric.Stint], list[rubric.Education]]:
     labels = classifications(session, org_id, candidate_id)
-    stints = []
-    for c in _live(session, org_id, candidate_id, "CareerStepClaim"):
+    steps = _live(session, org_id, candidate_id, "CareerStepClaim")
+    ids = {uuid.UUID(cid) for c in steps if (cid := ((_view(c).get("company") or {}).get("company_id")))}
+    known = {c.id: c for c in session.scalars(select(Company).where(Company.id.in_(ids or [None])))}  # one query
+    stints, companies_of = [], []  # the resolved company of each stint, for one facts lookup below
+    for c in steps:
         p = _view(c)
         label_claim = labels.get(str(c.id))
         label = _view(label_claim) if label_claim else {}
@@ -176,16 +195,22 @@ def inputs(session: Session, org_id, candidate_id) -> tuple[list[rubric.Stint], 
         # a recruiter's correction (approved) wins.
         level = label.get("level") if label_claim and label_claim.status == "approved" else (engine.title_level(p["title_raw"]) if label_claim else None)
         company_id = (p.get("company") or {}).get("company_id")
-        company = session.get(Company, uuid.UUID(company_id)) if company_id else None
+        company = known.get(uuid.UUID(company_id)) if company_id else None
         while company is not None and company.merged_into_id:
             company = session.get(Company, company.merged_into_id)
+        companies_of.append(company)
         stints.append(rubric.Stint(
             id=str(c.id), company=p["company"]["raw_name"], title=p["title_raw"], start=c.valid_from, end=c.valid_to,
             employment=p.get("employment_type") or "unknown", company_key=str(company.id) if company else p["company"]["raw_name"].lower(),
             family=label.get("role_family"), level=level, domains=label.get("domains") or [],
-            signals=label.get("signals") or [], facts=company_facts(session, company),
+            signals=label.get("signals") or [],
+            facts=None,  # filled below: every company's facts are read at once
             self_employed=normalize(p["company"]["raw_name"]).kind == "self_employed",
             precise=c.temporal_precision in ("month", "exact")))
+    distinct = list({c.id: c for c in companies_of if c is not None}.values())
+    facts_map = company_facts_many(session, distinct) if distinct else {}
+    for stint, company in zip(stints, companies_of):
+        stint.facts = facts_map.get(company.id) if company is not None else None
     edu = []
     for c in _live(session, org_id, candidate_id, "EducationClaim"):
         p = _view(c)
@@ -257,6 +282,19 @@ def build(session: Session, org_id, candidate_id, as_of: date | None = None) -> 
 def latest(session: Session, candidate_id) -> CareerProfile | None:
     return session.scalar(select(CareerProfile).where(CareerProfile.candidate_id == candidate_id)
                           .order_by(CareerProfile.computed_at.desc(), CareerProfile.id.desc()).limit(1))
+
+
+def latest_readings(session: Session, candidate_ids: list) -> dict[uuid.UUID, str | None]:
+    """The latest profile reading ("strong", "unclear", …) of many people in one query."""
+    from sqlalchemy.dialects.postgresql import distinct_on
+
+    if not candidate_ids:
+        return {}
+    newest = (select(CareerProfile.candidate_id, CareerProfile.profile["reading"]["label"].astext.label("label"))
+              .where(CareerProfile.candidate_id.in_(candidate_ids))
+              .ext(distinct_on(CareerProfile.candidate_id))
+              .order_by(CareerProfile.candidate_id, CareerProfile.computed_at.desc(), CareerProfile.id.desc()))
+    return {cid: label for cid, label in session.execute(newest)}
 
 
 def run(session: Session, org_id, candidate_id, client_factory, task_id: uuid.UUID | None = None,

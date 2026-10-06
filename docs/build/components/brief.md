@@ -28,6 +28,13 @@ A two-line header says who the person is (the career profile's summary) and why 
 
 **Answering:** you capture the answer on the item as confirmed, not met or a note. It becomes an approved fact with you as the source, and the person is re-matched at once. **Nothing is ever sent to anyone.**
 
+## A Brief without a job (2026-10-06, the owner's request)
+- Anyone on the desk can be briefed from their page or the People list ("Brief for a call"), for example someone in the pool who sent a CV.
+- It asks the questions about the person only: career questions from their profile, contacts to confirm, where they live, notice, salary, openness to other roles, and what they are looking for next (kind of work, level, on site / hybrid / remote).
+- The answers are person-wide, so they count for every job they are matched to, now or later. Nothing is sent.
+- Both Briefs open with **how to reach them:** phone, email and LinkedIn from their files or typed by a person, each one click away (call, write, open). Unconfirmed values are marked "check".
+- Contract: `GET /v1/candidates/{id}/brief` returns `{available, items, header, contacts}`; the job Brief now also returns `contacts`.
+
 ## Why
 Blueprint Feature 9 and the Slice 3 plan: the Brief is the interface of a loop, not a report. The call is where the best evidence is born; capturing it inline makes every answer improve the profile, the match and, later, calibration (I7).
 
@@ -74,5 +81,5 @@ The existing sourcing test confirms no send path exists. e2e: answers become off
 
 ## Known limits
 - Questions are fixed templates; phrasing by a model (the blueprint allows it) isn't used.
-- Uploading call notes as a document (the "rich path") isn't built; inline capture is.
+- Call transcripts are read into a Call review that answers Brief questions in bulk ([calls](calls.md), 2026-10-06). Questions the call raised ("Ask next time", kind `call`) stay until answered; preferences said more than about six months ago come back as "Is this still what they want?" (kind `preference`): a yes renews the preference, a no retires it.
 - Mailing Brief questions and interview kits are out of scope (Slice 3 plan).

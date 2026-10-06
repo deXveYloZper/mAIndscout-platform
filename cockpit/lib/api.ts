@@ -1,9 +1,16 @@
-// Server-side client for the platform API. Never import this from a client component:
-// it reads the operator token from the server environment. `server-only` makes the build fail if one tries
-// (type-only imports are erased and stay allowed).
+// Server-side client for the platform API. Never import this from a client component: it reads the signed-in
+// user's session from an httpOnly cookie. `server-only` makes the build fail if one tries (type-only imports are
+// erased and stay allowed).
 import "server-only";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
 const BASE = process.env.MAINDSCOUT_API ?? "http://127.0.0.1:8765";
+
+/** The session token (httpOnly: never readable by page scripts) and the chosen desk. */
+export const SESSION_COOKIE = "ms_session";
+export const DESK_COOKIE = "ms_desk";
+export const TICKET_COOKIE = "ms_ticket";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -12,24 +19,43 @@ export class ApiError extends Error {
   }
 }
 
-function headers(extra?: HeadersInit): Headers {
-  const token = process.env.OPERATOR_TOKEN;
-  const org = process.env.ORG_ID;
-  if (!token || !org) throw new ApiError(500, "Cockpit is not configured: set OPERATOR_TOKEN and ORG_ID in cockpit/.env.local");
+async function headers(extra?: HeadersInit): Promise<Headers> {
+  const jar = await cookies();
   const h = new Headers(extra);
-  h.set("Authorization", `Bearer ${token}`);
-  h.set("X-Org-Id", org);
+  const token = jar.get(SESSION_COOKIE)?.value;
+  const desk = jar.get(DESK_COOKIE)?.value;
+  if (token) h.set("Authorization", `Bearer ${token}`);
+  if (desk) h.set("X-Org-Id", desk);
   return h;
 }
 
+/** Calls without a session (sign in, invite links). */
+export async function apiPublic<T>(path: string, body?: unknown, forwardedFor?: string | null): Promise<T> {
+  const h = new Headers({ "Content-Type": "application/json" });
+  if (forwardedFor) h.set("X-Forwarded-For", forwardedFor);
+  const res = await fetch(`${BASE}${path}`, { method: body === undefined ? "GET" : "POST", headers: h, cache: "no-store",
+    body: body === undefined ? undefined : JSON.stringify(body) });
+  if (!res.ok) throw new ApiError(res.status, await detailOf(res));
+  return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+}
+
+async function detailOf(res: Response): Promise<string> {
+  let detail: unknown = res.statusText;
+  try {
+    detail = (await res.json()).detail ?? detail;
+  } catch {}
+  return typeof detail === "string" ? detail : JSON.stringify(detail);
+}
+
 export async function apiRaw(path: string, init: RequestInit = {}): Promise<Response> {
-  const res = await fetch(`${BASE}${path}`, { ...init, headers: headers(init.headers), cache: "no-store" });
+  const res = await fetch(`${BASE}${path}`, { ...init, headers: await headers(init.headers), cache: "no-store" });
   if (!res.ok) {
-    let detail = res.statusText;
-    try {
-      detail = (await res.json()).detail ?? detail;
-    } catch {}
-    throw new ApiError(res.status, typeof detail === "string" ? detail : JSON.stringify(detail));
+    const detail = await detailOf(res);
+    // Not signed in, or the session ended: to sign-in. (A page-level redirect keeps the address the browser used;
+    // Next's middleware redirects would turn 127.0.0.1 into localhost, which holds different cookies.)
+    if (res.status === 401) redirect((await cookies()).get(SESSION_COOKIE) ? "/login?ended=1" : "/login");
+    if (res.status === 403 && detail.includes("two-step")) redirect("/account?setup=1"); // an owner must set up codes first
+    throw new ApiError(res.status, detail);
   }
   return res;
 }
@@ -97,6 +123,7 @@ export type JobPage = JobSummary & {
   source_document_id: string | null;
   requirements: ClaimView[];
   process_stale: boolean;
+  rematching?: boolean;
   people: Record<Band, PersonOnJob[]>;
   archived: { candidate_id: string; name: string | null; reason: string | null }[];
   coverage: { desk: string[]; from_ad: string[]; opened: string[]; names: Record<string, string> };
@@ -113,8 +140,8 @@ export type PersonPage = {
   id: string;
   name: string | null;
   claims: Record<string, ClaimView[]>;
-  jobs: { job_id: string; title: string; band: Band; reason: string | null }[];
-  documents: { id: string; filename: string | null; needs_vision: boolean; as_of: string | null }[];
+  jobs: { job_id: string; title: string; band: Band; reason: string | null; state?: string }[];
+  documents: { id: string; filename: string | null; doc_type: "cv" | "jd" | "transcript" | "other"; needs_vision: boolean; as_of: string | null }[];
   open_decisions: string[];
   archived: { at: string; reason: string | null } | null;
   coverage_override: boolean;
@@ -128,7 +155,45 @@ export type PersonPage = {
       by?: string | null; id?: string; removable?: boolean }[] };
   messages: MessageView[];
   client_contacts: { id: string; name: string; role: string | null; job_id: string; job: string }[];
+  merged_into: string | null;
+  merges: { id: string; drop_id: string; merged_by: string; merged_at: string | null; facts: number; documents: number; jobs: number }[];
 };
+
+/** Calls: one line of a Call review (what the transcript said), ticked by default. */
+export type CallLine = {
+  id: string;
+  kind: "brief_answer" | "confirm" | "correct" | "dispute" | "new_fact" | "preference" | "ask";
+  text: string;
+  quote: string;
+  ticked: boolean;
+  outcome?: string; // a Brief answer: confirmed | not_met | noted
+  result?: string; // once approved: applied | dropped | skipped: why
+  note?: string;
+  question?: string;
+  current?: string;
+  summary?: string;
+  replaces?: string;
+  value?: string;
+  fact_type?: string;
+  company?: string;
+  title?: string | null;
+};
+export type CallReview = {
+  id: string;
+  candidate_id: string;
+  document_id: string;
+  status: "reading" | "pending" | "applied" | "dismissed" | "failed";
+  error: string | null;
+  filename?: string | null;
+  person?: string | null;
+  created_by: string;
+  created_at: string | null;
+  resolved_by: string | null;
+  resolved_at: string | null;
+  sections: { kind: CallLine["kind"]; title: string; lines: CallLine[] }[];
+};
+export type Preference = { claim_id: string; facet: string; strength: "must" | "prefer"; summary: string; said: string | null;
+  as_of: string | null; stale: boolean };
 
 export type MessageView = {
   id: string;
@@ -189,7 +254,7 @@ export type PersonSummary = {
   id: string;
   name: string | null;
   created_at: string;
-  jobs: { job_id: string; title: string; band: Band }[];
+  jobs: { job_id: string; title: string; band: Band; state?: string }[];
   document_id: string | null;
   archived: string | null;
   tags: string[];
@@ -229,3 +294,39 @@ export type CareerProfile = {
 };
 export type StepLabel = { claim_id: string; status: string; career_claim_id: string; role_family: string; level: string | null;
   domains: string[]; signals: string[] };
+
+export type Me = {
+  id: string;
+  email: string;
+  name: string;
+  desk: string;
+  role: "owner" | "recruiter";
+  desks: { id: string; name: string; role: string }[];
+  two_step: boolean;
+  needs_two_step: boolean;
+};
+
+export type Member = { id: string | null; email: string; name: string | null; role: string; two_step?: boolean;
+  disabled?: boolean; joined?: string | null; invited?: boolean; expires_at?: string };
+
+/** Who is signed in, or null (no redirect: the layout uses it on the sign-in page too). */
+export async function currentUser(): Promise<Me | null> {
+  const h = await headers();
+  if (!h.get("Authorization")) return null;
+  try {
+    const res = await fetch(`${BASE}/v1/auth/me`, { headers: h, cache: "no-store" });
+    return res.ok ? ((await res.json()) as Me) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** For extras that must never break a page (e.g. the sidebar's counts): the answer, or null on any failure. */
+export async function apiOptional<T>(path: string): Promise<T | null> {
+  try {
+    const res = await fetch(`${BASE}${path}`, { headers: await headers(), cache: "no-store" });
+    return res.ok ? ((await res.json()) as T) : null;
+  } catch {
+    return null;
+  }
+}

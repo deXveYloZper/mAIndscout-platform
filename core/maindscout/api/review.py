@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import uuid
+from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -16,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from maindscout.api import writer
-from maindscout.api.process import natural_key, retriage_candidate, retriage_job
+from maindscout.api.process import natural_key, rematch_job, retriage_candidate
 from maindscout.db.models import Candidate, CandidateJob, Claim, ClaimObservation, Decision, DecisionItem, Evidence, Job, PairEvent
 from maindscout.domain import stints
 
@@ -61,6 +62,10 @@ def retriage_after(session: Session, claim: Claim, act: str, actor: str) -> None
     cause = {"act": act, "claim_id": str(claim.id), "claim_type": claim.claim_type}
     from maindscout.api import coverage
 
+    batch = session.info.get("batch")
+    if batch is not None and claim.subject_type == "candidate":  # a bulk approval: once, at the end (see batched)
+        batch.setdefault(claim.subject_id, set()).add(claim.claim_type)
+        return
     if claim.subject_type == "candidate":
         retriage_candidate(session, claim.org_id, claim.subject_id, cause, actor)
         if claim.claim_type in ("LocationClaim", "CareerStepClaim"):
@@ -70,11 +75,44 @@ def retriage_after(session: Session, claim: Claim, act: str, actor: str) -> None
 
             profiles.build(session, claim.org_id, claim.subject_id)  # code only: a person's correction shows at once
     elif claim.subject_type == "job":
-        retriage_job(session, claim.org_id, claim.subject_id, cause, actor)
+        rematch_job(session, claim.org_id, claim.subject_id, cause, actor)
         if (claim.payload.get("mobility") or {}).get("facet") == "residence":
             from maindscout.db.models import Job
 
             coverage.reevaluate_job(session, session.get(Job, claim.subject_id), cause, actor)
+
+
+@contextmanager
+def batched(session: Session, org_id: uuid.UUID, cause: dict[str, Any], actor: str):
+    """Many fact changes about people in one act (a call review, approving a whole CV): matching, coverage and
+    profiles are recomputed once per person at the end, not once per fact."""
+    from maindscout.api import coverage, profiles
+
+    if session.info.get("batch") is not None:  # already inside one
+        yield
+        return
+    session.info["batch"] = {}
+    try:
+        yield
+        touched = session.info["batch"]
+    finally:
+        session.info.pop("batch", None)
+    for candidate_id, types in touched.items():
+        session.flush()
+        if types & {"CareerStepClaim", "StepClassificationClaim", "EducationClaim"}:
+            profiles.build(session, org_id, candidate_id)
+        if types & {"LocationClaim", "CareerStepClaim"}:
+            coverage.evaluate(session, org_id, candidate_id, cause, actor)
+        retriage_candidate(session, org_id, candidate_id, cause, actor)
+
+
+def in_batch(session: Session, candidate_id: uuid.UUID) -> bool:
+    """Inside `batched`: note the person for the one re-match at the end and say so."""
+    batch = session.info.get("batch")
+    if batch is None:
+        return False
+    batch.setdefault(candidate_id, set())
+    return True
 
 
 def _open_decisions_for(session: Session, claim: Claim, type_: str) -> list[Decision]:
@@ -119,10 +157,13 @@ def reject_claim(session: Session, org_id: uuid.UUID, claim_id: uuid.UUID, actor
 
 def assert_claim(session: Session, org_id: uuid.UUID, actor: str, *, subject_type: str, subject_id: uuid.UUID,
                  claim_type: str, payload: dict[str, Any], valid_from: str | None = None, valid_to: str | None = None,
-                 replaces: uuid.UUID | None = None) -> Claim:
+                 replaces: uuid.UUID | None = None, precision: str | None = None,
+                 said: dict[str, Any] | None = None) -> Claim:
     """A fact typed by a human: born approved. A typed ContactClaim is a clean identity key.
 
     `replaces` rejects the claim it corrects (e.g. an email the text layer garbled) in the same act.
+    `said`: approved by a human but said by someone else, e.g. the candidate on a call. Keys document_id, snippet,
+    char_start, char_end, artifact_id, origin, authority: the evidence is that span of that document, not the typist.
     """
     if subject_type == "candidate":
         owner = session.get(Candidate, subject_id)
@@ -140,15 +181,24 @@ def assert_claim(session: Session, org_id: uuid.UUID, actor: str, *, subject_typ
         approved_view_hash=stints.reconcile.view_hash(view), approved_by=actor, approved_at=_now(),
         valid_from=date.fromisoformat(valid_from) if valid_from else None,
         valid_to=date.fromisoformat(valid_to) if valid_to else None,
-        temporal_precision="exact" if valid_from else "unknown", observed_as_of=date.today(),
+        temporal_precision=precision or ("exact" if valid_from else "unknown"), observed_as_of=date.today(),
     )
-    evidence = Evidence(org_id=org_id, claim_id=claim.id, evidence_type="human_assertion", source_authority="human_assertion",
-                        origin="human", snippet=None, observed_as_of=date.today(),
-                        span_validation={"tier": "typed", "result": "pass", "metric_bucket": "none", "detail": f"typed by {actor}"})
+    if said:
+        authority, origin = said.get("authority", "candidate_authored"), said.get("origin", "candidate")
+        evidence = Evidence(org_id=org_id, claim_id=claim.id, evidence_type="document_span", document_id=said["document_id"],
+                            locator={k: said[k] for k in ("artifact_id", "char_start", "char_end") if said.get(k) is not None},
+                            snippet=said.get("snippet"), source_authority=authority, origin=origin, observed_as_of=date.today(),
+                            span_validation={"tier": "quote", "result": "pass", "metric_bucket": "none",
+                                             "detail": f"said on a call; approved by {actor}"})
+    else:
+        authority, origin = "human_assertion", "human"
+        evidence = Evidence(org_id=org_id, claim_id=claim.id, evidence_type="human_assertion", source_authority=authority,
+                            origin=origin, snippet=None, observed_as_of=date.today(),
+                            span_validation={"tier": "typed", "result": "pass", "metric_bucket": "none", "detail": f"typed by {actor}"})
     session.add(evidence)
     session.flush()
     session.add(ClaimObservation(org_id=org_id, claim_id=claim.id, attribute_path=".", value=payload, evidence_id=evidence.id,
-                                 source_authority="human_assertion", origin="human", observed_as_of=date.today()))
+                                 source_authority=authority, origin=origin, observed_as_of=date.today()))
     if replaces:
         old = _claim(session, org_id, replaces)
         if old.subject_id != subject_id:
@@ -158,6 +208,65 @@ def assert_claim(session: Session, org_id: uuid.UUID, actor: str, *, subject_typ
     session.flush()
     retriage_after(session, claim, "typed", actor)
     return claim
+
+
+def approve_document(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID, document_id: uuid.UUID, actor: str) -> dict[str, int]:
+    """"Approve all from this CV": every proposed fact about this person read from this document, in one act.
+    Facts that wait on a question (two values disagree, an identifier the text layer may have garbled) are left
+    for a person to settle one by one."""
+    proposed = list(session.scalars(select(Claim).where(
+        Claim.org_id == org_id, Claim.subject_id == candidate_id, Claim.status == "proposed",
+        Claim.id.in_(select(Evidence.claim_id).where(Evidence.document_id == document_id)))))
+    waiting = set(session.scalars(select(DecisionItem.claim_id).join(Decision, Decision.id == DecisionItem.decision_id).where(
+        DecisionItem.claim_id.in_([c.id for c in proposed] or [None]), Decision.sealed_at.is_(None))))
+    approved = left = 0
+    with batched(session, org_id, {"act": "approve_document", "document_id": str(document_id)}, actor):
+        for c in proposed:
+            if c.id in waiting or (c.flags or {}).get("possible_ocr_identifier"):
+                left += 1
+                continue
+            approve_claim(session, org_id, c.id, actor)
+            approved += 1
+    return {"approved": approved, "left": left}
+
+
+def recheck_contacts(session: Session) -> list[dict[str, str]]:
+    """Apply today's contact checks to contacts still waiting for "Confirm a contact" (free, no model). A text layer
+    that only garbled or shortened what the file's own link says takes the link; an email that is a name with an
+    initial is no longer a "misspelling". A contact that duplicates one already on file is retired."""
+    from maindscout.db.models import ExtractionArtifact
+    from maindscout.intelligence import contacts
+
+    cleared = []
+    waiting = session.scalars(select(Claim).where(Claim.claim_type == "ContactClaim", Claim.status == "proposed",
+                                                  Claim.flags["possible_ocr_identifier"].astext == "true"))
+    for c in list(waiting):
+        ev = session.scalar(select(Evidence).where(Evidence.claim_id == c.id, Evidence.locator.is_not(None)).limit(1))
+        artifact = session.get(ExtractionArtifact, uuid.UUID(ev.locator["artifact_id"])) if ev and (ev.locator or {}).get("artifact_id") else None
+        annotations = (artifact.annotations or []) if artifact else []
+        name = next(((n.approved_view or n.payload).get("full_name") for n in session.scalars(select(Claim).where(
+            Claim.subject_id == c.subject_id, Claim.claim_type == "IdentityClaim", Claim.status.in_(("approved", "proposed")))
+            .order_by(Claim.status))), None)
+        verdict = contacts.judge(c.payload["kind"], c.payload["value"], name, annotations)
+        if verdict.possible_ocr_identifier:
+            continue
+        payload = dict(c.payload)
+        if verdict.use_value:
+            payload["value"] = payload["normalized"] = verdict.use_value
+        key = natural_key(c.subject_id, "ContactClaim", payload)
+        twin = session.scalar(select(Claim).where(Claim.subject_id == c.subject_id, Claim.claim_type == "ContactClaim",
+                                                  Claim.natural_key == key, Claim.id != c.id, Claim.status.in_(("approved", "proposed"))))
+        if twin is not None:
+            c.status, c.superseded_by = "superseded", twin.id
+            if twin.flags.get("possible_ocr_identifier"):
+                twin.flags = {k: v for k, v in twin.flags.items() if k != "possible_ocr_identifier"}
+        else:
+            c.payload, c.natural_key = payload, key
+            c.flags = {k: v for k, v in c.flags.items() if k != "possible_ocr_identifier"}
+        cleared.append({"claim_id": str(c.id), "kind": payload["kind"], "value": payload["value"],
+                        "why": verdict.reason or "nothing left to ask under the current checks"})
+    session.flush()
+    return cleared
 
 
 def resolve_decision(session: Session, org_id: uuid.UUID, decision_id: uuid.UUID, actor: str, action: str,
@@ -209,12 +318,34 @@ def resolve_decision(session: Session, org_id: uuid.UUID, decision_id: uuid.UUID
         if action == "same":
             companies.merge(session, uuid.UUID(decision.context["existing"]["id"]), uuid.UUID(decision.context["new"]["id"]),
                             actor, org_id)
+        elif action == "ask":
+            # Nobody at the desk knows: the person who worked there does. A question in their Brief; their answer
+            # links the companies or keeps them apart (brief.answer). Until then they stay separate, the safe default.
+            from maindscout.db.models import BriefItem
+
+            cid = decision.context.get("candidate_id")
+            person = session.get(Candidate, uuid.UUID(cid)) if cid else None
+            if person is None or person.org_id != org_id:
+                raise ReviewError("No person to ask: decide it here")
+            new, old = decision.context["new"]["name"], decision.context["existing"]["name"]
+            session.add(BriefItem(org_id=org_id, candidate_id=person.id, job_id=None, source_key=f"company:{decision.id}",
+                                  kind="company", status="open",
+                                  question=f"Is {new} (on their CV) the same company as {old}?",
+                                  why="The desk could not tell. Yes links the two, so everyone who worked at either shows "
+                                      "together; no keeps them apart."))
         elif action != "different":
-            raise ReviewError("company_same takes same or different")
+            raise ReviewError("company_same takes same, different or ask")
 
     elif decision.type == "identity_note":
-        if action != "acknowledge":
-            raise ReviewError("identity_note takes acknowledge (merging people is not part of Slice 0)")
+        if action == "different":  # remembered, so nobody merges them later by mistake
+            from maindscout.db.models import NotSame
+
+            for other in decision.context.get("candidate_ids", []):
+                a, b = sorted((decision.subject_id, uuid.UUID(other)), key=str)
+                if session.get(NotSame, (a, b)) is None:
+                    session.add(NotSame(candidate_a=a, candidate_b=b, org_id=org_id))
+        elif action != "acknowledge":
+            raise ReviewError("identity_note takes acknowledge or different (merging is POST /v1/candidates/{id}/merge)")
 
     _seal(decision, {"action": action}, actor)
     session.flush()

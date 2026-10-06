@@ -68,3 +68,19 @@ def test_the_refresh_route_and_stale_tags(client, fake, session):
     body = client.get("/v1/freshness").json()
     assert body["person_months"] == 6 and body["company_months"] == 12 and body["people"] == []
     assert all("stale" in p for p in client.get("/v1/candidates").json())
+
+
+def test_the_whole_desk_at_once_agrees_with_one_person_at_a_time(client, fake, session):
+    """people_status (a few grouped queries, for lists) must give exactly what of_person gives."""
+    from tests.test_process import CV_LINES
+
+    job = make_job(client)
+    a = drop_cv(client, job)["subject_id"]
+    b = drop_cv(client, job, CV_LINES[:1] + ["omar@example.com"] + CV_LINES[2:], name="b.pdf")["subject_id"]
+    client.post(f"/v1/candidates/{a}/activities", json={"kind": "call", "summary": "call"})
+    client.post(f"/v1/candidates/{b}/activities", json={"kind": "note", "summary": "a note is not contact"})
+    org = org_of(client)
+    for now in (datetime.now(timezone.utc), LATER, LATER + timedelta(days=400)):
+        everyone = freshness.people_status(session, org, now)
+        for cid in (uuid.UUID(a), uuid.UUID(b)):
+            assert everyone[cid] == freshness.of_person(session, org, cid, now)

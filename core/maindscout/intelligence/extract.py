@@ -354,9 +354,11 @@ def extract_cv(text: str, artifact_id: uuid.UUID, annotations: list[dict], clien
             continue
         verdict = contacts.judge(item["kind"], item["value"], name or None, annotations)
         claim_flags = {"possible_ocr_identifier": True} if verdict.possible_ocr_identifier else {}
+        if verdict.use_value:
+            norm = verdict.use_value
         payload = {
             "kind": item["kind"],
-            "value": item["value"].strip(),
+            "value": verdict.use_value or item["value"].strip(),
             "normalized": norm,
             "attributable": verdict.attributable,
             "attribution": verdict.attribution,

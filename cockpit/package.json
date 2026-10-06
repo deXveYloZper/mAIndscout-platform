@@ -7,9 +7,12 @@
     "build": "next build",
     "start": "next start -H 127.0.0.1 -p 3001",
     "typecheck": "tsc --noEmit",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "e2e:free": "playwright test",
+    "e2e:record": "playwright test"
   },
   "dependencies": {
+    "lucide-react": "^1.52.0",
     "next": "^15.5.4",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"

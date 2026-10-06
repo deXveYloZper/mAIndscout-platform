@@ -112,6 +112,8 @@ def natural_key(subject_id, claim_type: str, p: dict, valid_from: str | None = N
         return f"{p['career_claim_id']}|class"
     if claim_type == "BriefAnswerClaim":
         return f"{sid}|answer|{p['topic']}|{p.get('job_id') or ''}"
+    if claim_type == "PreferenceClaim":
+        return f"{sid}|pref|{p['facet']}"
     raise ValueError(f"No natural key for {claim_type}")
 
 
@@ -317,39 +319,106 @@ def _contradictions(session: Session, org_id, candidate_id, decisions: list[uuid
                                        [("left", a.id), ("right", b.id)]).id)
 
 
-def _triage_now(session: Session, org_id, candidate_id, job: Job) -> triage.Triage:
-    requirements = [c.payload for c in _live_claims(session, org_id, "job", job.id, "JobRequirementClaim")]
-    skills = [c.payload["normalized_skill"] for c in _live_claims(session, org_id, "candidate", candidate_id, "SkillClaim")]
-    titles = [c.payload["title_raw"] for c in _live_claims(session, org_id, "candidate", candidate_id, "CareerStepClaim")]
+def pair_inputs(session: Session, org_id, candidate_id, job: Job) -> tuple[list[Claim], list[Claim]]:
+    """Everything matching reads from the database: the job's live requirements and the person's live facts."""
+    from maindscout.api.queries import live_requirements
+
+    mine = list(session.scalars(select(Claim).where(Claim.org_id == org_id, Claim.subject_id == candidate_id, Claim.status.in_(LIVE))))
+    return live_requirements(session, job.id), mine
+
+
+def _triage_now(session: Session, org_id, candidate_id, job: Job, inputs: tuple[list[Claim], list[Claim]] | None = None) -> triage.Triage:
+    reqs, mine = inputs or pair_inputs(session, org_id, candidate_id, job)
+    requirements = [c.payload for c in reqs]
+    skills = [c.payload["normalized_skill"] for c in mine if c.claim_type == "SkillClaim"]
+    titles = [c.payload["title_raw"] for c in mine if c.claim_type == "CareerStepClaim"]
     return triage.triage(requirements, skills, titles)
 
 
-def _match_now(session: Session, org_id, candidate_id, job: Job):
-    """Matching v2: the career profile against the hiring profile; token triage is rule 1 and the fallback."""
+def _match_now(session: Session, org_id, candidate_id, job: Job, rows=None, coarse: triage.Triage | None = None,
+               inputs: tuple[list[Claim], list[Claim]] | None = None):
+    """Matching v2: the career profile against the hiring profile; token triage is rule 1 and the fallback.
+    `inputs` (pair_inputs), `rows` (the gap table) and `coarse` (token triage) may be passed in when already known."""
     from maindscout.api import profiles
-    from maindscout.api.queries import _gap_rows
+    from maindscout.api.queries import _gap_rows_many
     from maindscout.domain import matching
 
-    coarse = _triage_now(session, org_id, candidate_id, job)
-    reqs = [{"id": str(c.id), "payload": c.approved_view or c.payload}
-            for c in _live_claims(session, org_id, "job", job.id, "JobRequirementClaim") if c.payload.get("category") != "process"]
+    inputs = inputs or pair_inputs(session, org_id, candidate_id, job)
+    coarse = coarse or _triage_now(session, org_id, candidate_id, job, inputs)
+    if rows is None:
+        rows = _gap_rows_many(session, org_id, job, [candidate_id], with_snippets=False,
+                              preloaded=(inputs[0], {candidate_id: inputs[1]}))[candidate_id]
+    reqs = [{"id": str(c.id), "payload": c.approved_view or c.payload} for c in inputs[0] if c.payload.get("category") != "process"]
     snap = profiles.latest(session, candidate_id)
     stints, _ = profiles.inputs(session, org_id, candidate_id) if snap else ([], [])
     from maindscout.api.brief import answers_for
     from maindscout.api.pipeline import active_block
 
     block = active_block(session, org_id, job.id, candidate_id)
-    return matching.match(reqs, _gap_rows(session, org_id, job, candidate_id), snap.profile if snap else None, stints,
+    return matching.match(reqs, rows, snap.profile if snap else None, stints,
                           (coarse.band, coarse.reason), answers_for(session, org_id, candidate_id),
-                          blocked=block.reason if block is not None else None)
+                          blocked=block.reason if block is not None else None,
+                          preferences=preference_rows(session, job, inputs[1], [r["payload"] for r in reqs]))
 
 
-def snapshot_pair(session: Session, pair: CandidateJob) -> Score | None:
+def job_side(session: Session, job: Job, requirements: list[dict]):
+    """What preferences are compared with: the hiring company's public facts and the job's own kind of work,
+    employment and countries."""
+    from maindscout.api import profiles
+    from maindscout.db.models import Company
+    from maindscout.domain.preferences import JobSide
+
+    side = JobSide(company=job.hiring_company or "the company")
+    if job.hiring_company_id is not None:
+        side.facts = profiles.company_facts(session, session.get(Company, job.hiring_company_id))
+    for p in requirements:
+        cat = p.get("category")
+        if cat == "role" and p.get("role_family"):
+            side.family, side.level = p["role_family"], p.get("level")
+        elif cat == "employment" and p.get("employment"):
+            side.employment = p["employment"]
+        elif (p.get("mobility") or {}).get("facet") == "residence":
+            side.countries += [c for c in p["mobility"].get("countries") or [] if c not in side.countries]
+    return side
+
+
+def not_wanted_by(session: Session, org_id, job: Job) -> set[uuid.UUID]:
+    """People who said on a call they will not consider a job like this one (a must the job contradicts): sourcing
+    never puts them on it. Only people with a must preference are looked at."""
+    from maindscout.api.queries import live_requirements
+    from maindscout.domain import preferences
+
+    musts: dict[uuid.UUID, dict[str, dict]] = {}
+    for c in session.scalars(select(Claim).where(Claim.org_id == org_id, Claim.claim_type == "PreferenceClaim",
+                                                 Claim.status == "approved").order_by(Claim.created_at)):
+        musts.setdefault(c.subject_id, {})[(c.approved_view or c.payload)["facet"]] = c.approved_view or c.payload
+    musts = {cid: {f: p for f, p in prefs.items() if p["strength"] == "must"} for cid, prefs in musts.items()}
+    musts = {cid: prefs for cid, prefs in musts.items() if prefs}
+    if not musts:
+        return set()
+    side = job_side(session, job, [c.approved_view or c.payload for c in live_requirements(session, job.id)])
+    return {cid for cid, prefs in musts.items() if any(preferences.check(p, side)[0] == "gap" for p in prefs.values())}
+
+
+def preference_rows(session: Session, job: Job, mine: list[Claim], requirements: list[dict]) -> list[tuple]:
+    """The person's approved preferences (newest per facet) as match rows for this job."""
+    from maindscout.domain import preferences
+
+    latest: dict[str, Claim] = {}
+    for c in sorted((c for c in mine if c.claim_type == "PreferenceClaim" and c.status == "approved"), key=lambda c: c.created_at):
+        latest[(c.approved_view or c.payload)["facet"]] = c
+    if not latest:
+        return []
+    return preferences.rows([c.approved_view or c.payload for c in latest.values()], job_side(session, job, requirements))
+
+
+def snapshot_pair(session: Session, pair: CandidateJob, rows=None) -> Score | None:
     """Store what the machine considered for this pair (breakdown + coverage, never a value), only when it changed."""
-    from maindscout.api.queries import _gap_rows
+    from maindscout.api.queries import _gap_rows_many
     from maindscout.domain import coverage
 
-    rows = _gap_rows(session, pair.org_id, session.get(Job, pair.job_id), pair.candidate_id)
+    if rows is None:
+        rows = _gap_rows_many(session, pair.org_id, session.get(Job, pair.job_id), [pair.candidate_id], with_snippets=False)[pair.candidate_id]
     digest = coverage.claim_set_hash(rows)
     latest = session.scalar(select(Score.claim_set_hash).where(Score.candidate_id == pair.candidate_id, Score.job_id == pair.job_id)
                             .order_by(Score.computed_at.desc(), Score.id.desc()).limit(1))
@@ -366,15 +435,20 @@ def snapshot_pair(session: Session, pair: CandidateJob) -> Score | None:
 def retriage_pair(session: Session, pair: CandidateJob, cause: dict, actor: str = "system") -> PairEvent | None:
     """Recompute the band from live facts. Records a history event when it changes. A band set by hand stays.
     Either way, a new breakdown snapshot is stored if the facts behind the pair changed."""
-    snapshot_pair(session, pair)
+    from maindscout.api.queries import _gap_rows_many
+
     job = session.get(Job, pair.job_id)
-    m = _match_now(session, pair.org_id, pair.candidate_id, job)
+    inputs = pair_inputs(session, pair.org_id, pair.candidate_id, job)  # two queries; everything below is derived
+    rows = _gap_rows_many(session, pair.org_id, job, [pair.candidate_id], with_snippets=False,
+                          preloaded=(inputs[0], {pair.candidate_id: inputs[1]}))[pair.candidate_id]
+    snapshot_pair(session, pair, rows)
+    coarse = _triage_now(session, pair.org_id, pair.candidate_id, job, inputs)
+    m = _match_now(session, pair.org_id, pair.candidate_id, job, rows, coarse, inputs)
     pair.match_tier, pair.match = m.tier, m.as_dict()  # kept up to date even when a person set the band
     if pair.band_overridden_by:
         session.flush()
         return None
     if m.band is None:  # unclear: the coarse band stands
-        coarse = _triage_now(session, pair.org_id, pair.candidate_id, job)
         result = triage.Triage(coarse.band, coarse.reason)
     else:
         result = triage.Triage(m.band, m.reason)
@@ -397,9 +471,33 @@ def retriage_candidate(session: Session, org_id, candidate_id, cause: dict, acto
     return [e for e in (retriage_pair(session, p, cause, actor) for p in pairs) if e]
 
 
+INLINE_JOB_REMATCH = 40  # up to this many people, a job re-matches before the request returns (about 2 s)
+
+
 def retriage_job(session: Session, org_id, job_id, cause: dict, actor: str) -> list[PairEvent]:
     pairs = session.scalars(select(CandidateJob).where(CandidateJob.org_id == org_id, CandidateJob.job_id == job_id))
     return [e for e in (retriage_pair(session, p, cause, actor) for p in pairs) if e]
+
+
+def rematch_job(session: Session, org_id, job_id, cause: dict, actor: str) -> dict[str, Any]:
+    """A change to a job's requirements: re-match everyone on it. Small jobs at once; bigger ones in the background
+    (matching takes about 0.1 s a person, so 600 people would hold the request for a minute)."""
+    from sqlalchemy import func
+
+    from maindscout.api import tasks
+
+    n = session.scalar(select(func.count()).select_from(CandidateJob).where(CandidateJob.org_id == org_id, CandidateJob.job_id == job_id)) or 0
+    if n <= INLINE_JOB_REMATCH:
+        return {"rematched": len(retriage_job(session, org_id, job_id, cause, actor)), "background": False}
+    task = tasks.enqueue(session, org_id, "rematch_job", {"job_id": str(job_id), "cause": cause, "actor": actor},
+                         priority=40, dedupe_key=f"rematch:{job_id}")
+    return {"people": n, "background": True, "task_id": str(task.id)}
+
+
+def rematching(session: Session, job_id) -> bool:
+    from maindscout.db.models import Task
+
+    return session.scalar(select(Task.id).where(Task.dedupe_key == f"rematch:{job_id}", Task.status.in_(("queued", "running"))).limit(1)) is not None
 
 
 def _ensure_pair(session: Session, org_id, candidate_id, job: Job, cause: dict | None = None) -> CandidateJob:
@@ -425,7 +523,7 @@ def process_document(session: Session, blobs: BlobStore, client: LLMClient, *, o
     doc = session.get(Document, document_id)
     if doc is None or doc.org_id != org_id:
         raise LookupError(f"No document {document_id}")
-    artifact = documents.extract_document(session, blobs, doc.id)
+    artifact = documents.extract_document(session, blobs, doc.id, refresh=force)
     if as_of is not None:
         doc.as_of, doc.as_of_basis = as_of, "override"
 

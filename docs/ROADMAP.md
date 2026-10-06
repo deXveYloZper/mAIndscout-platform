@@ -50,8 +50,9 @@ Constitution (`01`–`05`) describes target mechanisms. It does not describe thi
 - Vision/OCR model in Slice 0 (`needs_vision` flag only)
 - Dual official/provisional scoring theatre
 - “Interviewing platform”
-- Replacing the client’s ATS
 - Building sourcing before a matcher exists to receive the results
+
+Note (2026-10-06): "replacing the client's ATS" was struck from this list. Since [the source-of-truth decision](decisions/2026-10-04-source-of-truth-and-imports.md), mAIndscout is the desk's own system of record.
 
 ## How a gate is declared green
 

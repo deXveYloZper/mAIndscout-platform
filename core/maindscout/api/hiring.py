@@ -102,9 +102,9 @@ def _write(session: Session, job: Job, items: list[engine.Item], source: str, ev
                                      source_authority=evidence["authority"], origin=evidence["origin"], observed_as_of=today))
         written += 1
     session.flush()
-    from maindscout.api.process import retriage_job
+    from maindscout.api.process import rematch_job
 
-    retriage_job(session, job.org_id, job.id, {"act": f"hiring_profile_{source}"}, "system")
+    rematch_job(session, job.org_id, job.id, {"act": f"hiring_profile_{source}"}, "system")
     return {"written": written, "replaced": replaced, "seen": seen}
 
 

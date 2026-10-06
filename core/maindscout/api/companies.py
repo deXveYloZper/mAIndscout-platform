@@ -146,23 +146,39 @@ def search(session: Session, org_id: uuid.UUID, q: str | None, limit: int = 50) 
     steps = session.execute(select(Claim.payload["company"]["company_id"].astext, Claim.subject_id).where(
         Claim.org_id == org_id, Claim.claim_type == "CareerStepClaim", Claim.status.in_(LIVE),
         Claim.payload["company"]["company_id"].astext.is_not(None))).all()
+    job_companies = list(session.scalars(select(Job.hiring_company_id).where(Job.org_id == org_id, Job.hiring_company_id.is_not(None))))
+    wanted = {uuid.UUID(cid) for cid, _ in steps} | set(job_companies)
+    # Every company referenced, and what each was merged into, in one query per hop (merges are rare and shallow).
+    known: dict[uuid.UUID, Company] = {}
+    frontier = wanted
+    while frontier:
+        found = list(session.scalars(select(Company).where(Company.id.in_(frontier))))
+        known.update({c.id: c for c in found})
+        frontier = {c.merged_into_id for c in found if c.merged_into_id and c.merged_into_id not in known}
+
+    def top(cid: uuid.UUID) -> Company | None:
+        company = known.get(cid)
+        while company is not None and company.merged_into_id:
+            company = known.get(company.merged_into_id)
+        return company
+
     counts: dict[uuid.UUID, set] = {}
     for cid, person in steps:
-        company = canonical(session, session.get(Company, uuid.UUID(cid)))
-        if company:
+        if company := top(uuid.UUID(cid)):
             counts.setdefault(company.id, set()).add(person)
-    for job in session.scalars(select(Job).where(Job.org_id == org_id, Job.hiring_company_id.is_not(None))):
-        company = canonical(session, session.get(Company, job.hiring_company_id))
-        if company:
+    for cid in job_companies:
+        if company := top(cid):
             counts.setdefault(company.id, set())
-    out = []
     needle = names.normalize(q).normalized if q else None
+    aliases: dict[uuid.UUID, set[str]] = {}
+    if needle:
+        for cid, alias in session.execute(select(CompanyAlias.company_id, CompanyAlias.normalized).where(CompanyAlias.company_id.in_(list(counts) or [None]))):
+            aliases.setdefault(cid, set()).add(alias)
+    out = []
     for company_id, people in counts.items():
-        company = session.get(Company, company_id)
-        if needle:
-            aliases = set(session.scalars(select(CompanyAlias.normalized).where(CompanyAlias.company_id == company_id)))
-            if not any(needle in a for a in aliases | {company.normalized}):
-                continue
+        company = known[company_id]
+        if needle and not any(needle in a for a in aliases.get(company_id, set()) | {company.normalized}):
+            continue
         out.append({"id": str(company.id), "name": company.name, "people_count": len(people)})
     out.sort(key=lambda c: (-c["people_count"], c["name"].lower()))
     return out[:limit]

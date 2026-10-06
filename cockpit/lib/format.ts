@@ -172,3 +172,10 @@ export function ago(iso: string | null | undefined): string {
   const years = Math.floor(months / 12);
   return `${years} year${years === 1 ? "" : "s"} ago`;
 }
+
+/** Which of a person's jobs to show outside the job itself. "Do not submit" is the default for anyone who doesn't fit,
+ *  so it is only worth showing when something happened on that pair (they were contacted, submitted, passed, the client
+ *  answered...). The job page still shows every band. */
+export function jobsWorthShowing<T extends { band: string; state?: string }>(jobs: T[]): T[] {
+  return jobs.filter((j) => j.band !== "do_not_submit" || !["new", "seen", undefined].includes(j.state));
+}
