@@ -23,7 +23,7 @@ setup("the owner signs in with a password and a two-step code", async ({ page })
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.getByLabel("Code from your authenticator app").fill(totp(E2E_USER.totp));
   await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByRole("heading", { name: "Jobs" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1 })).toContainText(/Good (morning|afternoon|evening)/); // Today
   expect(await page.evaluate(() => document.cookie)).not.toContain("ms_session"); // httpOnly: never readable by scripts
   await page.context().storageState({ path: STATE });
 });

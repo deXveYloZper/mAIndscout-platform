@@ -22,8 +22,8 @@ export default async function Companies({ searchParams }: { searchParams: Promis
             <thead><tr><th>Company</th><th className="num">People we know</th></tr></thead>
             <tbody>
               {rows.map((c) => (
-                <tr key={c.id}>
-                  <td><Link href={`/companies/${c.id}`}>{c.name}</Link></td>
+                <tr key={c.id} className="rowlink">
+                  <td><Link href={`/companies/${c.id}`} className="stretch">{c.name}</Link></td>
                   <td className="num">{c.people_count}</td>
                 </tr>
               ))}

@@ -2,7 +2,7 @@
 
 **Status:** built (Slice 0 screens)
 **Slice / milestone:** Slice 0 / Milestone E (part 2)
-**Code:** `cockpit/` (Next.js 15, React 19, TypeScript, plain CSS)
+**Code:** `cockpit/` (Next.js 15, React 19, TypeScript, plain CSS on design tokens, Lucide icons). Design: [../../design/PLAN.md](../../design/PLAN.md).
 
 ## What
 Where the recruiter works: jobs list, job page with the three bands, person page, and the inbox. Runs on `http://localhost:3001` with `npm run dev` in `cockpit/`.
@@ -11,8 +11,33 @@ Where the recruiter works: jobs list, job page with the three bands, person page
 The vision's working day: open a job, drop CVs on it, work the priority pile, answer only the questions the system may not decide itself (VISION "Attention"; HANDOFF Milestone E).
 
 ## How
+- **Design (2026-10-06):**
+  - `app/globals.css` is one token-driven system: colours, spacing, radius, shadow and motion.
+  - Type: IBM Plex Sans for the interface, Special Elite for page titles (the website's voice), Plex Mono for numbers.
+  - Bands have meaning in colour (Priority amber, Review later slate, Do not submit muted red).
+  - Motion stays under 250 ms and is off with reduced motion.
+- **Shell (`app/(desk)/layout.tsx`, `components/shell/`):**
+  - a grouped sidebar (Work, Find, Desk) with icons and the inbox count (`/v1/nav`); it collapses, and becomes a drawer on phones;
+  - a top bar with the find bar and account menu;
+  - **⌘K / Ctrl K** finds people, jobs and companies by name as you type (`/v1/lookup`) and offers actions;
+  - shortcuts: `/` find, `g` then `t j i p c s r` to go somewhere, `?` lists them.
+  - Sign-in and invite links use a bare layout (`app/(public)/`).
+- **Today (`/`):** the start of the day (`/v1/today`):
+  - priority people, inbox waiting, people going stale and the pool, as split-flap counts;
+  - priority people by job;
+  - recent activity.
+- **Uploads** use drop zones (`components/DropZone.tsx`): drag files on, or click to choose.
+- **Errors** inside the desk keep the navigation (`app/(desk)/error.tsx`). Search in your own words says when the model is unavailable, and keeps the filters.
 - **All data comes from the API, server-side.** `lib/api.ts` adds the operator token and org id from `cockpit/.env.local`; the browser never sees them. Actions (`app/actions.ts`) are server actions that call the API and refresh the page.
-- **Jobs (`/`):** list with band counts and what waits for review; upload a job ad to create a job.
+- **Jobs (`/jobs`):** list with band counts and what waits for review, whole rows clickable; drop a job ad to create a job.
+- **Job (`/jobs/[id]`):**
+  - a header with the company, where, the ad and the inbox;
+  - band tiles that act as tabs (Priority, Review later, Do not submit, Archived);
+  - section tabs: People, Hiring profile, Find more, Countries;
+  - each person as a card with tier, tags, reason, a bar of evidence / to ask / missing / conflict, Brief, and Move (a band change with a reason).
+- **Person (`/people/[id]`):**
+  - a header card: name, current role, where, freshness, tags, put on a job, draft a message, the CV;
+  - section tabs: Overview (jobs, career profile, relationship), Facts, Messages, Timeline, Documents (and Forget).
 - **Uploads** are stored at once and read in the background; each file's row fills in when its read finishes (you can leave the page).
 - **Costs (`/costs`):** this month's spend against the budget, by purpose and day.
 - **Companies (`/companies`, `/companies/[id]`):** search; who we know at a company (one row per person, all roles); the company's jobs; its public facts, each with the page and quote it came from, and "Research now" ([company-research.md](company-research.md)). Career rows on a person link to their company.

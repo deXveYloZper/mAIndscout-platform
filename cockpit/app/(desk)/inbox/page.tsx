@@ -53,11 +53,14 @@ function Card({ item, path }: { item: InboxItem; path: string }) {
           <p>The file&apos;s text says <strong>{item.claim.payload.value}</strong>. {item.note ?? "It may be a text-layer error."}</p>
           <p className="sub">It will not be used to match people or send mail until you confirm it.</p>
           <Snippet ev={{ type: "document_span", document_id: null, filename: item.claim.filename, page: item.claim.page, snippet: item.claim.snippet, note: null, observed_as_of: null }} />
-          <ContactFix kind={item.claim.payload.kind} action={correctContact.bind(null, item.subject.id, item.claim.claim_id, path)} />
-          <div className="row" style={{ marginTop: 8 }}>
-            <form action={approveClaim.bind(null, item.claim.claim_id, path)}><button className="btn small">It is right: approve</button></form>
-            <form action={rejectClaim.bind(null, item.claim.claim_id, path, "wrong")}><button className="btn small ghost">Not theirs: reject</button></form>
+          <div className="row decide">
+            <form action={approveClaim.bind(null, item.claim.claim_id, path)}><button className="btn small primary">It is right: approve</button></form>
+            <form action={rejectClaim.bind(null, item.claim.claim_id, path, "wrong")}><button className="btn small">Not theirs: reject</button></form>
           </div>
+          <details className="fix">
+            <summary>Or correct it</summary>
+            <ContactFix kind={item.claim.payload.kind} action={correctContact.bind(null, item.subject.id, item.claim.claim_id, path)} />
+          </details>
         </>
       )}
 

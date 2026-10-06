@@ -11,7 +11,11 @@ type Costs = {
   by_day: { day: string; usd: number }[];
 };
 
-const PURPOSE: Record<string, string> = { read_cv: "Reading CVs", read_jd: "Reading job ads", research_company: "Company research" };
+const PURPOSE: Record<string, string> = {
+  read_cv: "Reading CVs", read_jd: "Reading job ads", research_company: "Company research", research_institution: "University research",
+  classify_steps: "Reading career steps", hiring_profile: "Hiring profiles from ads", hiring_intake: "Hiring manager notes",
+  search_query: "Searches in your own words", draft_message: "Drafting messages",
+};
 
 export default async function CostsPage() {
   const c = await api<Costs>("/v1/costs");

@@ -1,6 +1,6 @@
 # Desk design: a modern, professional cockpit in the website's voice
 
-**Status: APPROVED** 2026-10-06 by the owner, with the three recommendations: IBM Plex Sans for the interface, dark only, a Today home page. No model calls needed.
+**Status: BUILT** 2026-10-06 (steps 1–6; step 7's e2e run waits for model credits or recordings). **APPROVED** 2026-10-06 by the owner, with the three recommendations: IBM Plex Sans for the interface, dark only, a Today home page. No model calls needed.
 
 ## What's wrong today (from screenshots of every main page, 2026-10-06)
 The desk shares the website's colours but none of its craft:

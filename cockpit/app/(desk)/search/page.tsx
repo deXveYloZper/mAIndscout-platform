@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { putOnJob } from "@/app/actions";
-import { api, type JobSummary } from "@/lib/api";
+import { ApiError, api, type JobSummary } from "@/lib/api";
 import { DOMAINS, EMPLOYER_KIND_LABEL, FAMILY_LABEL, LEVELS, READING_WORDS } from "@/lib/format";
 
 export const metadata = { title: "Search" };
@@ -29,8 +29,14 @@ export default async function Search({ searchParams }: { searchParams: Promise<R
   many("domain").forEach((v) => q.append("domain", v));
   many("company").forEach((v) => q.append("company", v));
   if (one("current") === "on") q.set("current", "true");
+  // Reading your words needs the model; if it is unavailable (no credits, budget reached), say so and keep the filters.
+  let unavailable: string | null = null;
+  const ask = (path: string) => api<Answer>(path).catch((e) => {
+    if (e instanceof ApiError && [402, 502, 503].includes(e.status)) { unavailable = e.message; return null; }
+    throw e;
+  });
   const [result, jobs, companies] = await Promise.all([
-    text ? api<Answer>(`/v1/search?q=${encodeURIComponent(text)}`) : asked ? api<Answer>(`/v1/search?${q}`) : Promise.resolve(null),
+    text ? ask(`/v1/search?q=${encodeURIComponent(text)}`) : asked ? api<Answer>(`/v1/search?${q}`) : Promise.resolve(null),
     api<JobSummary[]>("/v1/jobs"),
     api<Company[]>("/v1/companies"),
   ]);
@@ -44,13 +50,18 @@ export default async function Search({ searchParams }: { searchParams: Promise<R
         <button className="btn primary">Search</button>
       </form>
       <p className="hint">Write what you are looking for in your own words: kind of work, level, years, skills, where they live, background, industry, companies. Best matches come first, each with what it meets. People outside coverage are not searched; personality, culture or fit is never a criterion.</p>
+      {unavailable && (
+        <p className="warn" role="status">
+          Searching in your own words is unavailable right now: the model could not be reached ({unavailable}). The filters below still work.
+        </p>
+      )}
       {result?.understood && (
         <p className="understood">
           Understood as: {result.understood.length ? result.understood.map((u) => <span key={u} className="chip">{u}</span>) : <em>nothing to search by: try naming a kind of work or a skill</em>}
           {result.ignored && result.ignored.length > 0 && <span className="sub"> · left out: {result.ignored.join(", ")}</span>}
         </p>
       )}
-      <details className="band" open={asked}>
+      <details className="band" open={asked || !!unavailable}>
         <summary>Refine with filters</summary>
       <form className="panel searchform" method="get">
         <div className="row">

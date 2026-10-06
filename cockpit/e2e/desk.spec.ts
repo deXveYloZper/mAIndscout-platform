@@ -16,20 +16,55 @@ test.describe.configure({ mode: "serial" });
 
 let catalystUrl = "";
 
+/** Show one band on the job page (the band tiles act as tabs). */
+async function band(page: Page, key: "priority" | "review_later" | "do_not_submit" | "archived") {
+  await page.locator(`.bandtiles .band-${key}`).click();
+  await expect(page.locator(`.bandtiles .band-${key}`)).toHaveAttribute("aria-current", "true");
+}
+
+/** The number on a band tile. */
+async function bandCount(page: Page, key: string): Promise<number> {
+  return Number(await page.locator(`.bandtiles .band-${key} .value`).textContent());
+}
+
+/** Open a section tab on a job or person page. */
+async function tab(page: Page, name: string) {
+  await page.locator("nav.tabs").getByRole("link", { name, exact: false }).first().click();
+  await expect(page.locator("nav.tabs").getByRole("link", { name }).first()).toHaveAttribute("aria-current", "page");
+}
+
 /** Open a person from the job page, whichever band they are in (bands can move once career profiles arrive). */
 async function openPerson(page: Page, name: string) {
-  await page.locator("details.band").evaluateAll((els) => els.forEach((el) => ((el as HTMLDetailsElement).open = true)));
-  await page.getByRole("link", { name }).first().click();
+  for (const key of ["priority", "review_later", "do_not_submit", "archived"] as const) {
+    await band(page, key);
+    const link = page.locator(".personcards").getByRole("link", { name }).first();
+    if (await link.count()) {
+      await link.click();
+      return;
+    }
+  }
+  throw new Error(`${name} is in no band`);
+}
+
+/** Show the band a person is in, without opening them. */
+async function openPersonBand(page: Page, name: string) {
+  for (const key of ["priority", "review_later", "do_not_submit"] as const) {
+    await band(page, key);
+    if (await page.locator(".personcard", { hasText: name }).count()) return;
+  }
 }
 
 async function openJob(page: Page, title: RegExp) {
-  await page.goto("/");
+  await page.goto("/jobs");
   await page.getByRole("link", { name: title }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(title);
 }
 
 test("an empty desk explains itself", async ({ page }) => {
   await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText(/Good (morning|afternoon|evening)/);
+  await expect(page.getByText("Nothing is waiting on you.")).toBeVisible();
+  await page.goto("/jobs");
   await expect(page.getByRole("heading", { name: "Jobs" })).toBeVisible();
   await expect(page.getByText("No jobs yet.")).toBeVisible();
   await page.goto("/inbox");
@@ -37,20 +72,22 @@ test("an empty desk explains itself", async ({ page }) => {
 });
 
 test("a job is created from its advertisement", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/jobs");
   await page.locator('input[type="file"]').setInputFiles(CATALYST);
-  await page.getByRole("button", { name: "Read ad" }).click();
+  await page.getByRole("button", { name: "Read the ad" }).click();
   await expect(page).toHaveURL(/\/jobs\//, { timeout: 120_000 });
   catalystUrl = page.url();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(/InSAR Processing Specialist/);
-  await expect(page.getByText("decides the band").first()).toBeVisible();
   await expect(page.locator(".where")).toContainText("Markham");
   await expect(page.locator(".where")).toContainText("Gatineau");
   await expect(page.getByText(/process dates have passed/)).toHaveCount(0);
+  await tab(page, "Hiring profile");
+  await expect(page.getByText("decides the band").first()).toBeVisible();
 });
 
 test("CVs dropped on a job are read one by one and each is banded", async ({ page }) => {
   await page.goto(catalystUrl);
+  await page.locator("details.addcvs > summary").click();
   await page.locator('input[type="file"]').setInputFiles(CVS);
   await page.getByRole("button", { name: "Read and band 4 CVs" }).click();
   await expect(page.getByRole("status")).toContainText(/Reading \d+ of 4 done/, { timeout: 30_000 });
@@ -64,14 +101,14 @@ test("CVs dropped on a job are read one by one and each is banded", async ({ pag
   await expect(results.filter({ hasText: "no evidence of insar (must-have)" })).toHaveCount(3);
   // The page itself is refreshed with the new people. Once his career profile is built (in the background, a real
   // model call), matching may move Ioannis between Priority and Review later; the InSAR rule keeps the other three out.
-  await expect(page.locator("summary", { hasText: "Do not submit (3)" })).toBeVisible();
-  await page.locator("details.band").evaluateAll((els) => els.forEach((el) => ((el as HTMLDetailsElement).open = true)));
-  await expect(page.getByRole("link", { name: "Ioannis Gkanatsios" }).first()).toBeVisible();
+  await expect(page.locator(".bandtiles .band-do_not_submit .value")).toHaveText("3");
+  expect((await bandCount(page, "priority")) + (await bandCount(page, "review_later"))).toBe(1);
 });
 
 test("a job can be opened to more countries, and nobody here is archived", async ({ page }) => {
   await page.goto(catalystUrl);
-  await expect(page.locator("summary", { hasText: "Archived: outside coverage (0)" })).toBeVisible();
+  await expect(page.locator(".bandtiles .band-archived .value")).toHaveText("0");
+  await tab(page, "Countries");
   const field = page.getByLabel("Also accept people living or working in");
   await field.fill("Brazil, Atlantis");
   await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -80,6 +117,7 @@ test("a job can be opened to more countries, and nobody here is archived", async
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
   await page.reload();
+  await tab(page, "Countries");
   await expect(page.getByLabel("Also accept people living or working in")).toHaveValue("Brazil");
   await page.getByLabel("Also accept people living or working in").fill("");
   await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -102,7 +140,7 @@ test("a person on a job opens as a gap table, with no overall score", async ({ p
 
 test("recording a missing must-have as a fact moves the band, and the history says why", async ({ page }) => {
   await page.goto(catalystUrl);
-  await page.locator("summary", { hasText: /Do not submit \(\d+\)/ }).click();
+  await band(page, "do_not_submit");
   await page.getByRole("link", { name: /Jure Domajnko/ }).click();
   await expect(page.locator(".bandtag").first()).toHaveText("Do not submit");
   await page.getByRole("button", { name: "They have insar" }).click();
@@ -142,28 +180,30 @@ test("a pair moves through the pipeline: passed with a reason, reopened, submitt
   await expect(history).toContainText("we passed → contacted");
   await expect(history).toContainText("contacted → submitted");
   await page.goto(catalystUrl);
-  await expect(page.locator(".people li", { hasText: "Ioannis" }).locator(".statetag")).toHaveText("submitted");
+  await openPersonBand(page, "Ioannis");
+  await expect(page.locator(".personcard", { hasText: "Ioannis" }).locator(".statetag")).toHaveText("submitted");
   await expect(page.locator(".stages")).toContainText("submitted 1");
 });
 
 test("a stale advertisement warns before anyone is submitted", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/jobs");
   await page.locator('input[type="file"]').setInputFiles(PROCURE);
-  await page.getByRole("button", { name: "Read ad" }).click();
+  await page.getByRole("button", { name: "Read the ad" }).click();
   await expect(page).toHaveURL(/\/jobs\//, { timeout: 120_000 });
   await expect(page.getByText(/process dates have passed/)).toBeVisible();
-  await expect(page.locator("p.sub").first()).toContainText("Procure Ai");
+  await expect(page.locator(".eyebrow").first()).toContainText(/Procure Ai/i);
   // Residence, visa and relocation are three separate facts, never one location score.
-  const mobility = page.locator("ul.reqs").first();
+  await tab(page, "Hiring profile");
+  const mobility = page.locator(".panel", { hasText: "Mobility (three separate facts)" }).locator("ul.reqs");
   await expect(mobility).toContainText("Must live in or work from: Germany, United Kingdom");
   await expect(mobility).toContainText("Visa sponsorship: not offered");
   await expect(mobility).toContainText("Relocation assistance: not offered");
 });
 
 test("intake notes from the hiring manager become a hiring profile, each with its quote", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/jobs");
   await page.getByRole("link", { name: /AI Product Engineer/ }).click();
-  await expect(page.getByRole("heading", { name: "Hiring profile" })).toBeVisible();
+  await tab(page, "Hiring profile");
   await page.getByLabel("Notes from the call with the hiring manager").fill(
     "Early-stage start-up experience is a strong plus. Procurement domain experience is a strong plus and can " +
     "substitute for start-up experience. Must be a great culture fit. Permanent role, not contract.");
@@ -176,16 +216,20 @@ test("intake notes from the hiring manager become a hiring profile, each with it
 });
 
 test("a thin job is refilled from the desk's own people, banded by the same rules", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/jobs");
   await page.getByRole("link", { name: /AI Product Engineer/ }).click();
+  await tab(page, "Find more");
   await expect(page.getByText(/priority is thin: 0 of 5/)).toBeVisible();
   await page.getByRole("button", { name: "Find more people" }).click();
   await expect(page.getByRole("status")).toContainText(/Looked at \d+, added \d+/, { timeout: 60_000 });
   await expect(page.locator(".campaigns li").first()).toContainText("desk");
   // People found on the desk now sit on this job in the usual piles, with the usual reasons (any band).
-  await page.locator("details.band").evaluateAll((els) => els.forEach((el) => ((el as HTMLDetailsElement).open = true)));
-  await expect(page.locator(".people li").first()).toBeVisible();
-  await page.locator(".people li a").first().click();
+  await tab(page, "People");
+  for (const key of ["priority", "review_later", "do_not_submit"] as const) {
+    await band(page, key);
+    if (await page.locator(".personcard").count()) break;
+  }
+  await page.locator(".personcard a.pc-name").first().click();
   await expect(page.locator(".history")).toContainText("sourced");
 });
 
@@ -220,7 +264,7 @@ test("costs are recorded and shown against the budget", async ({ page }) => {
 });
 
 test("the jobs list shows both jobs with their piles and what waits for review", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/jobs");
   const rows = page.locator("tbody tr");
   await expect(rows).toHaveCount(2);
   const catalyst = rows.filter({ hasText: "InSAR" });
@@ -252,10 +296,10 @@ test("a name the machine could not read is typed in the inbox and becomes offici
   await card.getByRole("button", { name: "Save name" }).click();
   await expect(page.locator(".card", { hasText: "Who is this?" })).toHaveCount(0);
   await openJob(page, /InSAR Processing Specialist/);
-  await page.locator("summary", { hasText: /Do not submit \(\d+\)/ }).click();
-  await page.getByRole("link", { name: "Yousuf Butt" }).click();
+  await openPerson(page, "Yousuf Butt");
   await page.getByRole("link", { name: "Full profile and facts" }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Yousuf Butt");
+  await tab(page, "Facts");
   await expect(page.locator(".claim", { hasText: "Yousuf Butt" }).getByText("approved")).toBeVisible();
 });
 
@@ -269,9 +313,9 @@ test("a contact the file disagrees about is confirmed as it is", async ({ page }
 
 test("facts are approved and rejected one by one on the person page", async ({ page }) => {
   await openJob(page, /InSAR Processing Specialist/);
-  await page.locator("summary", { hasText: /Do not submit \(\d+\)/ }).click();
-  await page.getByRole("link", { name: /Jure Domajnko/ }).click();
+  await openPerson(page, "Jure Domajnko");
   await page.getByRole("link", { name: "Full profile and facts" }).click();
+  await tab(page, "Facts");
   const name = page.locator(".claim").filter({ hasText: /Jure Domajnko/ }).first();
   await name.getByRole("button", { name: "Approve" }).click();
   await expect(name.getByText("approved")).toBeVisible();
@@ -327,17 +371,20 @@ test("a Brief for the call: answers become official, are not asked again, and no
 test("relationship memory: a logged call, last contacted, and a tag that becomes a talent pool", async ({ page }) => {
   await page.goto("/people");
   await page.locator("tbody tr").filter({ hasText: "Ioannis" }).getByRole("link", { name: /Ioannis/ }).click();
+  await tab(page, "Timeline");
   const rel = page.locator("section.relationship");
   // An earlier test answered his Brief (a call), which already counts as contact; the timeline joins it all.
   await expect(rel.locator(".timeline")).toContainText("Brief answer");
   await rel.getByLabel("What happened, in a line").fill("Intro call, open to InSAR roles");
   await rel.getByRole("button", { name: "Log it" }).click();
   await expect(rel.getByRole("status")).toContainText("Logged.");
-  await expect(rel).toContainText("Last contacted: today");
   await expect(rel.locator(".timeline")).toContainText("Intro call, open to InSAR roles");
-  await rel.getByLabel("Add a tag (talent pool)").fill("InSAR pool");
-  await rel.getByRole("button", { name: "Tag" }).click();
-  await expect(rel.locator(".chip", { hasText: "insar-pool" })).toBeVisible();
+  await tab(page, "Overview");
+  await expect(page.locator("section.relationship")).toContainText("Last contacted: today");
+  const head = page.locator(".personhead");
+  await head.getByLabel("Add a tag (talent pool)").fill("InSAR pool");
+  await head.getByRole("button", { name: "Tag" }).click();
+  await expect(head.locator(".chip", { hasText: "insar-pool" })).toBeVisible();
   await page.goto("/people");
   await page.getByRole("link", { name: /insar-pool \(1\)/ }).click();
   await expect(page.locator("tbody tr")).toHaveCount(1);
@@ -349,6 +396,7 @@ test("a message is drafted from approved facts, edited, and sent by the recruite
   await expect(page.getByRole("button", { name: /Connect Gmail/ })).toBeVisible();
   await page.goto("/people");
   await page.locator("tbody tr").filter({ hasText: "Ioannis" }).getByRole("link", { name: /Ioannis/ }).click();
+  await tab(page, "Messages");
   const box = page.locator("section.messages");
   await expect(box).toContainText("Nothing is sent from here");
   await box.getByLabel("What kind of message").selectOption("candidate_outreach");
@@ -366,6 +414,7 @@ test("a message is drafted from approved facts, edited, and sent by the recruite
   await card.getByRole("button", { name: "I sent it myself" }).click();
   await expect(box.locator(".message").first()).toContainText("sent");
   await expect(box.locator(".message").first()).toContainText("follow-up drafted");
+  await tab(page, "Timeline");
   await expect(page.locator("section.relationship .timeline")).toContainText(/email/i);
 });
 
@@ -398,6 +447,7 @@ test("import from a CSV: preview, tick what you vouch for, approved facts; expor
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Maria Importer");
   // The old system's "last contacted" is a note, never contact.
   await expect(page.locator("section.relationship")).toContainText("Last contacted: never");
+  await tab(page, "Timeline");
   await expect(page.locator("section.relationship .timeline")).toContainText("not counted as contact");
   await page.goto("/import");
   const download = page.waitForEvent("download");
@@ -407,9 +457,9 @@ test("import from a CSV: preview, tick what you vouch for, approved facts; expor
 
 test("a typed contact is saved as an approved fact", async ({ page }) => {
   await openJob(page, /InSAR Processing Specialist/);
-  await page.locator("summary", { hasText: /Do not submit \(\d+\)/ }).click();
-  await page.getByRole("link", { name: /Jure Domajnko/ }).click();
+  await openPerson(page, "Jure Domajnko");
   await page.getByRole("link", { name: "Full profile and facts" }).click();
+  await tab(page, "Facts");
   const panel = page.locator(".panel", { hasText: "Add or correct a fact" });
   await panel.getByLabel("Kind of fact").selectOption("phone");
   await panel.getByLabel("Value").fill("+43 660 1234567");
@@ -420,14 +470,16 @@ test("a typed contact is saved as an approved fact", async ({ page }) => {
 
 test("a recruiter can move someone to another band, with a reason that shows", async ({ page }) => {
   await page.goto(catalystUrl);
-  const before = Number((await page.getByRole("heading", { name: /^Priority \(\d+\)/ }).textContent())!.match(/\d+/)![0]);
-  await page.locator("summary", { hasText: /Do not submit \(\d+\)/ }).click();
-  const row = page.locator(".people li", { hasText: "Jure Domajnko" });
+  const before = await bandCount(page, "priority");
+  await openPersonBand(page, "Jure Domajnko");
+  const row = page.locator(".personcard", { hasText: "Jure Domajnko" });
+  await row.locator("details.move > summary").click();
   await row.getByLabel("Band", { exact: true }).selectOption("priority");
   await row.getByLabel("Reason for changing the band").fill("knows radar from side project");
-  await row.getByRole("button", { name: "Set" }).click();
-  await expect(page.getByRole("heading", { name: new RegExp(`^Priority \\(${before + 1}\\)`) })).toBeVisible();
-  await expect(page.locator(".people li", { hasText: "Jure Domajnko" })).toContainText("set by hand: knows radar from side project");
+  await row.getByRole("button", { name: "Set band" }).click();
+  await expect(page.locator(".bandtiles .band-priority .value")).toHaveText(String(before + 1));
+  await band(page, "priority");
+  await expect(page.locator(".personcard", { hasText: "Jure Domajnko" })).toContainText("set by hand: knows radar from side project");
 });
 
 test("a CV with no job joins the pool and is put on a job later", async ({ page }) => {
@@ -450,9 +502,9 @@ test("a CV with no job joins the pool and is put on a job later", async ({ page 
 
 test("forgetting a person needs a typed confirmation, then leaves nothing", async ({ page }) => {
   await openJob(page, /InSAR Processing Specialist/);
-  await page.locator("summary", { hasText: /Do not submit \(\d+\)/ }).click();
-  await page.getByRole("link", { name: "Yousuf Butt" }).click();
+  await openPerson(page, "Yousuf Butt");
   await page.getByRole("link", { name: "Full profile and facts" }).click();
+  await tab(page, "Documents");
   const danger = page.locator("details.danger");
   await danger.locator("summary").click();
   await danger.getByLabel("Type forget to confirm").fill("delete");
@@ -468,6 +520,7 @@ test("forgetting a person needs a typed confirmation, then leaves nothing", asyn
 
 test("an erased person uploaded again is not stored", async ({ page }) => {
   await page.goto(catalystUrl);
+  await page.locator("details.addcvs > summary").click();
   await page.locator('input[type="file"]').setInputFiles(CVS[3]);
   await page.getByRole("button", { name: "Read and band" }).click();
   await expect(page.locator(".results li")).toContainText("Not stored: this person was erased earlier.", { timeout: 120_000 });
@@ -476,7 +529,7 @@ test("an erased person uploaded again is not stored", async ({ page }) => {
 test("an unknown person shows a readable not-found page, not a crash", async ({ page }) => {
   await page.goto("/people/11111111-1111-1111-1111-111111111111");
   await expect(page.getByRole("heading", { name: "Not found" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Back to jobs" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Back to Today" })).toBeVisible();
 });
 
 test("keyboard users can skip to content, and every control has a name", async ({ page }) => {
@@ -494,7 +547,7 @@ test("keyboard users can skip to content, and every control has a name", async (
 
 test("pages fit a phone screen without sideways scrolling", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
-  for (const url of ["/", catalystUrl, "/inbox", "/people"]) {
+  for (const url of ["/", "/jobs", catalystUrl, "/inbox", "/people"]) {
     await page.goto(url);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, url).toBeLessThanOrEqual(1);

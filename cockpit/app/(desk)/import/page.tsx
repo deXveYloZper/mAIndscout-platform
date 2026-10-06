@@ -1,3 +1,4 @@
+import { DropZone } from "@/components/DropZone";
 import Link from "next/link";
 import { uploadImport } from "@/app/actions";
 import { api } from "@/lib/api";
@@ -20,13 +21,15 @@ export default async function Import() {
       </p>
       <section className="panel">
         <h3>Upload a CSV</h3>
-        <form action={uploadImport} className="row">
-          <select name="kind" aria-label="What the file holds" defaultValue="candidates">
-            <option value="candidates">candidates</option>
-            <option value="clients">clients (companies and contacts)</option>
-          </select>
-          <input type="file" name="file" accept=".csv,text/csv" aria-label="CSV file" required />
-          <button className="btn primary">Preview</button>
+        <form action={uploadImport} className="upload-form">
+          <DropZone accept=".csv,text/csv" label="CSV file" title="Drop the CSV here" required />
+          <div className="row">
+            <select name="kind" aria-label="What the file holds" defaultValue="candidates">
+              <option value="candidates">The file holds candidates</option>
+              <option value="clients">The file holds clients (companies and contacts)</option>
+            </select>
+            <button className="btn primary">Preview</button>
+          </div>
         </form>
         <p className="hint">Columns are recognised by common names: name (or first and last name), email, phone, LinkedIn, location, current company, title, tags, notes; for clients: company, website, contact name, title, email, phone. A &quot;last contacted&quot; column is kept only as a note: we do not trust another system&apos;s freshness.</p>
       </section>
