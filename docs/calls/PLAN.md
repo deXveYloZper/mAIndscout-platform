@@ -1,6 +1,6 @@
 # Calls: feed a transcript, review once, everything updates (preferences included)
 
-**Status: DRAFT (revised 2026-10-06 after the owner's review)**, waiting for the owner's approval. The first version asked the recruiter to enter preferences by hand. The owner rejected that: a call already contains the answers, and the desk should read them and ask only for a final, bulk confirmation.
+**Status: APPROVED** 2026-10-06 by the owner (revised after his review), with the three recommendations; no consent step (the call tools already obtain it). The first version asked the recruiter to enter preferences by hand. The owner rejected that: a call already contains the answers, and the desk should read them and ask only for a final, bulk confirmation.
 
 Building needs no model credits (tested with recorded and fake answers); using it on a real transcript does.
 
@@ -41,7 +41,6 @@ Confidence still comes from a human, but a human reviewing a summary, not typing
 1. **Transcripts as documents.**
    - Paste text, or upload `.txt`, `.vtt`, `.srt` or `.docx`. Speaker labels are kept ("Recruiter:", "Jane:"); timestamps are stripped for reading but kept for the quote.
    - Stored like a CV: on the person, with a date and who uploaded it. Erasure deletes it with the person.
-   - **Consent:** uploading asks the recruiter to confirm the candidate agreed to the call being recorded or transcribed (a legal requirement in the EU / UK and US two-party-consent states). The confirmation is stored with the document.
 2. **Reading a transcript** (one model call; recorded like every other call, so tests replay it for free).
    - **Input:** the transcript, plus what the desk already holds about the person: their facts with ids, their open Brief questions with ids, their current preferences.
    - **Output:** a list of findings, each one of:
@@ -90,7 +89,6 @@ Confidence still comes from a human, but a human reviewing a summary, not typing
      - unticked lines change nothing;
      - an unknown company size asks;
      - prefer never changes a band;
-     - consent is recorded;
      - erasure removes transcripts and everything read from them.
    - Docs: a calls component page; matching rules; the Brief; persistence; STATUS; LOG.
 
