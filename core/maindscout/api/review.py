@@ -322,8 +322,15 @@ def resolve_decision(session: Session, org_id: uuid.UUID, decision_id: uuid.UUID
             raise ReviewError("company_same takes same or different")
 
     elif decision.type == "identity_note":
-        if action != "acknowledge":
-            raise ReviewError("identity_note takes acknowledge (merging people is not part of Slice 0)")
+        if action == "different":  # remembered, so nobody merges them later by mistake
+            from maindscout.db.models import NotSame
+
+            for other in decision.context.get("candidate_ids", []):
+                a, b = sorted((decision.subject_id, uuid.UUID(other)), key=str)
+                if session.get(NotSame, (a, b)) is None:
+                    session.add(NotSame(candidate_a=a, candidate_b=b, org_id=org_id))
+        elif action != "acknowledge":
+            raise ReviewError("identity_note takes acknowledge or different (merging is POST /v1/candidates/{id}/merge)")
 
     _seal(decision, {"action": action}, actor)
     session.flush()

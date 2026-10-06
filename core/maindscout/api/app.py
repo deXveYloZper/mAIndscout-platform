@@ -749,6 +749,31 @@ def approve_all_from_document(candidate_id: uuid.UUID, document_id: uuid.UUID, o
     return out
 
 
+class MergePeopleBody(BaseModel):
+    other_id: uuid.UUID
+
+
+@app.post("/v1/candidates/{candidate_id}/merge")
+def merge_people(candidate_id: uuid.UUID, body: MergePeopleBody, org_id: uuid.UUID = Depends(get_org),
+                 session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Same person: two records made one (the older is kept). Can be undone."""
+    from maindscout.api import merge
+
+    row = merge.merge(session, org_id, candidate_id, body.other_id, actor)
+    session.commit()
+    return merge.as_dict(row)
+
+
+@app.post("/v1/merges/{merge_id}/undo")
+def undo_merge(merge_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+               actor: str = Depends(get_actor)):
+    from maindscout.api import merge
+
+    row = merge.undo(session, org_id, merge_id, actor)
+    session.commit()
+    return merge.as_dict(row)
+
+
 # --- calls: a transcript becomes one Call review, approved in bulk ------------------------------
 
 

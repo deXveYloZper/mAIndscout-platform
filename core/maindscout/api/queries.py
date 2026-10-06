@@ -156,6 +156,7 @@ def person_page(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID) ->
         Claim.valid_from.desc().nulls_last(), Claim.created_at, Claim.natural_key, Claim.id)))
     ev = evidence_for(session, [c.id for c in claims])
     pairs = session.execute(select(CandidateJob, Job).join(Job, Job.id == CandidateJob.job_id).where(CandidateJob.candidate_id == person.id)).all()
+    from maindscout.api import merge
     from maindscout.db.models import DocumentSubject
 
     cited = select(Evidence.document_id).join(Claim, Claim.id == Evidence.claim_id).where(Claim.subject_id == person.id)
@@ -185,6 +186,8 @@ def person_page(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID) ->
                        "as_of": _iso(d.as_of)} for (d,) in documents],
         "open_decisions": [str(d) for d in session.scalars(select(Decision.id).where(
             Decision.subject_id == person.id, Decision.sealed_at.is_(None)))],
+        "merged_into": str(person.merged_into_id) if person.merged_into_id else None,
+        "merges": [merge.as_dict(m) for m in merge.merges_of(session, org_id, person.id)],
     }
 
 
@@ -268,7 +271,8 @@ def inbox(session: Session, org_id: uuid.UUID, job_id: uuid.UUID | None = None, 
 
 def list_people(session: Session, org_id: uuid.UUID) -> list[dict[str, Any]]:
     """Everyone on the desk, newest first, with the jobs they are on. People on no job are the unassigned pool."""
-    people = list(session.scalars(select(Candidate).where(Candidate.org_id == org_id).order_by(Candidate.created_at.desc())))
+    people = list(session.scalars(select(Candidate).where(Candidate.org_id == org_id, Candidate.merged_into_id.is_(None))
+                                  .order_by(Candidate.created_at.desc())))
     who = names(session, [p.id for p in people])
     pairs = defaultdict(list)
     for pair, title in session.execute(select(CandidateJob, Job.title).join(Job, Job.id == CandidateJob.job_id).where(CandidateJob.org_id == org_id)):

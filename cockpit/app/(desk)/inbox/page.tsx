@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { addFact, approveClaim, correctContact, rejectClaim, resolveDecision } from "@/app/actions";
+import { addFact, approveClaim, correctContact, mergePeople, rejectClaim, resolveDecision } from "@/app/actions";
 import { Snippet } from "@/components/Claim";
 import { ContactFix } from "@/components/ContactFix";
 import { FactForm } from "@/components/FactForm";
@@ -74,13 +74,21 @@ function Card({ item, path }: { item: InboxItem; path: string }) {
             </p>
           )}
           <p className="sub">
-            Kept as a separate person: a wrong merge is worse than a duplicate.
+            Kept as a separate person until you say: a wrong merge is worse than a duplicate.
             {item.document_id && <> <a href={`/files/${item.document_id}`} target="_blank" rel="noreferrer">Open the CV</a>.</>}
           </p>
+          {item.possibly && item.possibly.length === 1 && (
+            <form action={mergePeople.bind(null, item.subject.id, item.possibly[0].id, path)} className="row" style={{ marginTop: 8 }}>
+              <button className="btn small primary">Same person: merge</button>
+              <span className="sub">Everything moves onto one record (the older one). It can be undone from their page.</span>
+            </form>
+          )}
           {!item.subject.name && (
             <FactForm action={addFact.bind(null, item.subject.id, path, null, item.id)} kinds={["name"]} label="Save name" />
           )}
-          <form action={act("acknowledge")} style={{ marginTop: 8 }}><button className="btn small">Understood</button></form>
+          <form action={act(item.possibly && item.possibly.length ? "different" : "acknowledge")} style={{ marginTop: 8 }}>
+            <button className="btn small">{item.possibly && item.possibly.length ? "Different people" : "Understood"}</button>
+          </form>
         </>
       )}
 

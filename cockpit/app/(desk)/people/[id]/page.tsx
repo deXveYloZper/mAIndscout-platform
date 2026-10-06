@@ -1,6 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Briefcase, FileText, MapPin, MessageSquareText, Phone } from "lucide-react";
-import { addFact, addTranscript, approveAllFromDocument, bringBack, draftMessage, editMessage, eraseCandidate, liftBlock, logActivity, markMessage, messageToMailbox, putOnJob, syncMailbox,
+import { addFact, addTranscript, undoMerge, approveAllFromDocument, bringBack, draftMessage, editMessage, eraseCandidate, liftBlock, logActivity, markMessage, messageToMailbox, putOnJob, syncMailbox,
   tagPerson, untagPerson } from "@/app/actions";
 import { DraftMessage, MessageCard } from "@/components/Messages";
 import { AddCall, CallReviewCard, WhatTheyWant } from "@/components/Calls";
@@ -31,6 +32,7 @@ export default async function Person({ params, searchParams }: { params: Promise
   const [{ id }, sp] = await Promise.all([params, searchParams]);
   const [person, jobs, mailbox, calls] = await Promise.all([apiOr404<PersonPage>(`/v1/candidates/${id}`), api<JobSummary[]>("/v1/jobs"),
     api<MailboxStatus>("/v1/mailbox"), api<{ reviews: CallReview[]; preferences: Preference[] }>(`/v1/candidates/${id}/calls`)]);
+  if (person.merged_into) redirect(`/people/${person.merged_into}`); // a merged record lives on as the kept one
   const tab = TABS.some(([k]) => k === sp.tab) ? sp.tab! : "overview";
   const otherJobs = jobs.filter((j) => !person.jobs.some((p) => p.job_id === j.id));
   const path = `/people/${id}`;
@@ -102,6 +104,13 @@ export default async function Person({ params, searchParams }: { params: Promise
             <input name="note" aria-label="Why lift the block" placeholder="why lift it" size={22} required />
             <button className="btn small">Lift block</button>
           </form>
+        </div>
+      ))}
+      {person.merges.map((m) => (
+        <div key={m.id} className="hint archived-note">
+          Two records of this person were merged{m.merged_at ? ` on ${new Date(m.merged_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : ""} by {m.merged_by}
+          {" "}({m.facts} facts, {m.documents} document{m.documents === 1 ? "" : "s"}, {m.jobs} job{m.jobs === 1 ? "" : "s"} moved).
+          <form action={undoMerge.bind(null, m.id, path)}><button className="btn small ghost">Undo the merge</button></form>
         </div>
       ))}
       {person.open_decisions.length > 0 && (

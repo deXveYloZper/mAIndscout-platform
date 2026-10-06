@@ -155,6 +155,8 @@ export type PersonPage = {
       by?: string | null; id?: string; removable?: boolean }[] };
   messages: MessageView[];
   client_contacts: { id: string; name: string; role: string | null; job_id: string; job: string }[];
+  merged_into: string | null;
+  merges: { id: string; drop_id: string; merged_by: string; merged_at: string | null; facts: number; documents: number; jobs: number }[];
 };
 
 /** Calls: one line of a Call review (what the transcript said), ticked by default. */

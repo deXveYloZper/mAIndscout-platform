@@ -675,3 +675,16 @@ export async function approveAllFromDocument(candidateId: string, documentId: st
   await idempotent(() => api(`/v1/candidates/${candidateId}/documents/${documentId}/approve-all`, { method: "POST" }));
   revalidatePath(path);
 }
+
+// --- same person -------------------------------------------------------------------------------
+
+/** Two records of one person made one (the older is kept); the "Who is this?" question is answered with it. */
+export async function mergePeople(candidateId: string, otherId: string, path: string): Promise<void> {
+  await idempotent(() => apiJson(`/v1/candidates/${candidateId}/merge`, { other_id: otherId }));
+  revalidatePath(path);
+}
+
+export async function undoMerge(mergeId: string, path: string): Promise<void> {
+  await idempotent(() => api(`/v1/merges/${mergeId}/undo`, { method: "POST" }));
+  revalidatePath(path);
+}

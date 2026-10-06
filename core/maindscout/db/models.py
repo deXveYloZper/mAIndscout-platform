@@ -743,6 +743,23 @@ class CallReview(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class PersonMerge(Base):
+    """Two records of one person made one (a human said "same person"). `moved` lists every row that moved from
+    `drop` to `keep`, with what it was before, so the merge can be undone. Erased with the person."""
+
+    __tablename__ = "person_merge"
+    __table_args__ = (Index("ix_person_merge_keep", "keep_id"),)
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    keep_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate.id"), nullable=False)
+    drop_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate.id"), nullable=False)
+    moved: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    merged_by: Mapped[str] = mapped_column(String, nullable=False)
+    merged_at: Mapped[datetime] = _created()
+    undone_by: Mapped[str | None] = mapped_column(String)
+    undone_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class CareerProfile(Base):
     """I3: what a career shows, dimension by dimension (domain/profile.py). Append-only snapshots, one per change of
     the facts behind it (inputs_hash). No number anywhere; erased with the person."""
