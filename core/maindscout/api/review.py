@@ -230,6 +230,45 @@ def approve_document(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUI
     return {"approved": approved, "left": left}
 
 
+def recheck_contacts(session: Session) -> list[dict[str, str]]:
+    """Apply today's contact checks to contacts still waiting for "Confirm a contact" (free, no model). A text layer
+    that only garbled or shortened what the file's own link says takes the link; an email that is a name with an
+    initial is no longer a "misspelling". A contact that duplicates one already on file is retired."""
+    from maindscout.db.models import ExtractionArtifact
+    from maindscout.intelligence import contacts
+
+    cleared = []
+    waiting = session.scalars(select(Claim).where(Claim.claim_type == "ContactClaim", Claim.status == "proposed",
+                                                  Claim.flags["possible_ocr_identifier"].astext == "true"))
+    for c in list(waiting):
+        ev = session.scalar(select(Evidence).where(Evidence.claim_id == c.id, Evidence.locator.is_not(None)).limit(1))
+        artifact = session.get(ExtractionArtifact, uuid.UUID(ev.locator["artifact_id"])) if ev and (ev.locator or {}).get("artifact_id") else None
+        annotations = (artifact.annotations or []) if artifact else []
+        name = next(((n.approved_view or n.payload).get("full_name") for n in session.scalars(select(Claim).where(
+            Claim.subject_id == c.subject_id, Claim.claim_type == "IdentityClaim", Claim.status.in_(("approved", "proposed")))
+            .order_by(Claim.status))), None)
+        verdict = contacts.judge(c.payload["kind"], c.payload["value"], name, annotations)
+        if verdict.possible_ocr_identifier:
+            continue
+        payload = dict(c.payload)
+        if verdict.use_value:
+            payload["value"] = payload["normalized"] = verdict.use_value
+        key = natural_key(c.subject_id, "ContactClaim", payload)
+        twin = session.scalar(select(Claim).where(Claim.subject_id == c.subject_id, Claim.claim_type == "ContactClaim",
+                                                  Claim.natural_key == key, Claim.id != c.id, Claim.status.in_(("approved", "proposed"))))
+        if twin is not None:
+            c.status, c.superseded_by = "superseded", twin.id
+            if twin.flags.get("possible_ocr_identifier"):
+                twin.flags = {k: v for k, v in twin.flags.items() if k != "possible_ocr_identifier"}
+        else:
+            c.payload, c.natural_key = payload, key
+            c.flags = {k: v for k, v in c.flags.items() if k != "possible_ocr_identifier"}
+        cleared.append({"claim_id": str(c.id), "kind": payload["kind"], "value": payload["value"],
+                        "why": verdict.reason or "nothing left to ask under the current checks"})
+    session.flush()
+    return cleared
+
+
 def resolve_decision(session: Session, org_id: uuid.UUID, decision_id: uuid.UUID, actor: str, action: str,
                      claim_id: uuid.UUID | None = None) -> Decision:
     decision = _decision(session, org_id, decision_id)

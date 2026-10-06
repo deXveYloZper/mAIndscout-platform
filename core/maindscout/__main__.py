@@ -7,6 +7,7 @@
     python -m maindscout link-companies      resolve companies for existing career steps and jobs
     python -m maindscout research-backlog    queue company research for people and jobs already on the desk
     python -m maindscout research-recheck    apply the current checks to stored company facts (free)
+    python -m maindscout contacts-recheck    apply the current contact checks to contacts waiting for confirmation (free)
     python -m maindscout coverage-check      apply the coverage rule to everyone already on the desk (free)
     python -m maindscout profiles-rebuild [--reclassify]  rebuild career profiles (reclassify: read step labels again, paid)
     python -m maindscout rematch             match every person on every job again (free)
@@ -205,6 +206,7 @@ def main() -> None:
     sub.add_parser("research-backlog")
     sub.add_parser("research-recheck")
     sub.add_parser("coverage-check")
+    sub.add_parser("contacts-recheck")
     p_prof = sub.add_parser("profiles-rebuild")
     p_prof.add_argument("--reclassify", action="store_true")
     sub.add_parser("rematch")
@@ -278,6 +280,15 @@ def main() -> None:
             for d in dropped:
                 print(d["claim_type"], "-", d["reason"])
             print(f"rejected {len(dropped)} stored fact(s)")
+    elif args.cmd == "contacts-recheck":
+        from maindscout.api import review
+
+        with make_session_factory(make_engine())() as session:
+            cleared = review.recheck_contacts(session)
+            session.commit()
+            for c in cleared:
+                print(c["kind"], "-", c["why"])
+            print(f"cleared {len(cleared)} contact question(s)")
     elif args.cmd == "coverage-check":
         from maindscout.api import coverage, research
         from maindscout.db.models import PUBLIC_ORG_ID, Candidate, Claim, Company

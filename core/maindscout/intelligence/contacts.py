@@ -20,6 +20,7 @@ class ContactVerdict:
     attribution: str  # subject | author | template | unknown
     possible_ocr_identifier: bool
     reason: str | None = None
+    use_value: str | None = None  # the file's own link, when it says the same thing better than the text layer
 
 
 def normalise(kind: str, value: str) -> str:
@@ -79,8 +80,8 @@ def annotation_targets(kind: str, annotations: list[dict]) -> list[str]:
         if a["kind"] != wanted:
             continue
         uri = a["uri"]
-        if kind == "linkedin" and "linkedin.com" not in uri.lower():
-            continue
+        if kind == "linkedin" and not _is_linkedin_profile(uri):
+            continue  # e.g. a Google search link that mentions linkedin.com in its query
         if kind == "email" or kind == "linkedin":
             out.append(normalise(kind, uri))
     return out
@@ -92,6 +93,9 @@ def judge(kind: str, value: str, full_name: str | None, annotations: list[dict],
     targets = annotation_targets(kind, annotations)
 
     if targets and norm not in targets:
+        same = _same_target(kind, value, targets)
+        if same:  # the text layer garbled or shortened what the link says: take the link, nothing to ask
+            return ContactVerdict(True, "subject", False, "Taken from the file's own link.", use_value=same)
         near = [t for t in targets if _similar(t, norm) or _close_local(t, norm)]
         if near or kind in ("email", "linkedin"):
             return ContactVerdict(True, "subject", True, f"The file's own link says {targets[0]}.")
@@ -101,8 +105,10 @@ def judge(kind: str, value: str, full_name: str | None, annotations: list[dict],
         name_tokens = _tokens(full_name)
         local_tokens = _tokens(local.replace(".", " ").replace("-", " ").replace("_", " "))
         if name_tokens and local_tokens:
+            initials = {w[0] for w in _name_words(full_name)}
             typo = any(
-                n not in local_tokens and any(_similar(n, lt) for lt in local_tokens) for n in name_tokens
+                n not in local_tokens and any(_similar(n, lt) and not _name_with_initials(lt, name_tokens, initials)
+                                              for lt in local_tokens) for n in name_tokens
             )
             if typo:
                 return ContactVerdict(True, "subject", True, "It looks like a misspelling of the person's name.")
@@ -111,3 +117,40 @@ def judge(kind: str, value: str, full_name: str | None, annotations: list[dict],
 
 def _close_local(a: str, b: str) -> bool:
     return _similar(a.split("@")[0], b.split("@")[0]) and a.split("@")[-1] == b.split("@")[-1]
+
+
+def _is_linkedin_profile(uri: str) -> bool:
+    from urllib.parse import urlparse
+
+    u = uri.strip()
+    host = urlparse(u if "://" in u else f"https://{u}").netloc.lower()
+    return host == "linkedin.com" or host.endswith(".linkedin.com")
+
+
+def _slug(text: str) -> str:
+    """The profile part of a LinkedIn address, with the spaces a text layer inserts removed ("alice -joanne -fox")."""
+    squashed = re.sub(r"\s+", "", text.lower()).split("?")[0].rstrip("/")
+    return squashed.rsplit("/", 1)[-1]
+
+
+def _same_target(kind: str, value: str, targets: list[str]) -> str | None:
+    """The link the text means, when the text is the same address garbled or shortened, or only a label."""
+    if kind == "linkedin":
+        if re.fullmatch(r"\s*(linked\s*in|profile|linkedin profile)\s*:?\s*", value, re.I):
+            return targets[0] if len(targets) == 1 else None  # only the word "LinkedIn", the address is in the link
+        slug = _slug(value)
+        hits = [t for t in targets if slug and _slug(t) == slug]
+        return hits[0] if hits else None
+    if kind == "email":
+        squashed = re.sub(r"\s+", "", value.lower()).removeprefix("mailto:")
+        return squashed if squashed in targets else None
+    return None
+
+
+def _name_with_initials(token: str, name_tokens: list[str], initials: set[str]) -> bool:
+    """"siketr", "rsiket", "jdomajnko": a name with one or two initials of the person's other names, not a typo."""
+    for n in name_tokens:
+        for rest in (token.removeprefix(n) if token.startswith(n) else None, token.removesuffix(n) if token.endswith(n) else None):
+            if rest and len(rest) <= 2 and all(ch in initials for ch in rest):
+                return True
+    return False
