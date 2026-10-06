@@ -115,7 +115,7 @@ def _reconcile(session: Session, org_id, candidate_id, job_id, sources: list[com
         elif row.status in ALIVE and (row.question, row.why) != (item.question, item.why):
             row.question, row.why, row.updated_at = item.question, item.why, now
     for key, row in have.items():
-        if key not in wanted and row.status in ALIVE and row.kind != "call":  # questions from a call stay until answered
+        if key not in wanted and row.status in ALIVE and row.kind not in ("call", "company"):  # questions from a call or a card stay until answered
             # Person-wide items are only retired from a person's own sources, which every job compiles the same way.
             row.status, row.updated_at = "expired", now
     session.flush()
@@ -233,6 +233,18 @@ def answer(session: Session, org_id, item_id: uuid.UUID, outcome: str, text: str
             review.approve_claim(session, org_id, target, actor)
         elif outcome == "not_met":
             review.reject_claim(session, org_id, target, actor, "wrong", text)
+    elif item.kind == "company":
+        # "Same company?" asked on the call: yes links the two companies, no keeps them apart.
+        from maindscout.api import companies
+        from maindscout.db.models import Company, Decision
+
+        decision = session.get(Decision, uuid.UUID(item.source_key.split(":", 1)[1]))
+        if decision is not None and outcome in ("confirmed", "not_met"):
+            keep, drop = (session.get(Company, uuid.UUID(decision.context[k]["id"])) for k in ("existing", "new"))
+            if outcome == "confirmed" and keep is not None and drop is not None and drop.merged_into_id is None and keep.id != drop.id:
+                companies.merge(session, keep.id, drop.id, actor, org_id)
+            decision.resolution = {**(decision.resolution or {}), "answered": "same" if outcome == "confirmed" else "different",
+                                   "answered_by": actor, "answer": text}
     elif item.kind == "preference":
         # Still what they want: the same preference, said again today. No longer: it goes (they can say what instead).
         old = session.get(Claim, uuid.UUID(item.source_key.rsplit(":", 1)[1]))

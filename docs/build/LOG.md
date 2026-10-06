@@ -2,6 +2,7 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-06 — "Same company?" cards: "Not sure: ask them on the call" turns the card into a question in that person's Brief; yes links the companies, no keeps them apart (a call transcript can answer it too); apart until then — [companies](components/companies.md)
 - 2026-10-06 — Same person: merge two records of one person from the "Who is this?" card (older kept, everything moved, a shared job keeps both histories, undoable from the person's page); "Different people" is remembered; erasure takes both records (migration 0025) — [merge](components/merge.md)
 - 2026-10-06 — Fewer silly contact questions: a text layer that only garbled, shortened or labelled ("LinkedIn") what the file's own link says takes the link; a search link mentioning linkedin.com is not a profile; a name with an initial ("siketr@") is not a misspelling. `contacts-recheck` (free) cleared 7 of 7 waiting cards on the desk — [intelligence](components/intelligence.md)
 - 2026-10-06 — Calls: a call transcript (paste, .txt, .vtt, .srt, .docx) read once into a Call review (Brief answers, facts confirmed / corrected / disputed, new facts, what they want, what to ask), every line ticked, one click approves them with their own words as evidence and re-matches once; preferences (must / prefer) in matching (a must the job contradicts → unlikely, both sides quoted) and sourcing; stale preferences asked again; approve all from a CV (migration 0024) — [calls](components/calls.md), [plan](../calls/PLAN.md)

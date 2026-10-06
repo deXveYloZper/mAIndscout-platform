@@ -124,6 +124,13 @@ function Card({ item, path }: { item: InboxItem; path: string }) {
           <div className="row" style={{ marginTop: 10 }}>
             <form action={act("same")}><button className="btn">Same company</button></form>
             <form action={act("different")}><button className="btn">Different companies</button></form>
+            {item.context.candidate_id && (
+              <form action={act("ask")}>
+                <button className="btn ghost" title="Leaves the inbox; a question in their Brief, settled by their answer">
+                  Not sure: ask {item.subject?.name ? item.subject.name.split(" ")[0] : "them"} on the call
+                </button>
+              </form>
+            )}
           </div>
         </>
       )}

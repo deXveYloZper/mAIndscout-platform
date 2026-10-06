@@ -318,8 +318,23 @@ def resolve_decision(session: Session, org_id: uuid.UUID, decision_id: uuid.UUID
         if action == "same":
             companies.merge(session, uuid.UUID(decision.context["existing"]["id"]), uuid.UUID(decision.context["new"]["id"]),
                             actor, org_id)
+        elif action == "ask":
+            # Nobody at the desk knows: the person who worked there does. A question in their Brief; their answer
+            # links the companies or keeps them apart (brief.answer). Until then they stay separate, the safe default.
+            from maindscout.db.models import BriefItem
+
+            cid = decision.context.get("candidate_id")
+            person = session.get(Candidate, uuid.UUID(cid)) if cid else None
+            if person is None or person.org_id != org_id:
+                raise ReviewError("No person to ask: decide it here")
+            new, old = decision.context["new"]["name"], decision.context["existing"]["name"]
+            session.add(BriefItem(org_id=org_id, candidate_id=person.id, job_id=None, source_key=f"company:{decision.id}",
+                                  kind="company", status="open",
+                                  question=f"Is {new} (on their CV) the same company as {old}?",
+                                  why="The desk could not tell. Yes links the two, so everyone who worked at either shows "
+                                      "together; no keeps them apart."))
         elif action != "different":
-            raise ReviewError("company_same takes same or different")
+            raise ReviewError("company_same takes same, different or ask")
 
     elif decision.type == "identity_note":
         if action == "different":  # remembered, so nobody merges them later by mistake
