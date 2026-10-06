@@ -156,9 +156,13 @@ def person_page(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID) ->
         Claim.valid_from.desc().nulls_last(), Claim.created_at, Claim.natural_key, Claim.id)))
     ev = evidence_for(session, [c.id for c in claims])
     pairs = session.execute(select(CandidateJob, Job).join(Job, Job.id == CandidateJob.job_id).where(CandidateJob.candidate_id == person.id)).all()
-    documents = session.execute(
-        select(Document).join(Evidence, Evidence.document_id == Document.id).join(Claim, Claim.id == Evidence.claim_id)
-        .where(Claim.subject_id == person.id).distinct())
+    from maindscout.db.models import DocumentSubject
+
+    cited = select(Evidence.document_id).join(Claim, Claim.id == Evidence.claim_id).where(Claim.subject_id == person.id)
+    linked = select(DocumentSubject.document_id).where(DocumentSubject.subject_id == person.id)
+    documents = session.execute(  # CVs first (the header's CV button opens the first), newest first
+        select(Document).where(Document.id.in_(cited) | Document.id.in_(linked))
+        .order_by((Document.doc_type != "cv"), Document.created_at.desc()))
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for c in claims:
         grouped[c.claim_type].append(claim_view(c, ev[c.id]))
@@ -177,8 +181,8 @@ def person_page(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID) ->
         "claims": grouped,
         "jobs": [{"job_id": str(j.id), "title": j.title, "band": p.triage_band, "reason": p.triage_reason, "state": p.pair_state}
                  for p, j in pairs],
-        "documents": [{"id": str(d.id), "filename": d.filename, "needs_vision": d.needs_vision, "as_of": _iso(d.as_of)}
-                      for (d,) in documents],
+        "documents": [{"id": str(d.id), "filename": d.filename, "doc_type": d.doc_type, "needs_vision": d.needs_vision,
+                       "as_of": _iso(d.as_of)} for (d,) in documents],
         "open_decisions": [str(d) for d in session.scalars(select(Decision.id).where(
             Decision.subject_id == person.id, Decision.sealed_at.is_(None)))],
     }

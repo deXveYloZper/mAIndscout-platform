@@ -633,3 +633,45 @@ export async function removeMember(userId: string): Promise<void> {
   await apiRaw(`/v1/members/${userId}`, { method: "DELETE" });
   revalidatePath("/members");
 }
+
+// --- calls -------------------------------------------------------------------------------------
+
+/** A call transcript, pasted or as a file: stored as the person's document and read in the background. */
+export async function addTranscript(candidateId: string, path: string, _: FormState, form: FormData): Promise<FormState> {
+  const [file] = filesOf(form);
+  const text = String(form.get("text") || "").trim();
+  if (!file && !text) return { error: "Paste the transcript or choose a file." };
+  const body = new FormData();
+  if (file) body.append("file", file);
+  else body.append("text", text);
+  try {
+    await api(`/v1/candidates/${candidateId}/transcripts`, { method: "POST", body });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  return { message: "Reading the call. The review appears here in a moment." };
+}
+
+/** Approve the ticked lines of a Call review in one go; unticked lines are dropped. */
+export async function applyCallReview(reviewId: string, path: string, form: FormData): Promise<void> {
+  const ticked = form.getAll("tick").map(String);
+  await idempotent(() => apiJson(`/v1/call-reviews/${reviewId}/apply`, { ticked }));
+  revalidatePath(path);
+}
+
+export async function dismissCallReview(reviewId: string, path: string): Promise<void> {
+  await idempotent(() => api(`/v1/call-reviews/${reviewId}/dismiss`, { method: "POST" }));
+  revalidatePath(path);
+}
+
+export async function retryCallReview(reviewId: string, path: string): Promise<void> {
+  await idempotent(() => api(`/v1/call-reviews/${reviewId}/retry`, { method: "POST" }));
+  revalidatePath(path);
+}
+
+/** Every proposed fact read from this CV, approved at once; questions stay one by one. */
+export async function approveAllFromDocument(candidateId: string, documentId: string, path: string): Promise<void> {
+  await idempotent(() => api(`/v1/candidates/${candidateId}/documents/${documentId}/approve-all`, { method: "POST" }));
+  revalidatePath(path);
+}

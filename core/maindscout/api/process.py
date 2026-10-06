@@ -112,6 +112,8 @@ def natural_key(subject_id, claim_type: str, p: dict, valid_from: str | None = N
         return f"{p['career_claim_id']}|class"
     if claim_type == "BriefAnswerClaim":
         return f"{sid}|answer|{p['topic']}|{p.get('job_id') or ''}"
+    if claim_type == "PreferenceClaim":
+        return f"{sid}|pref|{p['facet']}"
     raise ValueError(f"No natural key for {claim_type}")
 
 
@@ -355,7 +357,59 @@ def _match_now(session: Session, org_id, candidate_id, job: Job, rows=None, coar
     block = active_block(session, org_id, job.id, candidate_id)
     return matching.match(reqs, rows, snap.profile if snap else None, stints,
                           (coarse.band, coarse.reason), answers_for(session, org_id, candidate_id),
-                          blocked=block.reason if block is not None else None)
+                          blocked=block.reason if block is not None else None,
+                          preferences=preference_rows(session, job, inputs[1], [r["payload"] for r in reqs]))
+
+
+def job_side(session: Session, job: Job, requirements: list[dict]):
+    """What preferences are compared with: the hiring company's public facts and the job's own kind of work,
+    employment and countries."""
+    from maindscout.api import profiles
+    from maindscout.db.models import Company
+    from maindscout.domain.preferences import JobSide
+
+    side = JobSide(company=job.hiring_company or "the company")
+    if job.hiring_company_id is not None:
+        side.facts = profiles.company_facts(session, session.get(Company, job.hiring_company_id))
+    for p in requirements:
+        cat = p.get("category")
+        if cat == "role" and p.get("role_family"):
+            side.family, side.level = p["role_family"], p.get("level")
+        elif cat == "employment" and p.get("employment"):
+            side.employment = p["employment"]
+        elif (p.get("mobility") or {}).get("facet") == "residence":
+            side.countries += [c for c in p["mobility"].get("countries") or [] if c not in side.countries]
+    return side
+
+
+def not_wanted_by(session: Session, org_id, job: Job) -> set[uuid.UUID]:
+    """People who said on a call they will not consider a job like this one (a must the job contradicts): sourcing
+    never puts them on it. Only people with a must preference are looked at."""
+    from maindscout.api.queries import live_requirements
+    from maindscout.domain import preferences
+
+    musts: dict[uuid.UUID, dict[str, dict]] = {}
+    for c in session.scalars(select(Claim).where(Claim.org_id == org_id, Claim.claim_type == "PreferenceClaim",
+                                                 Claim.status == "approved").order_by(Claim.created_at)):
+        musts.setdefault(c.subject_id, {})[(c.approved_view or c.payload)["facet"]] = c.approved_view or c.payload
+    musts = {cid: {f: p for f, p in prefs.items() if p["strength"] == "must"} for cid, prefs in musts.items()}
+    musts = {cid: prefs for cid, prefs in musts.items() if prefs}
+    if not musts:
+        return set()
+    side = job_side(session, job, [c.approved_view or c.payload for c in live_requirements(session, job.id)])
+    return {cid for cid, prefs in musts.items() if any(preferences.check(p, side)[0] == "gap" for p in prefs.values())}
+
+
+def preference_rows(session: Session, job: Job, mine: list[Claim], requirements: list[dict]) -> list[tuple]:
+    """The person's approved preferences (newest per facet) as match rows for this job."""
+    from maindscout.domain import preferences
+
+    latest: dict[str, Claim] = {}
+    for c in sorted((c for c in mine if c.claim_type == "PreferenceClaim" and c.status == "approved"), key=lambda c: c.created_at):
+        latest[(c.approved_view or c.payload)["facet"]] = c
+    if not latest:
+        return []
+    return preferences.rows([c.approved_view or c.payload for c in latest.values()], job_side(session, job, requirements))
 
 
 def snapshot_pair(session: Session, pair: CandidateJob, rows=None) -> Score | None:

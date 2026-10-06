@@ -792,3 +792,49 @@ details.fix[open] > summary { margin-bottom: 8px; }
 .contactchip svg { width: 15px; height: 15px; color: var(--amber-text); }
 .contactchip.unconfirmed { border-style: dashed; }
 .contactchip em { font-style: normal; font-family: var(--font); font-size: 11px; color: var(--amber-text); }
+
+/* --- calls: the Call review, what they want ------------------------------------------------- */
+.callreview { border-color: var(--amber-line); }
+.callreview.closed { border-color: var(--line); }
+.callreview.closed > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; }
+.callreview.closed > summary::-webkit-details-marker { display: none; }
+.callreview.reading { animation: callpulse 1.6s var(--ease) infinite alternate; }
+@keyframes callpulse { from { border-color: var(--line); } to { border-color: var(--amber-line); } }
+@media (prefers-reduced-motion: reduce) { .callreview.reading { animation: none; } }
+.callhead { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.callhead svg { width: 18px; height: 18px; color: var(--amber-text); flex: none; }
+.callsection { margin-top: 14px; }
+.callsection h4 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--cream-dim); font-weight: 500; }
+.callsection ul { list-style: none; margin: 0; padding: 0; }
+.callline { border-bottom: 1px solid var(--line); padding: 8px 0; }
+.callline:last-child { border-bottom: 0; }
+.callline label { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.callline input[type="checkbox"] { margin-top: 3px; accent-color: var(--amber); width: 16px; height: 16px; flex: none; }
+.callline .cl-body, .callline:not(:has(label)) { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.callline.dropped { opacity: 0.55; }
+.cl-quote { color: var(--cream-dim); font-style: italic; font-size: 13px; overflow-wrap: anywhere; }
+.cl-quote::before { content: "\201C"; } .cl-quote::after { content: "\201D"; }
+q.cl-quote { quotes: none; }
+.cl-note { font-size: 12px; color: var(--amber-text); }
+.callactions { margin-top: 14px; gap: 8px; flex-wrap: wrap; }
+.inline-icon { width: 13px; height: 13px; vertical-align: -2px; }
+.transcript { display: flex; flex-direction: column; gap: 8px; }
+.transcript textarea { width: 100%; font-family: var(--mono); font-size: 13px; }
+.transcript input[type="file"] { max-width: 100%; }
+.wantlist { list-style: none; margin: 0; padding: 0; }
+.wantlist li { display: grid; grid-template-columns: 150px 64px 1fr auto; gap: 4px 12px; align-items: baseline; padding: 8px 0;
+  border-bottom: 1px solid var(--line); }
+.wantlist li:last-child { border-bottom: 0; }
+.wantlist .facet { color: var(--cream-dim); font-size: 13px; }
+.wantlist .strength { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; padding: 1px 6px; border-radius: var(--r-sm);
+  justify-self: start; background: var(--slate-soft); color: var(--slate); }
+.wantlist .strength.must { background: var(--amber-soft); color: var(--amber-text); }
+.wantlist .cl-quote, .wantlist .sub { grid-column: 3 / 4; }
+.wantlist form { grid-column: 4; grid-row: 1; }
+.approveall { gap: 10px; align-items: center; flex-wrap: wrap; margin: 6px 0 12px; }
+@media (max-width: 700px) {
+  .wantlist li { grid-template-columns: 1fr auto; }
+  .wantlist .facet, .wantlist .what, .wantlist .cl-quote, .wantlist .sub { grid-column: 1 / -1; }
+  .wantlist .strength { grid-column: 1; grid-row: auto; }
+  .wantlist form { grid-column: 2; grid-row: 1; }
+}

@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from sqlalchemy.orm import Session
 
-from maindscout.api import hiring, messages, process, profiles, research
+from maindscout.api import calls, hiring, messages, process, profiles, research
 from maindscout.api.tasks import handler
 from maindscout.db.models import Task
 from maindscout.intelligence.llm import LLMClient, XaiClient
@@ -73,6 +73,23 @@ def rematch_job(session: Session, task: Task) -> dict[str, Any]:
     p = task.payload
     return {"band_changes": len(retriage_job(session, task.org_id, uuid.UUID(p["job_id"]), p.get("cause") or {"act": "rematch"},
                                              p.get("actor") or "system"))}
+
+
+@handler("read_transcript")
+def read_transcript(session: Session, task: Task) -> dict[str, Any]:
+    """Read one call transcript into its Call review. Out of budget or the model unreachable: the review says so
+    and waits for "Try again" (a failure here would otherwise leave it reading for ever)."""
+    from maindscout.api.costs import BudgetExceeded
+    from maindscout.intelligence.llm import LLMError
+
+    review_id = uuid.UUID(task.payload["review_id"])
+    try:
+        return calls.read(session, task.org_id, review_id, llm_factory(), task_id=task.id)
+    except BudgetExceeded:
+        calls.fail(session, review_id, "This month's model budget is spent: try again when it is raised or next month.")
+    except LLMError as error:
+        calls.fail(session, review_id, f"The model could not be reached ({error}): try again later.")
+    return {"status": "failed"}
 
 
 @handler("mailbox_sync")

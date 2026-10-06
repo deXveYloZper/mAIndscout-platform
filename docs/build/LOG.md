@@ -2,6 +2,7 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-06 — Calls: a call transcript (paste, .txt, .vtt, .srt, .docx) read once into a Call review (Brief answers, facts confirmed / corrected / disputed, new facts, what they want, what to ask), every line ticked, one click approves them with their own words as evidence and re-matches once; preferences (must / prefer) in matching (a must the job contradicts → unlikely, both sides quoted) and sourcing; stale preferences asked again; approve all from a CV (migration 0024) — [calls](components/calls.md), [plan](../calls/PLAN.md)
 - 2026-10-06 — Brief for anyone (no job needed) with how to reach them (phone, email, LinkedIn, one click); a person's "Do not submit" jobs shown only on the job page unless something happened; Move popover above the next card — [brief](components/brief.md), [cockpit](components/cockpit.md)
 - 2026-10-06 — Desk design: token-based design system (Plex Sans, Special Elite titles, Plex Mono data), sidebar navigation with live inbox count, Ctrl K palette and keyboard shortcuts, Today home with split-flap counts, drop zones, job page with band tabs and person cards, person page with header card and section tabs, inbox with approve first, errors inside the desk — [cockpit](components/cockpit.md), [plan](../design/PLAN.md)
 - 2026-10-05 — Two-step verification optional for owners too (the owner's decision); `OWNER_TWO_STEP=required` restores the rule — [access](components/access.md)

@@ -173,7 +173,7 @@ def _facts_from(rows: list[Claim]) -> rubric.CompanyFacts | None:
         elif c.claim_type == "FundingRoundClaim":
             facts.rounds.append((p["stage"], _d(p.get("date"))))
         elif c.claim_type == "TeamSizeClaim" and p.get("min") is not None:
-            facts.team_min = p["min"]
+            facts.team_min, facts.team_max = p["min"], p.get("max")
         elif c.claim_type == "CompanyStatusClaim":
             facts.status = p["status"]
         elif c.claim_type == "CompanyDomainClaim":

@@ -48,7 +48,18 @@ def _person_sources(session: Session, org_id, candidate_id) -> list[compiler.Ite
                     Claim.org_id == org_id, Claim.subject_id == candidate_id, Claim.claim_type == "ContactClaim",
                     Claim.status == "proposed", Claim.flags["possible_ocr_identifier"].astext == "true"))]
     lives = coverage.signals(session, org_id, candidate_id)[0]
-    return compiler.for_person(snap.profile if snap else None, suspects, bool(lives))
+    items = compiler.for_person(snap.profile if snap else None, suspects, bool(lives))
+    return items + _stale_preferences(session, org_id, candidate_id)
+
+
+def _stale_preferences(session: Session, org_id, candidate_id) -> list[compiler.Item]:
+    """What they said they want, said more than about six months ago: ask again (people's wishes change)."""
+    from maindscout.api import calls
+
+    return [compiler.Item(f"pref:{v['facet']}:{v['claim_id']}", "person", "preference",
+                          f"Is this still what they want? {v['summary']}",
+                          f"Said on a call on {v['as_of']}: more than six months ago.")
+            for v in calls.preferences_view(session, org_id, candidate_id) if v["stale"]]
 
 
 def _sources(session: Session, org_id, pair: CandidateJob) -> list[compiler.Item]:
@@ -104,7 +115,7 @@ def _reconcile(session: Session, org_id, candidate_id, job_id, sources: list[com
         elif row.status in ALIVE and (row.question, row.why) != (item.question, item.why):
             row.question, row.why, row.updated_at = item.question, item.why, now
     for key, row in have.items():
-        if key not in wanted and row.status in ALIVE:
+        if key not in wanted and row.status in ALIVE and row.kind != "call":  # questions from a call stay until answered
             # Person-wide items are only retired from a person's own sources, which every job compiles the same way.
             row.status, row.updated_at = "expired", now
     session.flush()
@@ -222,6 +233,15 @@ def answer(session: Session, org_id, item_id: uuid.UUID, outcome: str, text: str
             review.approve_claim(session, org_id, target, actor)
         elif outcome == "not_met":
             review.reject_claim(session, org_id, target, actor, "wrong", text)
+    elif item.kind == "preference":
+        # Still what they want: the same preference, said again today. No longer: it goes (they can say what instead).
+        old = session.get(Claim, uuid.UUID(item.source_key.rsplit(":", 1)[1]))
+        if old is not None and old.status == "approved":
+            if outcome == "confirmed":
+                review.assert_claim(session, org_id, actor, subject_type="candidate", subject_id=item.candidate_id,
+                                    claim_type="PreferenceClaim", payload=dict(old.approved_view or old.payload), replaces=old.id)
+            elif outcome == "not_met":
+                review.reject_claim(session, org_id, old.id, actor, "outdated", text)
     elif item.source_key == "std:location" and text and geo.country_in(text):
         claim = review.assert_claim(session, org_id, actor, subject_type="candidate", subject_id=item.candidate_id,
                                     claim_type="LocationClaim",
@@ -244,7 +264,8 @@ def answer(session: Session, org_id, item_id: uuid.UUID, outcome: str, text: str
     session.flush()
     from maindscout.api.process import retriage_candidate
 
-    retriage_candidate(session, org_id, item.candidate_id, {"act": "brief_answer", "item_id": str(item.id)}, actor)
+    if not review.in_batch(session, item.candidate_id):
+        retriage_candidate(session, org_id, item.candidate_id, {"act": "brief_answer", "item_id": str(item.id)}, actor)
     return item
 
 

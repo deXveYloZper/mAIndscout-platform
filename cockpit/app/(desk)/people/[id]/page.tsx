@@ -1,14 +1,15 @@
 import Link from "next/link";
 import { Briefcase, FileText, MapPin, MessageSquareText, Phone } from "lucide-react";
-import { addFact, bringBack, draftMessage, editMessage, eraseCandidate, liftBlock, logActivity, markMessage, messageToMailbox, putOnJob, syncMailbox,
+import { addFact, addTranscript, approveAllFromDocument, bringBack, draftMessage, editMessage, eraseCandidate, liftBlock, logActivity, markMessage, messageToMailbox, putOnJob, syncMailbox,
   tagPerson, untagPerson } from "@/app/actions";
 import { DraftMessage, MessageCard } from "@/components/Messages";
+import { AddCall, CallReviewCard, WhatTheyWant } from "@/components/Calls";
 import { CareerProfile } from "@/components/CareerProfile";
 import { Dates, LogActivity, Timeline } from "@/components/Relationship";
 import { ClaimRow, Status } from "@/components/Claim";
 import { EraseForm } from "@/components/EraseForm";
 import { FactForm } from "@/components/FactForm";
-import { api, apiOr404, type JobSummary, type MailboxStatus, type PersonPage } from "@/lib/api";
+import { api, apiOr404, type CallReview, type JobSummary, type MailboxStatus, type PersonPage, type Preference } from "@/lib/api";
 import { BAND_LABEL, jobsWorthShowing, reasonWords } from "@/lib/format";
 
 export const metadata = { title: "Person" };
@@ -28,8 +29,8 @@ function initials(name: string | null): string {
 
 export default async function Person({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   const [{ id }, sp] = await Promise.all([params, searchParams]);
-  const [person, jobs, mailbox] = await Promise.all([apiOr404<PersonPage>(`/v1/candidates/${id}`), api<JobSummary[]>("/v1/jobs"),
-    api<MailboxStatus>("/v1/mailbox")]);
+  const [person, jobs, mailbox, calls] = await Promise.all([apiOr404<PersonPage>(`/v1/candidates/${id}`), api<JobSummary[]>("/v1/jobs"),
+    api<MailboxStatus>("/v1/mailbox"), api<{ reviews: CallReview[]; preferences: Preference[] }>(`/v1/candidates/${id}/calls`)]);
   const tab = TABS.some(([k]) => k === sp.tab) ? sp.tab! : "overview";
   const otherJobs = jobs.filter((j) => !person.jobs.some((p) => p.job_id === j.id));
   const path = `/people/${id}`;
@@ -39,7 +40,10 @@ export default async function Person({ params, searchParams }: { params: Promise
   const current = live("CareerStepClaim").find((c) => !c.valid_to);
   const place = live("LocationClaim").find((c) => (c.payload.kind ?? "current") === "current");
   const toApprove = Object.values(person.claims).flat().filter((c) => c.status === "proposed").length;
-  const cv = person.documents[0];
+  const cv = person.documents.find((d) => d.doc_type === "cv") ?? person.documents.find((d) => d.doc_type !== "transcript");
+  const openCalls = calls.reviews.filter((r) => ["reading", "pending", "failed"].includes(r.status));
+  const pastCalls = calls.reviews.filter((r) => !openCalls.includes(r));
+  const cvs = person.documents.filter((d) => d.doc_type !== "transcript");
 
   return (
     <>
@@ -116,6 +120,7 @@ export default async function Person({ params, searchParams }: { params: Promise
 
       {tab === "overview" && (
         <>
+          {openCalls.map((r) => <CallReviewCard key={r.id} review={r} path={path} />)}
           <section className="panel">
             <h3>Jobs</h3>
             {person.jobs.length === 0 ? <p className="sub">Not on any job yet (in the pool).</p> : jobsWorthShowing(person.jobs).length === 0 ? (
@@ -132,6 +137,7 @@ export default async function Person({ params, searchParams }: { params: Promise
               </ul>
             )}
           </section>
+          <WhatTheyWant prefs={calls.preferences} path={path} />
           {!person.archived && (
             <CareerProfile candidateId={person.id} path={path} profile={person.profile} labels={person.classifications}
               careers={live("CareerStepClaim")} />
@@ -142,12 +148,20 @@ export default async function Person({ params, searchParams }: { params: Promise
             {person.freshness.status === "stale" && <p className="stale-note">Stale: {person.freshness.words}. Worth a call before relying on these facts.</p>}
             <LogActivity action={logActivity.bind(null, "candidates", person.id, path)} jobs={person.jobs.map((j) => ({ id: j.job_id, title: j.title }))} />
           </section>
+          {!person.archived && <AddCall action={addTranscript.bind(null, person.id, path)} />}
+          {pastCalls.map((r) => <CallReviewCard key={r.id} review={r} path={path} />)}
         </>
       )}
 
       {tab === "facts" && (
         <>
           <p className="sub">Facts are proposed by the machine and official only once approved.</p>
+          {toApprove > 0 && cvs.map((d) => (
+            <form key={d.id} action={approveAllFromDocument.bind(null, person.id, d.id, path)} className="row approveall">
+              <button className="btn small primary">Approve all from {cvs.length > 1 ? d.filename ?? "this CV" : "this CV"}</button>
+              <span className="sub">Facts that wait on a question (two values disagree, a garbled email or phone) stay for you to settle one by one.</span>
+            </form>
+          ))}
           {SECTIONS.map(([type, title]) =>
             person.claims[type]?.length ? (
               <section key={type} className="panel">
@@ -219,6 +233,7 @@ export default async function Person({ params, searchParams }: { params: Promise
                 <li key={d.id}>
                   <FileText aria-hidden="true" />
                   <a href={`/files/${d.id}`} target="_blank" rel="noreferrer">{d.filename ?? d.id}</a>
+                  {d.doc_type === "transcript" && <span className="chip">call transcript</span>}
                   <span className="sub"> · as of {d.as_of ?? "unknown"}{d.needs_vision ? " · has images or a lossy layout: the text may be incomplete" : ""}</span>
                 </li>
               ))}

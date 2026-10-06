@@ -740,6 +740,98 @@ def get_brief(job_id: uuid.UUID, candidate_id: uuid.UUID, force: bool = False, o
             "contacts": brief.contacts(session, org_id, candidate_id)}
 
 
+@app.post("/v1/candidates/{candidate_id}/documents/{document_id}/approve-all")
+def approve_all_from_document(candidate_id: uuid.UUID, document_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org),
+                              session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Approve every proposed fact about this person read from this CV, in one act; questions stay one by one."""
+    out = review.approve_document(session, org_id, candidate_id, document_id, actor)
+    session.commit()
+    return out
+
+
+# --- calls: a transcript becomes one Call review, approved in bulk ------------------------------
+
+
+@app.post("/v1/candidates/{candidate_id}/transcripts", status_code=201)
+async def add_transcript(candidate_id: uuid.UUID, file: UploadFile | None = File(None), text: str | None = Form(None),
+                         job_id: uuid.UUID | None = Form(None), org_id: uuid.UUID = Depends(get_org),
+                         session: Session = Depends(get_session), blobs: BlobStore = Depends(get_blobs),
+                         actor: str = Depends(get_actor)):
+    """A call transcript, as a file (.txt, .vtt, .srt, .docx) or pasted text. Read in the background into a Call review."""
+    from maindscout.api import calls
+
+    if file is not None and file.filename:
+        data, _ = await _read(file)
+        filename = file.filename
+    elif text and text.strip():
+        data, filename = text.encode("utf-8"), "pasted call transcript.txt"
+        if len(data) > MAX_UPLOAD:
+            raise HTTPException(413, "The text is larger than 20 MB")
+    else:
+        raise HTTPException(422, "Send a transcript file or paste the text")
+    row = calls.add_transcript(session, blobs, org_id, candidate_id, data, filename, actor, job_id)
+    session.commit()
+    return calls.as_dict(row, session)
+
+
+@app.get("/v1/candidates/{candidate_id}/calls")
+def person_calls(candidate_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """The person's call reviews (newest first) and what they want, as approved."""
+    from maindscout.api import calls
+
+    calls._person(session, org_id, candidate_id)
+    return {"reviews": [calls.as_dict(r, session) for r in calls.for_person(session, org_id, candidate_id)],
+            "preferences": calls.preferences_view(session, org_id, candidate_id)}
+
+
+@app.get("/v1/call-reviews")
+def waiting_call_reviews(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    from maindscout.api import calls
+
+    return [calls.as_dict(r, session) for r in calls.waiting(session, org_id)]
+
+
+@app.get("/v1/call-reviews/{review_id}")
+def get_call_review(review_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    from maindscout.api import calls
+
+    return calls.as_dict(calls._review(session, org_id, review_id), session)
+
+
+class CallApplyBody(BaseModel):
+    ticked: list[str] | None = None  # None: the default ticks
+
+
+@app.post("/v1/call-reviews/{review_id}/apply")
+def apply_call_review(review_id: uuid.UUID, body: CallApplyBody, org_id: uuid.UUID = Depends(get_org),
+                      session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Approve the ticked lines in one act; the person is matched again once."""
+    from maindscout.api import calls
+
+    row = calls.apply(session, org_id, review_id, actor, body.ticked)
+    session.commit()
+    return calls.as_dict(row, session)
+
+
+@app.post("/v1/call-reviews/{review_id}/dismiss")
+def dismiss_call_review(review_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                        actor: str = Depends(get_actor)):
+    from maindscout.api import calls
+
+    row = calls.dismiss(session, org_id, review_id, actor)
+    session.commit()
+    return calls.as_dict(row, session)
+
+
+@app.post("/v1/call-reviews/{review_id}/retry")
+def retry_call_review(review_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    from maindscout.api import calls
+
+    row = calls.retry(session, org_id, review_id)
+    session.commit()
+    return calls.as_dict(row, session)
+
+
 @app.get("/v1/candidates/{candidate_id}/brief")
 def get_person_brief(candidate_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
     """A Brief without a job (anyone, e.g. someone in the pool): the questions about the person, and how to reach them."""

@@ -1,6 +1,6 @@
 # Calls: feed a transcript, review once, everything updates (preferences included)
 
-**Status: APPROVED** 2026-10-06 by the owner (revised after his review), with the three recommendations; no consent step (the call tools already obtain it). The first version asked the recruiter to enter preferences by hand. The owner rejected that: a call already contains the answers, and the desk should read them and ask only for a final, bulk confirmation.
+**Status: APPROVED** 2026-10-06 by the owner (revised after their review), with the three recommendations; no consent step (the call tools already obtain it). The first version asked the recruiter to enter preferences by hand. The owner rejected that: a call already contains the answers, and the desk should read them and ask only for a final, bulk confirmation. **Built** 2026-10-06 ([calls](../build/components/calls.md)); stage is read as part of the kind of employer.
 
 Building needs no model credits (tested with recorded and fake answers); using it on a real transcript does.
 
@@ -34,7 +34,7 @@ Nothing is filled in by hand unless the recruiter wants to.
 
 ## Why
 
-Confidence still comes from a human, but a human reviewing a summary, not typing it. The transcript is better evidence than a typed note: every fact carries the exact sentence it came from. And the owner's example works as he described it: an engineer with a start-up history who says "I'm done with start-ups, I want an established company, 200 people at least" is matched accordingly from that moment, with that sentence as the reason.
+Confidence still comes from a human, but a human reviewing a summary, not typing it. The transcript is better evidence than a typed note: every fact carries the exact sentence it came from. And the owner's example works as they described it: an engineer with a start-up history who says "I'm done with start-ups, I want an established company, 200 people at least" is matched accordingly from that moment, with that sentence as the reason.
 
 ## In scope, in order
 

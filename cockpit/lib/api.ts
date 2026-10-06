@@ -141,7 +141,7 @@ export type PersonPage = {
   name: string | null;
   claims: Record<string, ClaimView[]>;
   jobs: { job_id: string; title: string; band: Band; reason: string | null; state?: string }[];
-  documents: { id: string; filename: string | null; needs_vision: boolean; as_of: string | null }[];
+  documents: { id: string; filename: string | null; doc_type: "cv" | "jd" | "transcript" | "other"; needs_vision: boolean; as_of: string | null }[];
   open_decisions: string[];
   archived: { at: string; reason: string | null } | null;
   coverage_override: boolean;
@@ -156,6 +156,42 @@ export type PersonPage = {
   messages: MessageView[];
   client_contacts: { id: string; name: string; role: string | null; job_id: string; job: string }[];
 };
+
+/** Calls: one line of a Call review (what the transcript said), ticked by default. */
+export type CallLine = {
+  id: string;
+  kind: "brief_answer" | "confirm" | "correct" | "dispute" | "new_fact" | "preference" | "ask";
+  text: string;
+  quote: string;
+  ticked: boolean;
+  outcome?: string; // a Brief answer: confirmed | not_met | noted
+  result?: string; // once approved: applied | dropped | skipped: why
+  note?: string;
+  question?: string;
+  current?: string;
+  summary?: string;
+  replaces?: string;
+  value?: string;
+  fact_type?: string;
+  company?: string;
+  title?: string | null;
+};
+export type CallReview = {
+  id: string;
+  candidate_id: string;
+  document_id: string;
+  status: "reading" | "pending" | "applied" | "dismissed" | "failed";
+  error: string | null;
+  filename?: string | null;
+  person?: string | null;
+  created_by: string;
+  created_at: string | null;
+  resolved_by: string | null;
+  resolved_at: string | null;
+  sections: { kind: CallLine["kind"]; title: string; lines: CallLine[] }[];
+};
+export type Preference = { claim_id: string; facet: string; strength: "must" | "prefer"; summary: string; said: string | null;
+  as_of: string | null; stale: boolean };
 
 export type MessageView = {
   id: string;

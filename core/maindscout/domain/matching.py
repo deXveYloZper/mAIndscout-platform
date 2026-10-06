@@ -20,7 +20,7 @@ from typing import Any
 
 from maindscout.domain.profile import FAMILY_LABEL, LEVEL_RANK, Stint, group_of
 
-ENGINE_VERSION = "match-2026-10-04.1"
+ENGINE_VERSION = "match-2026-10-06.1"
 MUST = ("must", "deal_breaker")
 
 # The desk's rules, as data: id -> what it says. The order of evaluation is the order of this list.
@@ -28,6 +28,9 @@ RULES: list[dict[str, str]] = [
     {"id": "client_block", "text": "The client said no to this person: a wall at this client until a person lifts it."},
     {"id": "distinctive_must_missing", "text": "A must-have that decides the band has no evidence: do not submit."},
     {"id": "not_wanted", "text": "The person meets a requirement the hiring manager does not want."},
+    {"id": "wants_otherwise", "text": "The job is what the person said they will not consider (a must, said on a call): unlikely."},
+    {"id": "prefers_otherwise", "text": "The job is not what the person said they would prefer: a note for the call, never a reason on its own."},
+    {"id": "fits_what_they_want", "text": "The job fits what the person said they want."},
     {"id": "substitution", "text": "A requirement the intake says can substitute for another is met, so that one counts as met."},
     {"id": "domain_over_seniority", "text": "A strong industry match outweighs one level below the level asked for."},
     {"id": "contractor_fit", "text": "A contract job and a contractor with long engagements: a strong plus."},
@@ -195,9 +198,11 @@ def _covers(note: str, text: str, token: str | None = None) -> bool:
 
 
 def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str, Any] | None, stints: list[Stint],
-          coarse: tuple[str, str], answers: dict[str, dict[str, Any]] | None = None, blocked: str | None = None) -> Match:
+          coarse: tuple[str, str], answers: dict[str, dict[str, Any]] | None = None, blocked: str | None = None,
+          preferences: list[tuple[str, str, str, str, str]] | None = None) -> Match:
     """`requirements`: [{id, payload}] (live, no process dates); `gap_rows`: domain.gaps rows for the same job and
-    person; `profile`: the latest career profile (or None); `coarse`: the token triage (band, reason) as fallback."""
+    person; `profile`: the latest career profile (or None); `coarse`: the token triage (band, reason) as fallback;
+    `preferences`: domain.preferences.rows for what the person said they want."""
     by_id = {r["id"]: r["payload"] for r in requirements}
     rows: list[Verdict] = []
     for g in gap_rows:  # skills, years, education, languages, mobility, and anything the gap table already reads
@@ -239,6 +244,12 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
         elif a:
             v.detail = ("confirmed on the call" if a["outcome"] == "confirmed" else "not met, said on the call") + (f": {a['answer']}" if a.get("answer") else "")
 
+    # What they want (said on a call): rows of their own kind and strength (their_must / their_prefer), so they are
+    # never counted as the job's must-haves.
+    wants = [Verdict(pid, words, "preference", f"their_{strength}", verdict, detail)
+             for pid, words, strength, verdict, detail in preferences or []]
+    rows += wants
+
     fired: list[dict[str, str]] = []
 
     def fire(rule: str, detail: str) -> None:
@@ -257,6 +268,17 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
     if against:
         fire("not_wanted", "; ".join(f"{v.requirement}: {v.detail}" for v in against))
         return Match("unlikely", "do_not_submit", f"match:unlikely:{against[0].requirement}", rows, fired)
+    # 2b. What they said they want. A must the job contradicts: they would say no, so unlikely. A prefer: a note.
+    fits = [v for v in wants if v.verdict == "strong"]
+    if fits:
+        fire("fits_what_they_want", "; ".join(v.detail.removeprefix("fits what they want: ") for v in fits))
+    soft = [v for v in wants if v.verdict == "gap" and v.strength == "their_prefer"]
+    if soft:
+        fire("prefers_otherwise", "; ".join(f"{v.requirement}: {v.detail}" for v in soft))
+    hard = [v for v in wants if v.verdict == "gap" and v.strength == "their_must"]
+    if hard:
+        fire("wants_otherwise", "; ".join(f"{v.requirement}: {v.detail}" for v in hard))
+        return Match("unlikely", "do_not_submit", f"match:unlikely:not what they want ({hard[0].requirement})", rows, fired)
     if thin:
         fire("too_little_known", "no career profile yet" if profile is None else "the career profile is unclear")
         return Match("unclear", None, coarse[1], rows, fired)

@@ -22,6 +22,7 @@ from sqlalchemy import delete, func, or_, select, text, update
 from sqlalchemy.orm import Session
 
 from maindscout.db.models import (
+    CallReview,
     Candidate,
     CandidateJob,
     CostEntry,
@@ -145,6 +146,7 @@ def erase_candidate(session: Session, blobs: BlobStore, org_id: uuid.UUID, candi
     run("decision_items", delete(DecisionItem).where(or_(DecisionItem.decision_id.in_(decision_ids), DecisionItem.claim_id.in_(claim_ids))))
     run("decisions", delete(Decision).where(Decision.id.in_(decision_ids)))
     run("brief_items", delete(BriefItem).where(BriefItem.candidate_id == candidate_id))
+    run("call_reviews", delete(CallReview).where(CallReview.candidate_id == candidate_id))
     run("activities", delete(Activity).where(Activity.subject_type == "candidate", Activity.subject_id == candidate_id))
     run("tags", delete(CandidateTag).where(CandidateTag.candidate_id == candidate_id))
     run("client_blocks", delete(ClientBlock).where(ClientBlock.candidate_id == candidate_id))
@@ -246,6 +248,7 @@ def verify_erasure(session: Session, blobs: BlobStore, org_id: uuid.UUID, candid
         ("breakdown snapshots", count(Score, Score.candidate_id == candidate_id)),
         ("career profiles", count(CareerProfile, CareerProfile.candidate_id == candidate_id)),
         ("brief items", count(BriefItem, BriefItem.candidate_id == candidate_id)),
+        ("call reviews", count(CallReview, CallReview.candidate_id == candidate_id)),
         ("activities", count(Activity, (Activity.subject_type == "candidate") & (Activity.subject_id == candidate_id))),
         ("tags", count(CandidateTag, CandidateTag.candidate_id == candidate_id)),
         ("client blocks", count(ClientBlock, ClientBlock.candidate_id == candidate_id)),

@@ -18,7 +18,7 @@ from typing import Any
 class Item:
     source_key: str
     scope: str  # person | job
-    kind: str  # requirement | career | contact | mobility | standard
+    kind: str  # requirement | career | contact | mobility | standard | preference | call
     question: str
     why: str | None
 

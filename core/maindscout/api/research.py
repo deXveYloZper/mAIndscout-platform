@@ -170,6 +170,8 @@ def apply(session: Session, company: Company, outcome: engine.ResearchOutcome) -
                                      evidence_id=evidence.id, source_authority=authority, origin=origin, observed_as_of=now.date()))
     _settle(session, company, outcome)
     session.flush()
+    if written:
+        _rematch_wishes(session, company.id)
     return {"identified": outcome.identified, "facts_written": written, "facts_seen": len(outcome.facts),
             "rejected": len(outcome.rejected), "usd": outcome.cost.get("usd", 0)}
 
@@ -258,3 +260,17 @@ def recheck(session: Session) -> list[dict[str, str]]:
             review.reject_claim(session, PUBLIC_ORG_ID, claim.id, "system:recheck", "low_confidence", problems[0])
             out.append({"claim_id": str(claim.id), "claim_type": claim.claim_type, "reason": problems[0]})
     return out
+
+
+def _rematch_wishes(session: Session, company_id) -> None:
+    """New public facts about a hiring company can settle what people said they want (its size, what kind of
+    employer it is): re-match its jobs that have such people on them, in the background."""
+    from maindscout.api import tasks
+    from maindscout.db.models import CandidateJob, Job
+
+    wishes = select(Claim.subject_id).where(Claim.claim_type == "PreferenceClaim", Claim.status == "approved")
+    jobs = session.execute(select(Job.id, Job.org_id).where(Job.hiring_company_id == company_id, Job.id.in_(
+        select(CandidateJob.job_id).where(CandidateJob.candidate_id.in_(wishes))))).all()
+    for job_id, org_id in jobs:
+        tasks.enqueue(session, org_id, "rematch_job", {"job_id": str(job_id), "cause": {"act": "company_facts", "company_id": str(company_id)},
+                                                       "actor": "system"}, dedupe_key=f"rematch:{job_id}", priority=40)

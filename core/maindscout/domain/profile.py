@@ -67,6 +67,7 @@ class CompanyFacts:
     founded: date | None = None
     rounds: list[tuple[str, date | None]] = field(default_factory=list)  # (stage, date)
     team_min: int | None = None
+    team_max: int | None = None  # the top of a published range ("51-200"), when there is one
     status: str | None = None  # active | acquired | merged | shut_down | public
     domains: list[str] = field(default_factory=list)
 

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import uuid
+from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -61,6 +62,10 @@ def retriage_after(session: Session, claim: Claim, act: str, actor: str) -> None
     cause = {"act": act, "claim_id": str(claim.id), "claim_type": claim.claim_type}
     from maindscout.api import coverage
 
+    batch = session.info.get("batch")
+    if batch is not None and claim.subject_type == "candidate":  # a bulk approval: once, at the end (see batched)
+        batch.setdefault(claim.subject_id, set()).add(claim.claim_type)
+        return
     if claim.subject_type == "candidate":
         retriage_candidate(session, claim.org_id, claim.subject_id, cause, actor)
         if claim.claim_type in ("LocationClaim", "CareerStepClaim"):
@@ -75,6 +80,39 @@ def retriage_after(session: Session, claim: Claim, act: str, actor: str) -> None
             from maindscout.db.models import Job
 
             coverage.reevaluate_job(session, session.get(Job, claim.subject_id), cause, actor)
+
+
+@contextmanager
+def batched(session: Session, org_id: uuid.UUID, cause: dict[str, Any], actor: str):
+    """Many fact changes about people in one act (a call review, approving a whole CV): matching, coverage and
+    profiles are recomputed once per person at the end, not once per fact."""
+    from maindscout.api import coverage, profiles
+
+    if session.info.get("batch") is not None:  # already inside one
+        yield
+        return
+    session.info["batch"] = {}
+    try:
+        yield
+        touched = session.info["batch"]
+    finally:
+        session.info.pop("batch", None)
+    for candidate_id, types in touched.items():
+        session.flush()
+        if types & {"CareerStepClaim", "StepClassificationClaim", "EducationClaim"}:
+            profiles.build(session, org_id, candidate_id)
+        if types & {"LocationClaim", "CareerStepClaim"}:
+            coverage.evaluate(session, org_id, candidate_id, cause, actor)
+        retriage_candidate(session, org_id, candidate_id, cause, actor)
+
+
+def in_batch(session: Session, candidate_id: uuid.UUID) -> bool:
+    """Inside `batched`: note the person for the one re-match at the end and say so."""
+    batch = session.info.get("batch")
+    if batch is None:
+        return False
+    batch.setdefault(candidate_id, set())
+    return True
 
 
 def _open_decisions_for(session: Session, claim: Claim, type_: str) -> list[Decision]:
@@ -119,10 +157,13 @@ def reject_claim(session: Session, org_id: uuid.UUID, claim_id: uuid.UUID, actor
 
 def assert_claim(session: Session, org_id: uuid.UUID, actor: str, *, subject_type: str, subject_id: uuid.UUID,
                  claim_type: str, payload: dict[str, Any], valid_from: str | None = None, valid_to: str | None = None,
-                 replaces: uuid.UUID | None = None) -> Claim:
+                 replaces: uuid.UUID | None = None, precision: str | None = None,
+                 said: dict[str, Any] | None = None) -> Claim:
     """A fact typed by a human: born approved. A typed ContactClaim is a clean identity key.
 
     `replaces` rejects the claim it corrects (e.g. an email the text layer garbled) in the same act.
+    `said`: approved by a human but said by someone else, e.g. the candidate on a call. Keys document_id, snippet,
+    char_start, char_end, artifact_id, origin, authority: the evidence is that span of that document, not the typist.
     """
     if subject_type == "candidate":
         owner = session.get(Candidate, subject_id)
@@ -140,15 +181,24 @@ def assert_claim(session: Session, org_id: uuid.UUID, actor: str, *, subject_typ
         approved_view_hash=stints.reconcile.view_hash(view), approved_by=actor, approved_at=_now(),
         valid_from=date.fromisoformat(valid_from) if valid_from else None,
         valid_to=date.fromisoformat(valid_to) if valid_to else None,
-        temporal_precision="exact" if valid_from else "unknown", observed_as_of=date.today(),
+        temporal_precision=precision or ("exact" if valid_from else "unknown"), observed_as_of=date.today(),
     )
-    evidence = Evidence(org_id=org_id, claim_id=claim.id, evidence_type="human_assertion", source_authority="human_assertion",
-                        origin="human", snippet=None, observed_as_of=date.today(),
-                        span_validation={"tier": "typed", "result": "pass", "metric_bucket": "none", "detail": f"typed by {actor}"})
+    if said:
+        authority, origin = said.get("authority", "candidate_authored"), said.get("origin", "candidate")
+        evidence = Evidence(org_id=org_id, claim_id=claim.id, evidence_type="document_span", document_id=said["document_id"],
+                            locator={k: said[k] for k in ("artifact_id", "char_start", "char_end") if said.get(k) is not None},
+                            snippet=said.get("snippet"), source_authority=authority, origin=origin, observed_as_of=date.today(),
+                            span_validation={"tier": "quote", "result": "pass", "metric_bucket": "none",
+                                             "detail": f"said on a call; approved by {actor}"})
+    else:
+        authority, origin = "human_assertion", "human"
+        evidence = Evidence(org_id=org_id, claim_id=claim.id, evidence_type="human_assertion", source_authority=authority,
+                            origin=origin, snippet=None, observed_as_of=date.today(),
+                            span_validation={"tier": "typed", "result": "pass", "metric_bucket": "none", "detail": f"typed by {actor}"})
     session.add(evidence)
     session.flush()
     session.add(ClaimObservation(org_id=org_id, claim_id=claim.id, attribute_path=".", value=payload, evidence_id=evidence.id,
-                                 source_authority="human_assertion", origin="human", observed_as_of=date.today()))
+                                 source_authority=authority, origin=origin, observed_as_of=date.today()))
     if replaces:
         old = _claim(session, org_id, replaces)
         if old.subject_id != subject_id:
@@ -158,6 +208,26 @@ def assert_claim(session: Session, org_id: uuid.UUID, actor: str, *, subject_typ
     session.flush()
     retriage_after(session, claim, "typed", actor)
     return claim
+
+
+def approve_document(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID, document_id: uuid.UUID, actor: str) -> dict[str, int]:
+    """"Approve all from this CV": every proposed fact about this person read from this document, in one act.
+    Facts that wait on a question (two values disagree, an identifier the text layer may have garbled) are left
+    for a person to settle one by one."""
+    proposed = list(session.scalars(select(Claim).where(
+        Claim.org_id == org_id, Claim.subject_id == candidate_id, Claim.status == "proposed",
+        Claim.id.in_(select(Evidence.claim_id).where(Evidence.document_id == document_id)))))
+    waiting = set(session.scalars(select(DecisionItem.claim_id).join(Decision, Decision.id == DecisionItem.decision_id).where(
+        DecisionItem.claim_id.in_([c.id for c in proposed] or [None]), Decision.sealed_at.is_(None))))
+    approved = left = 0
+    with batched(session, org_id, {"act": "approve_document", "document_id": str(document_id)}, actor):
+        for c in proposed:
+            if c.id in waiting or (c.flags or {}).get("possible_ocr_identifier"):
+                left += 1
+                continue
+            approve_claim(session, org_id, c.id, actor)
+            approved += 1
+    return {"approved": approved, "left": left}
 
 
 def resolve_decision(session: Session, org_id: uuid.UUID, decision_id: uuid.UUID, actor: str, action: str,

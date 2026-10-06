@@ -36,7 +36,12 @@ def inbox_count(session: Session, org_id: uuid.UUID) -> int:
 
 
 def nav_counts(session: Session, org_id: uuid.UUID) -> dict[str, int]:
-    return {"inbox": inbox_count(session, org_id)}
+    """The inbox badge: its cards plus call reviews waiting for a person."""
+    from maindscout.db.models import CallReview
+
+    calls = session.scalar(select(func.count()).select_from(CallReview).where(
+        CallReview.org_id == org_id, CallReview.status.in_(("pending", "failed")))) or 0
+    return {"inbox": inbox_count(session, org_id) + calls}
 
 
 def _like(text: str) -> str:

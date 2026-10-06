@@ -3,7 +3,7 @@ import { addFact, approveClaim, correctContact, rejectClaim, resolveDecision } f
 import { Snippet } from "@/components/Claim";
 import { ContactFix } from "@/components/ContactFix";
 import { FactForm } from "@/components/FactForm";
-import { api, type InboxItem, type JobSummary, type Side } from "@/lib/api";
+import { api, type CallReview, type InboxItem, type JobSummary, type Side } from "@/lib/api";
 import { summary } from "@/lib/format";
 
 export const metadata = { title: "Inbox" };
@@ -141,7 +141,8 @@ export default async function Inbox({ searchParams }: { searchParams: Promise<{ 
   const qs = new URLSearchParams();
   if (job) qs.set("job_id", job);
   qs.set("band", band);
-  const [items, jobs] = await Promise.all([api<InboxItem[]>(`/v1/inbox?${qs}`), api<JobSummary[]>("/v1/jobs")]);
+  const [items, jobs, calls] = await Promise.all([api<InboxItem[]>(`/v1/inbox?${qs}`), api<JobSummary[]>("/v1/jobs"),
+    job ? Promise.resolve([] as CallReview[]) : api<CallReview[]>("/v1/call-reviews")]);
   const jobName = jobs.find((j) => j.id === job)?.title;
   const path = "/inbox"; // revalidation works on the path; the query string is kept by the browser
   const link = (b: string) => `/inbox?${new URLSearchParams({ ...(job ? { job } : {}), band: b })}`;
@@ -163,7 +164,23 @@ export default async function Inbox({ searchParams }: { searchParams: Promise<{ 
           <Link href={link("all")} aria-current={band === "all" ? "page" : undefined}>Everyone on this job</Link>
         </nav>
       )}
-      {items.length === 0 ? <p className="empty">Nothing waiting.</p> : items.map((i) => <Card key={i.id} item={i} path={path} />)}
+      {calls.length > 0 && (
+        <section className="panel">
+          <h3>Calls to approve ({calls.length})</h3>
+          <ul className="people">
+            {calls.map((c) => (
+              <li key={c.id}>
+                <Link href={`/people/${c.candidate_id}`}>{c.person ?? "Name not read"}</Link>
+                <span className="sub">
+                  {c.status === "reading" ? "reading the call…" : c.status === "failed" ? "could not be read: try again"
+                    : `${c.sections.reduce((n, s) => n + s.lines.length, 0)} lines to approve`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {items.length === 0 && calls.length === 0 ? <p className="empty">Nothing waiting.</p> : items.length === 0 ? null : items.map((i) => <Card key={i.id} item={i} path={path} />)}
     </>
   );
 }

@@ -32,7 +32,7 @@ def _in(column: str, values: tuple[str, ...]) -> str:
     return f"{column} IN ({', '.join(repr(v) for v in values)})"
 
 
-DOC_TYPES = ("cv", "jd", "other")
+DOC_TYPES = ("cv", "jd", "transcript", "other")
 DOC_STATUS = ("received", "stored", "extracted", "processed", "needs_human", "reprocessable")
 SOURCE_AUTHORITY = (
     "verified_primary",
@@ -713,6 +713,34 @@ class BriefItem(Base):
     answered_by: Mapped[str | None] = mapped_column(String)
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+CALL_REVIEW_STATUS = ("reading", "pending", "applied", "dismissed", "failed")
+
+
+class CallReview(Base):
+    """Calls: what one call transcript said, read once, waiting for one bulk approval. `findings` is a list of lines
+    (brief answers, confirmed / corrected / disputed facts, new facts, preferences, things to ask), each with the
+    candidate's own words and a tick. Applying writes approved facts with the transcript as evidence; erased with
+    the person (and the transcript with their documents)."""
+
+    __tablename__ = "call_review"
+    __table_args__ = (
+        CheckConstraint(_in("status", CALL_REVIEW_STATUS), name="call_review_status"),
+        Index("ix_call_review_candidate", "candidate_id"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate.id"), nullable=False)
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("document.id"), nullable=False)
+    job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("job.id"))  # the job the call was about, if any
+    status: Mapped[str] = mapped_column(String, nullable=False, default="reading")
+    findings: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = _created()
+    resolved_by: Mapped[str | None] = mapped_column(String)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class CareerProfile(Base):

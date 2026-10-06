@@ -81,5 +81,5 @@ The existing sourcing test confirms no send path exists. e2e: answers become off
 
 ## Known limits
 - Questions are fixed templates; phrasing by a model (the blueprint allows it) isn't used.
-- Uploading call notes as a document (the "rich path") isn't built; inline capture is.
+- Call transcripts are read into a Call review that answers Brief questions in bulk ([calls](calls.md), 2026-10-06). Questions the call raised ("Ask next time", kind `call`) stay until answered; preferences said more than about six months ago come back as "Is this still what they want?" (kind `preference`): a yes renews the preference, a no retires it.
 - Mailing Brief questions and interview kits are out of scope (Slice 3 plan).
