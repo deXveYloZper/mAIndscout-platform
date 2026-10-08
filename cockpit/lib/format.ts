@@ -44,6 +44,8 @@ export function reasonWords(reason: string | null): string {
       return `evidence of ${rest.replaceAll(",", ", ")}`;
     case "no_distinctive_requirements":
       return "job has no distinctive must-haves yet";
+    case "cv_unreadable":
+      return "the CV has no readable text (an image of a page): open the file";
     case "human_override":
       return `set by hand: ${rest}`;
     case "match": {

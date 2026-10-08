@@ -146,9 +146,12 @@ def _write_claim(session: Session, doc: Document, run: IntelligenceRun, subject_
             writer.set_flags(session, claim, {**claim.flags, "possible_ocr_identifier": True})
     evidence = Evidence(
         org_id=doc.org_id, claim_id=claim.id, evidence_type="document_span", document_id=doc.id,
-        locator={k: span[k] for k in ("artifact_id", "page", "char_start", "char_end", "annotation_id") if k in span} if span else None,
+        locator={k: span[k] for k in ("artifact_id", "page", "char_start", "char_end", "annotation_id", "parts") if k in span} if span else None,
         snippet=span["snippet"] if span else None,
-        span_validation={"tier": "typed", "result": "pass", "metric_bucket": "hallucination_rate", "detail": note},
+        span_validation={"tier": "assembled" if span and span.get("parts") else "typed", "result": "pass",
+                         "metric_bucket": "hallucination_rate",
+                         "detail": (f"pieced together from {len(span['parts'])} places in the file" + (f"; {note}" if note else ""))
+                         if span and span.get("parts") else note},
         source_authority=authority, origin=origin, observed_as_of=doc.as_of,
     )
     session.add(evidence)
@@ -452,6 +455,9 @@ def retriage_pair(session: Session, pair: CandidateJob, cause: dict, actor: str 
         result = triage.Triage(coarse.band, coarse.reason)
     else:
         result = triage.Triage(m.band, m.reason)
+    if result.band == "do_not_submit" and _unreadable(session, pair.candidate_id, inputs[1]):
+        # Nothing could be read (an image of a page): no evidence is not evidence of a miss. A person opens the file.
+        result = triage.Triage("review_later", "cv_unreadable")
     if (pair.triage_band, pair.triage_reason) == (result.band, result.reason):
         session.flush()
         return None
@@ -464,6 +470,16 @@ def retriage_pair(session: Session, pair: CandidateJob, cause: dict, actor: str 
     session.add(event)
     session.flush()
     return event
+
+
+def _unreadable(session: Session, candidate_id, mine: list[Claim]) -> bool:
+    """Nothing of their career or skills was read, and one of their files has no text layer to read."""
+    if any(c.claim_type in ("CareerStepClaim", "SkillClaim") for c in mine):
+        return False
+    from maindscout.db.models import DocumentSubject
+
+    return bool(session.scalar(select(Document.id).join(DocumentSubject, DocumentSubject.document_id == Document.id).where(
+        DocumentSubject.subject_id == candidate_id, Document.needs_vision.is_(True)).limit(1)))
 
 
 def retriage_candidate(session: Session, org_id, candidate_id, cause: dict, actor: str) -> list[PairEvent]:

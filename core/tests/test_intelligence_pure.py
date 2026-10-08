@@ -161,3 +161,16 @@ def test_aliases_match_whole_words_only():
     assert triage.supports("javascript", ["js"], [])
     assert triage.supports("node", ["node.js"], [])
     assert triage.supports("javascript/typescript", ["typescript (8+ yrs)"], [])
+
+
+def test_a_quote_pieced_from_two_columns_is_accepted_only_when_every_piece_is_in_the_text():
+    """2026-10-08 golden eval: on two-column CVs the date and the "title | company" line sit apart, so every career
+    quote was refused (Veljko: no career history at all)."""
+    from maindscout.intelligence import spans
+
+    text = "June 2019 - June 2021\nAugust 2024 - Present\nSkills\nFull-stack Engineer | Valuator\nJava Engineer | Orion"
+    parts = spans.locate_parts(text, "June 2019 - June 2021\n\nFull-stack Engineer | Valuator")
+    assert [p.snippet for p in parts] == ["June 2019 - June 2021", "Full-stack Engineer | Valuator"]
+    assert spans.locate_parts(text, "June 2019 - June 2021\n\nFull-stack Engineer | Invented Corp") is None
+    assert spans.locate_parts(text, "Full-stack Engineer | Valuator") is None, "one piece is an ordinary quote"
+    assert spans.locate_parts(text, "\n".join(["June 2019 - June 2021"] * 5)) is None, "at most four pieces"

@@ -396,3 +396,31 @@ def test_a_pair_cannot_be_deleted(client, session):
         session.execute(text("DELETE FROM candidate_job WHERE candidate_id = :c"), {"c": cid})
     nested.rollback()
     assert client.get(f"/v1/jobs/{job_id}/people/{cid}/gaps").status_code == 200
+
+
+def test_a_cv_with_no_readable_text_waits_for_a_person_instead_of_do_not_submit(client, fake, session):
+    """2026-10-08 golden eval: an image-only CV (Bianca) was put in do_not_submit for "no evidence of JavaScript"."""
+    from tests.pdfs import blank_pdf
+
+    job_id = make_job(client)  # InSAR is a distinctive must-have
+    fake.cv = cv_json(full_name={"value": "", "quote": ""}, contacts=[], career_steps=[], education=[], skills=[], locations=[])
+    r = client.post(f"/v1/jobs/{job_id}/documents", files={"file": ("photo-cv.pdf", blank_pdf(), "application/pdf")})
+    assert r.status_code == 201, r.text
+    assert (r.json()["band"], r.json()["reason"]) == ("review_later", "cv_unreadable")
+
+
+def test_a_career_step_quoted_in_pieces_is_kept_and_says_so(client, fake, session):
+    from maindscout.db.models import Evidence
+
+    job_id = make_job(client)
+    data = cv_json()
+    step = data["career_steps"][0]
+    step["quote"] = "Mar 2019 - Present\n\nFlight Software Engineer, Acme Space"  # the date and the title, apart
+    fake.cv = data
+    cid = drop_cv(client, job_id)["subject_id"]
+    claim = session.scalar(select(Claim).where(Claim.subject_id == uuid.UUID(cid), Claim.claim_type == "CareerStepClaim",
+                                               Claim.payload["company"]["raw_name"].astext == "Acme Space"))
+    ev = session.scalar(select(Evidence).where(Evidence.claim_id == claim.id))
+    assert claim.status == "proposed" and len(ev.locator["parts"]) == 2
+    assert ev.span_validation["tier"] == "assembled" and "pieced together from 2 places" in ev.span_validation["detail"]
+    assert ev.snippet == "Mar 2019 - Present … Flight Software Engineer, Acme Space"
