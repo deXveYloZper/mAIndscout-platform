@@ -74,13 +74,19 @@ def _usd(amount: str | None) -> float | None:
     return float(m.group(1)) * scale
 
 
+_SCALE = {"k": 1_000, "thousand": 1_000, "m": 1_000_000, "mn": 1_000_000, "million": 1_000_000}
+_COUNT = re.compile(r"(\d+(?:\.\d+)?)\s*(thousand|million|mn|k|m)?\b")
+
+
 def _team(raw: str) -> tuple[int | None, int | None]:
-    nums = [int(n) for n in re.findall(r"\d+", raw.replace(",", ""))]
+    """Head count from how a page writes it: "51-200", "over 8.8 thousand", "1.2k+", "about 6,000", "10,000+"."""
+    text = re.sub(r"(?<=\d),(?=\d{3}\b)", "", raw.lower())  # thousands separators, not decimals
+    nums = [round(float(n) * _SCALE.get(unit or "", 1)) for n, unit in _COUNT.findall(text)]
     if not nums:
         return None, None
     if len(nums) >= 2:
         return min(nums[:2]), max(nums[:2])
-    return (nums[0], None) if re.search(r"more than|over|\+", raw.lower()) else (nums[0], nums[0])
+    return (nums[0], None) if re.search(r"more than|over|\+|at least", text) else (nums[0], nums[0])
 
 
 def _country(text: str) -> str | None:
@@ -248,6 +254,15 @@ def recheck(session: Session) -> list[dict[str, str]]:
     from maindscout.api import review
 
     out = []
+    for claim in session.scalars(select(Claim).where(Claim.org_id == PUBLIC_ORG_ID, Claim.claim_type == "TeamSizeClaim",
+                                                     Claim.status.in_(LIVE))):
+        lo, hi = _team(claim.payload.get("raw") or "")  # sizes read before the parser knew "8.8 thousand"
+        if (lo, hi) != (claim.payload.get("min"), claim.payload.get("max")):
+            out.append({"claim_id": str(claim.id), "claim_type": "TeamSizeClaim",
+                        "reason": f"size re-read: {claim.payload.get('raw')!r} is {lo}-{hi if hi is not None else ''}"})
+            claim.payload = {**claim.payload, "min": lo, "max": hi}
+            if claim.approved_view:
+                claim.approved_view = {**claim.approved_view, "min": lo, "max": hi}
     for claim in session.scalars(select(Claim).where(Claim.org_id == PUBLIC_ORG_ID, Claim.status == "proposed",
                                                      Claim.claim_type.in_(COMPANY_CLAIMS))):
         made = _as_fact(claim)

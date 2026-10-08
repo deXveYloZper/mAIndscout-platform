@@ -59,7 +59,7 @@ export default defineConfig({
       command: `npx next build && npx next start -H 127.0.0.1 -p ${UI_PORT}`,
       url: `http://127.0.0.1:${UI_PORT}/login`,
       reuseExistingServer: false,
-      timeout: 300_000,
+      timeout: 600_000, // a cold production build on a busy machine can take over five minutes
       env: {
         NEXT_DIST_DIR: ".next-e2e",
         MAINDSCOUT_API: `http://127.0.0.1:${API_PORT}`,

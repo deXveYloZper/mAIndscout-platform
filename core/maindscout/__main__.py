@@ -279,7 +279,7 @@ def main() -> None:
             session.commit()
             for d in dropped:
                 print(d["claim_type"], "-", d["reason"])
-            print(f"rejected {len(dropped)} stored fact(s)")
+            print(f"corrected or rejected {len(dropped)} stored fact(s)")
     elif args.cmd == "contacts-recheck":
         from maindscout.api import review
 

@@ -115,6 +115,10 @@ def test_an_unidentified_company_writes_nothing():
 def test_amount_and_size_parsing():
     assert research._usd("$13M") == 13e6 and research._usd("$1.2 billion") == 1.2e9 and research._usd("EUR 5M") is None
     assert research._team("51-200 employees") == (51, 200) and research._team("more than 800 people") == (800, None)
+    # 2026-10-08, live: Wise's "over 8.8 thousand employees" was read as 8 people.
+    assert research._team("over 8.8 thousand employees") == (8800, None)
+    assert research._team("1.2k+") == (1200, None) and research._team("10,000+ employees") == (10000, None)
+    assert research._team("5,001-10,000") == (5001, 10000) and research._team("about 6,000 staff") == (6000, 6000)
 
 
 # --- storing and scheduling -------------------------------------------------------------------------
