@@ -11,11 +11,11 @@ Recruiters work in the platform. The website should never hold its own copy of t
 
 | Direction | What flows | Rule |
 |---|---|---|
-| Website → platform (ingest) | Contact/client inquiries; role applications with CVs | Applications become CVs on a job. Client inquiries become leads. |
+| Website → platform (ingest) | Contact/client inquiries; role applications; CVs sent from the talent page (PDF or Word, up to 8 MB, with name and email) | CVs become candidates (on a job when there is one). Client inquiries become leads. |
 | Platform → website (publish) | Live roles; anonymised showcase candidates | Only items a human marked "showcase". Anonymised here, before they leave. |
 
 ## Website seams to replace
-In the website repo: `lib/inventory.ts` (static roles and people), `app/api/roles`, `app/api/people`, `app/api/contact`, and `data/inquiries.json`.
+In the website repo: `lib/inventory.ts` (static roles and people), `app/api/roles`, `app/api/people`, `app/api/contact`, `app/api/cv`, `data/inquiries.json`, and the CV files in `data/cv/` (stored as `<inquiry id>.<pdf|docx|doc>`, type checked from the bytes; see the website's `docs/components/inquiries.md`).
 
 ## To do
 - Define both contracts in `slice0/api/openapi.yaml` (or a sibling file) before building either side.
