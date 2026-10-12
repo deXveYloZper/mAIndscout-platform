@@ -2,7 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Briefcase, FileText, MapPin, MessageSquareText, Phone } from "lucide-react";
 import { addFact, addTranscript, undoMerge, approveAllFromDocument, bringBack, draftMessage, editMessage, eraseCandidate, liftBlock, logActivity, markMessage, messageToMailbox, putOnJob, syncMailbox,
-  tagPerson, untagPerson } from "@/app/actions";
+  tagPerson, untagPerson, recordPermission, stopContact, liftStopContact } from "@/app/actions";
+import { LiftStop, PermissionForm } from "@/components/SourcingForms";
 import { DraftMessage, MessageCard } from "@/components/Messages";
 import { AddCall, CallReviewCard, WhatTheyWant } from "@/components/Calls";
 import { CareerProfile } from "@/components/CareerProfile";
@@ -39,6 +40,8 @@ export default async function Person({ params, searchParams }: { params: Promise
   const skills = person.claims.SkillClaim ?? [];
   const live = (t: string) => (person.claims[t] ?? []).filter((c) => c.status === "proposed" || c.status === "approved");
   const hasEmail = live("ContactClaim").some((c) => c.payload.kind === "email");
+  const hasLinkedIn = live("ContactClaim").some((c) => c.payload.kind === "linkedin");
+  const webOnly = person.documents.length > 0 && person.documents.every((d) => d.doc_type === "web_profile");
   const current = live("CareerStepClaim").find((c) => !c.valid_to);
   const place = live("LocationClaim").find((c) => (c.payload.kind ?? "current") === "current");
   const toApprove = Object.values(person.claims).flat().filter((c) => c.status === "proposed").length;
@@ -97,6 +100,21 @@ export default async function Person({ params, searchParams }: { params: Promise
         </div>
       )}
       {person.coverage_override && !person.archived && <p className="hint">Brought back by a person: the coverage rule leaves them be.</p>}
+      {person.do_not_contact && (
+        <div className="warn archived-note stopnote">
+          Asked not to be contacted{person.do_not_contact.note ? `: ${person.do_not_contact.note}` : ""}. Never suggested or drafted to.
+          <LiftStop action={liftStopContact.bind(null, person.id, path)} />
+        </div>
+      )}
+      {webOnly && !person.do_not_contact && (
+        <p className="hint archived-note">Known only from a public profile found by sourcing: a guide to contact them. Their CV, contact
+          details and permission come from them.</p>
+      )}
+      {person.found_by.length > 0 && (
+        <p className="hint">Found by sourcing for {person.found_by.map((f, i) => (
+          <span key={f.job_id}>{i ? "; " : ""}<Link href={`/jobs/${f.job_id}?tab=find`}>{f.job}</Link>
+            {f.target ? ` at ${f.target}` : ""}{f.query ? ` ("${f.query}")` : f.channel === "pool" ? " (already on the desk)" : ""}</span>))}.</p>
+      )}
       {person.blocks.filter((b) => !b.lifted).map((b) => (
         <div key={b.id} className="warn archived-note">
           Blocked at <Link href={`/companies/${b.company_id}`}>{b.company ?? "a client"}</Link>: the client said no ({b.reason}).
@@ -144,6 +162,32 @@ export default async function Person({ params, searchParams }: { params: Promise
                   </li>
                 ))}
               </ul>
+            )}
+          </section>
+          <section className="panel">
+            <h3>Permission</h3>
+            {person.permissions.length === 0 ? <p className="sub">Nothing recorded yet: when they say yes to being put forward, record it here.</p> : (
+              <ul className="people">
+                {person.permissions.map((g) => (
+                  <li key={g.id}>
+                    <span>{g.scope === "this_role" ? <>Put forward for <Link href={`/jobs/${g.job_id}`}>{g.job}</Link></> : "Other roles too"}</span>
+                    <span className="sub">{g.how ? `${g.how} · ` : ""}{g.at?.slice(0, 10)} · {g.by}</span>
+                    {g.note && <span className="reason">{g.note}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {!person.do_not_contact && (
+              <>
+                <PermissionForm action={recordPermission.bind(null, person.id, path)} jobs={person.jobs.map((j) => ({ id: j.job_id, title: j.title }))} />
+                <details>
+                  <summary className="sub">They asked not to be contacted</summary>
+                  <form action={stopContact.bind(null, person.id, path)} className="row">
+                    <input name="note" placeholder="their words (optional)" aria-label="Their words" className="grow" />
+                    <button className="btn small danger">Never contact again</button>
+                  </form>
+                </details>
+              </>
             )}
           </section>
           <WhatTheyWant prefs={calls.preferences} path={path} />
@@ -208,7 +252,7 @@ export default async function Person({ params, searchParams }: { params: Promise
               ? <>drafts go to your {mailbox.provider === "microsoft" ? "Outlook" : "Gmail"} ({mailbox.account}) and you send them yourself.</>
               : <>copy the text, or <Link href="/mailbox">connect Gmail or Outlook</Link> to put drafts straight in your mailbox.</>}
           </p>
-          <DraftMessage action={draftMessage.bind(null, person.id, path)} hasEmail={hasEmail}
+          <DraftMessage action={draftMessage.bind(null, person.id, path)} hasEmail={hasEmail} hasLinkedIn={hasLinkedIn && !person.do_not_contact}
             jobs={person.jobs.map((j) => ({ id: j.job_id, title: j.title }))} contacts={person.client_contacts} />
           {person.messages.length > 0 && (
             <ul className="messages-list">

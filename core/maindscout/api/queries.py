@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import String, func, select
 from sqlalchemy.orm import Session
 
-from maindscout.api import coverage, freshness, hiring, messages, pipeline, profiles, relationship
+from maindscout.api import consent, coverage, freshness, hiring, messages, pipeline, profiles, relationship
 from maindscout.db.models import (
     Company,
     Candidate,
@@ -188,7 +188,21 @@ def person_page(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID) ->
             Decision.subject_id == person.id, Decision.sealed_at.is_(None)))],
         "merged_into": str(person.merged_into_id) if person.merged_into_id else None,
         "merges": [merge.as_dict(m) for m in merge.merges_of(session, org_id, person.id)],
+        "do_not_contact": {"at": _iso(person.do_not_contact_at), "note": person.do_not_contact_note} if person.do_not_contact_at else None,
+        "permissions": consent.of(session, org_id, person.id),
+        "found_by": _found_by(session, org_id, person.id),
     }
+
+
+def _found_by(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID) -> list[dict[str, Any]]:
+    """Which sourcing searches found this person, per role (the first finder)."""
+    from maindscout.db.models import SourcingHit, SourcingQuery
+
+    rows = session.execute(select(SourcingHit, Job.title, SourcingQuery.text).join(Job, Job.id == SourcingHit.job_id)
+                           .outerjoin(SourcingQuery, SourcingQuery.id == SourcingHit.query_id)
+                           .where(SourcingHit.org_id == org_id, SourcingHit.candidate_id == candidate_id)).all()
+    return [{"job_id": str(h.job_id), "job": title, "channel": h.channel, "target": h.target, "query": text,
+             "at": _iso(h.created_at)} for h, title, text in rows]
 
 
 def _side(claim: Claim, evidence: list[dict[str, Any]]) -> dict[str, Any]:

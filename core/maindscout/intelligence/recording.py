@@ -135,6 +135,35 @@ class RecordingSearchClient:
         return data, urls, cost
 
 
+class RecordingExaClient:
+    """The same for Exa searches (`call`): keyed by the exact request body."""
+
+    def __init__(self, make_real: Callable[[], Any], how: str, root: Path | None = None):
+        self.make_real, self.how, self.root, self.model = make_real, how, root or folder(), "exa"
+        self._real = None
+
+    def call(self, body: dict[str, Any]) -> dict[str, Any]:
+        key = request_key("exa", "exa", "", json.dumps(body, sort_keys=True, ensure_ascii=False), {}, "exa_search")
+        store = _Store(self.root, "exa", "search")
+        if self.how in ("replay", "auto"):
+            saved = store.load(key)
+            if saved is not None:
+                return saved["raw"]
+            if self.how == "replay":
+                raise NotRecorded(f"No recorded Exa answer for this search ({key[:12]}). Record it once with "
+                                  "LLM_REPLAY=auto (or record).")
+        if self._real is None:
+            self._real = self.make_real()
+        raw = self._real.call(body)
+        store.save(key, {"raw": raw, "recorded_at": datetime.now(timezone.utc).isoformat()})
+        return raw
+
+
+def wrap_exa(make_real: Callable[[], Any]):
+    how = mode()
+    return make_real() if how == "off" else RecordingExaClient(make_real, how)
+
+
 def wrap_chat(make_real: Callable[[], Any]):
     """The client to use: the real one (mode off), or a recording/replaying one."""
     how = mode()

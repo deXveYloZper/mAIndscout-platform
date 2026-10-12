@@ -127,6 +127,33 @@ def _start_mailbox_clock(factory, every: int = 300) -> None:
     threading.Thread(target=loop, name="mailbox-clock", daemon=True).start()
 
 
+def _start_sourcing_clock(factory, every: int = 600) -> None:
+    """Every ten minutes, queue a sourcing run for each role whose plan says one is due (daily, weekly, or
+    continuous while short of its target). `SOURCING_AUTO=false` stops the clock (tests, e2e)."""
+    import threading
+    import time
+
+    from maindscout.api import autosource, tasks
+    from maindscout.settings import env
+
+    if (env("SOURCING_AUTO", "true") or "").lower() in ("0", "false", "no", "off"):
+        return
+
+    def loop() -> None:
+        while True:
+            try:
+                with factory() as session:
+                    for org_id, job_id in autosource.due(session):
+                        tasks.enqueue(session, org_id, "sourcing_run", {"job_id": str(job_id), "trigger": "schedule"},
+                                      priority=140, dedupe_key=f"sourcing:{job_id}", max_attempts=1)
+                    session.commit()
+            except Exception:  # noqa: BLE001 - the clock must keep ticking
+                pass
+            time.sleep(every)
+
+    threading.Thread(target=loop, name="sourcing-clock", daemon=True).start()
+
+
 def _access_command(args) -> None:
     import os
     import uuid
@@ -375,6 +402,7 @@ def main() -> None:
             factory = make_session_factory(make_engine())
             start_threads(factory, int(os.environ.get("WORKERS", "2")))
             _start_mailbox_clock(factory)
+            _start_sourcing_clock(factory)
 
         # API_HOST=0.0.0.0 only inside a container (docker-compose.yml publishes the port to 127.0.0.1 alone).
         uvicorn.run("maindscout.api.app:app", host=os.environ.get("API_HOST", "127.0.0.1"), port=args.port)

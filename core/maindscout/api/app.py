@@ -26,6 +26,7 @@ from maindscout.db.models import Document, ExtractionArtifact, IntelligenceRun
 from maindscout.db.session import make_engine, make_session_factory
 from maindscout.domain import registry as reg
 from maindscout.ingestion import pdf
+from maindscout.intelligence import exa as exa_mod
 from maindscout.intelligence.llm import LLMClient, LLMError, XaiClient
 from maindscout.settings import env
 from maindscout.storage import BlobStore, LocalBlobStore
@@ -128,6 +129,7 @@ ERRORS: list[tuple[type[Exception], int]] = [
     (costs.BudgetExceeded, 402),
     (review.ReviewError, 422),
     (sourcing.SourcingError, 422),
+    (exa_mod.ExaError, 502),
     (reg.InvalidPayloadError, 422),
     (reg.UnknownFlagError, 422),
     (reg.UnknownClaimTypeError, 422),
@@ -539,6 +541,238 @@ def stop_campaign(campaign_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), 
     campaign = sourcing.stop(session, org_id, campaign_id, actor)
     session.commit()
     return sourcing.as_dict(campaign)
+
+
+# --- the sourcing engine (docs/next/PLAN.md, phase 1) ---------------------------------------------------------------
+
+
+@app.get("/v1/jobs/{job_id}/sourcing")
+def sourcing_page(job_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                  actor: str = Depends(get_actor)):
+    """The role's plan (made on first look, paused), budgets, recent runs and the suggestions waiting."""
+    from maindscout.api import autosource
+
+    out = autosource.page(session, org_id, job_id, actor)
+    session.commit()
+    return out
+
+
+class PlanBody(BaseModel):
+    mode: str | None = None
+    target: int | None = None
+    monthly_budget_usd: float | None = None
+    role_variants: list[str] | None = None
+    countries: list[str] | None = None
+
+
+@app.patch("/v1/jobs/{job_id}/sourcing/plan")
+def change_sourcing_plan(job_id: uuid.UUID, body: PlanBody, org_id: uuid.UUID = Depends(get_org),
+                         session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    from maindscout.api import autosource
+
+    autosource.update_plan(session, org_id, job_id, actor, **body.model_dump(exclude_none=True))
+    out = autosource.page(session, org_id, job_id, actor)
+    session.commit()
+    return out
+
+
+class TargetBody(BaseModel):
+    name: str
+
+
+@app.post("/v1/jobs/{job_id}/sourcing/targets", status_code=201)
+def add_sourcing_target(job_id: uuid.UUID, body: TargetBody, org_id: uuid.UUID = Depends(get_org),
+                        session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    from maindscout.api import autosource
+
+    autosource.add_target(session, org_id, job_id, body.name, actor)
+    out = autosource.page(session, org_id, job_id, actor)
+    session.commit()
+    return out
+
+
+class TargetChange(BaseModel):
+    pinned: bool | None = None
+    removed: bool | None = None
+
+
+@app.patch("/v1/jobs/{job_id}/sourcing/targets/{company_id}")
+def change_sourcing_target(job_id: uuid.UUID, company_id: uuid.UUID, body: TargetChange, org_id: uuid.UUID = Depends(get_org),
+                           session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    from maindscout.api import autosource
+
+    autosource.set_target(session, org_id, job_id, str(company_id), actor, pinned=body.pinned, removed=body.removed)
+    out = autosource.page(session, org_id, job_id, actor)
+    session.commit()
+    return out
+
+
+@app.post("/v1/jobs/{job_id}/sourcing/peers")
+def find_peer_companies(job_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                        actor: str = Depends(get_actor)):
+    """More peer companies from a web company search (about a cent), added to the plan."""
+    from maindscout.api import autosource
+
+    caller = task_handlers.exa_factory()
+    if caller is None:
+        raise HTTPException(422, "Web search is not set up: add EXA_API_KEY to core/.env")
+    result = autosource.find_peers(session, org_id, job_id, actor, caller)
+    out = autosource.page(session, org_id, job_id, actor)
+    session.commit()
+    return {**out, "peers": result}
+
+
+@app.post("/v1/jobs/{job_id}/sourcing/run", status_code=202)
+def run_sourcing_now(job_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                     actor: str = Depends(get_actor)):
+    """Search now (in the background): the pool, then the web within the budgets."""
+    from maindscout.api import autosource
+
+    job = autosource._job(session, org_id, job_id)
+    if job.state != "open":
+        raise HTTPException(422, "Only an open role is sourced")
+    autosource.plan(session, org_id, job_id, actor)
+    task = tasks.enqueue(session, org_id, "sourcing_run", {"job_id": str(job_id), "trigger": "manual", "actor": actor},
+                         priority=60, dedupe_key=f"sourcing:{job_id}", max_attempts=1)
+    session.commit()
+    return {"task_id": str(task.id), "status": task.status}
+
+
+@app.get("/v1/sourcing/stats")
+def sourcing_results(job_id: uuid.UUID | None = Query(None), group: str = Query("channel"), since: str | None = Query(None),
+                     org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """Results and spend: what each search strategy cost and what it brought."""
+    from datetime import date as _date
+
+    from maindscout.api import sourcing_stats
+
+    if job_id is not None:
+        from maindscout.api import autosource
+
+        autosource._job(session, org_id, job_id)
+    return sourcing_stats.stats(session, org_id, job_id, group, _date.fromisoformat(since) if since else None)
+
+
+@app.get("/v1/sourcing/settings")
+def sourcing_settings(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    from maindscout.api import autosource
+
+    return {"sourcing_budget_usd": autosource.desk_budget(session, org_id),
+            "spent_usd": round(costs.sourcing_spent(session, org_id), 4), "web_ready": bool(env("EXA_API_KEY"))}
+
+
+class SourcingSettingsBody(BaseModel):
+    sourcing_budget_usd: float
+
+
+@app.put("/v1/sourcing/settings")
+def change_sourcing_settings(body: SourcingSettingsBody, org_id: uuid.UUID = Depends(get_org),
+                             _owner: auth.Principal = Depends(require_owner), session: Session = Depends(get_session)):
+    """The desk's monthly sourcing budget (owners)."""
+    from maindscout.api import autosource
+
+    autosource.set_desk_budget(session, org_id, body.sourcing_budget_usd)
+    session.commit()
+    return {"sourcing_budget_usd": autosource.desk_budget(session, org_id), "spent_usd": round(costs.sourcing_spent(session, org_id), 4)}
+
+
+@app.get("/v1/off-limits")
+def list_off_limits(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """Companies never sourced from: active clients and recent placements (derived) and the desk's own list."""
+    from maindscout.api import autosource
+    from maindscout.db.models import Company, OffLimits
+
+    derived = autosource.off_limits(session, org_id)
+    manual = {str(r.company_id): r for r in session.scalars(select(OffLimits).where(OffLimits.org_id == org_id, OffLimits.removed_at.is_(None)))}
+    names = dict(session.execute(select(Company.id, Company.name).where(Company.id.in_([uuid.UUID(c) for c in derived] or [None]))).all())
+    return {"companies": [{"company_id": cid, "name": names.get(uuid.UUID(cid)), "why": why,
+                           "id": str(manual[cid].id) if cid in manual else None,
+                           "until": manual[cid].until.isoformat() if cid in manual and manual[cid].until else None}
+                          for cid, why in sorted(derived.items(), key=lambda kv: (names.get(uuid.UUID(kv[0])) or "").lower())]}
+
+
+class OffLimitsBody(BaseModel):
+    name: str
+    until: str | None = None
+    note: str | None = None
+
+
+@app.post("/v1/off-limits", status_code=201)
+def add_off_limits(body: OffLimitsBody, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                   actor: str = Depends(get_actor)):
+    from datetime import date as _date
+
+    from maindscout.db.models import OffLimits
+
+    company, _ = companies.resolve(session, body.name, "human")
+    if company is None:
+        raise HTTPException(422, f"{body.name!r} is not a company name")
+    company = companies.canonical(session, company)
+    row = OffLimits(org_id=org_id, company_id=company.id, reason="manual", note=(body.note or "").strip() or None,
+                    until=_date.fromisoformat(body.until) if body.until else None, created_by=actor)
+    session.add(row)
+    session.commit()
+    return {"id": str(row.id), "company_id": str(company.id), "name": company.name}
+
+
+@app.delete("/v1/off-limits/{row_id}")
+def remove_off_limits(row_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                      actor: str = Depends(get_actor)):
+    from datetime import datetime as _dt, timezone as _tz
+
+    from maindscout.db.models import OffLimits
+
+    row = session.get(OffLimits, row_id)
+    if row is None or row.org_id != org_id:
+        raise LookupError(f"No off-limits entry {row_id}")
+    row.removed_by, row.removed_at = actor, _dt.now(_tz.utc)
+    session.commit()
+    return {"removed": True}
+
+
+class PermissionBody(BaseModel):
+    job_id: uuid.UUID | None = None
+    this_role: bool = False
+    other_roles: bool = False
+    how: str | None = None
+    note: str | None = None
+
+
+@app.post("/v1/candidates/{candidate_id}/permission", status_code=201)
+def record_permission(candidate_id: uuid.UUID, body: PermissionBody, org_id: uuid.UUID = Depends(get_org),
+                      session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """What they said yes to: being put forward for this role, and/or for other roles."""
+    from maindscout.api import consent
+
+    consent.record(session, org_id, candidate_id, actor, this_role=body.this_role, other_roles=body.other_roles,
+                   job_id=body.job_id, how=body.how, note=body.note)
+    session.commit()
+    return {"permissions": consent.of(session, org_id, candidate_id)}
+
+
+class NoteBody(BaseModel):
+    note: str | None = None
+
+
+@app.post("/v1/candidates/{candidate_id}/stop")
+def stop_contact(candidate_id: uuid.UUID, body: NoteBody | None = None, org_id: uuid.UUID = Depends(get_org),
+                 session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """They asked not to be contacted: never suggested or drafted to again."""
+    from maindscout.api import consent
+
+    person = consent.stop(session, org_id, candidate_id, actor, (body or NoteBody()).note)
+    session.commit()
+    return {"do_not_contact_at": person.do_not_contact_at.isoformat() if person.do_not_contact_at else None}
+
+
+@app.post("/v1/candidates/{candidate_id}/stop/lift")
+def lift_stop_contact(candidate_id: uuid.UUID, body: NoteBody, org_id: uuid.UUID = Depends(get_org),
+                      session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    from maindscout.api import consent
+
+    consent.lift_stop(session, org_id, candidate_id, actor, body.note or "")
+    session.commit()
+    return {"do_not_contact_at": None}
 
 
 @app.get("/v1/companies")
@@ -1166,6 +1400,7 @@ class DraftBody(BaseModel):
     contact_id: uuid.UUID | None = None
     job_id: uuid.UUID | None = None
     note: str | None = None
+    channel: str = "email"  # email | linkedin
 
 
 @app.post("/v1/messages", status_code=201)
@@ -1175,7 +1410,7 @@ def draft_message(body: DraftBody, org_id: uuid.UUID = Depends(get_org), session
     from maindscout.api import messages
 
     m = messages.draft(session, org_id, body.kind, actor, llm, candidate_id=body.candidate_id, contact_id=body.contact_id,
-                       job_id=body.job_id, note=body.note)
+                       job_id=body.job_id, note=body.note, channel=body.channel)
     session.commit()
     return messages.as_dict(m)
 

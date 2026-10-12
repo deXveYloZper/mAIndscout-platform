@@ -36,6 +36,22 @@ def _search_client():
 search_factory: Callable[[], Any] = _search_client
 
 
+def _exa_client():
+    """Exa for sourcing, recorded and replayed like the model; None when no key is set (the pool only)."""
+    from maindscout.intelligence.exa import ExaClient, ExaKeyMissing
+    from maindscout.intelligence.recording import mode, wrap_exa
+
+    if mode() != "replay" and not env("EXA_API_KEY"):
+        return None
+    try:
+        return wrap_exa(ExaClient)
+    except ExaKeyMissing:
+        return None
+
+
+exa_factory: Callable[[], Any] = _exa_client
+
+
 @handler("process_document")
 def process_document(session: Session, task: Task) -> dict[str, Any]:
     p = task.payload
@@ -90,6 +106,21 @@ def read_transcript(session: Session, task: Task) -> dict[str, Any]:
     except LLMError as error:
         calls.fail(session, review_id, f"The model could not be reached ({error}): try again later.")
     return {"status": "failed"}
+
+
+@handler("sourcing_run")
+def sourcing_run(session: Session, task: Task) -> dict[str, Any]:
+    """One run of a role's sourcing plan (scheduled by the clock, or "Search now")."""
+    from maindscout.api import autosource
+
+    p = task.payload
+    try:
+        row = autosource.run(session, blob_factory(), task.org_id, uuid.UUID(p["job_id"]), p.get("trigger", "schedule"),
+                             exa_factory(), actor=p.get("actor") or "system", task_id=task.id)
+    except autosource.SourcingEngineError as error:
+        return {"status": "skipped", "reason": str(error)}
+    return {"status": row.status, "stop_reason": row.stop_reason, "found": row.found, "new": row.new, "strong": row.strong,
+            "cost_usd": float(row.cost_usd or 0)}
 
 
 @handler("mailbox_sync")

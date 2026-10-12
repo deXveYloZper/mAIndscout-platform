@@ -25,6 +25,8 @@ from maindscout.db.models import (
     PersonMerge,
     CallReview,
     Candidate,
+    Permission,
+    SourcingHit,
     CandidateJob,
     CostEntry,
     Claim,
@@ -155,6 +157,8 @@ def erase_candidate(session: Session, blobs: BlobStore, org_id: uuid.UUID, candi
     run("activities", delete(Activity).where(Activity.subject_type == "candidate", Activity.subject_id == candidate_id))
     run("tags", delete(CandidateTag).where(CandidateTag.candidate_id == candidate_id))
     run("client_blocks", delete(ClientBlock).where(ClientBlock.candidate_id == candidate_id))
+    run("sourcing_hits", delete(SourcingHit).where(SourcingHit.candidate_id == candidate_id))
+    run("permissions", delete(Permission).where(Permission.candidate_id == candidate_id))
     stray = [r.id for r in session.scalars(select(ImportRow).where(ImportRow.org_id == org_id, ImportRow.candidate_id.is_(None)))
              if _row_identifiers(r.data) & identifiers]
     run("import_rows", delete(ImportRow).where(or_(ImportRow.candidate_id == candidate_id, ImportRow.id.in_(stray))))
@@ -258,6 +262,8 @@ def verify_erasure(session: Session, blobs: BlobStore, org_id: uuid.UUID, candid
         ("activities", count(Activity, (Activity.subject_type == "candidate") & (Activity.subject_id == candidate_id))),
         ("tags", count(CandidateTag, CandidateTag.candidate_id == candidate_id)),
         ("client blocks", count(ClientBlock, ClientBlock.candidate_id == candidate_id)),
+        ("sourcing finds", count(SourcingHit, SourcingHit.candidate_id == candidate_id)),
+        ("permissions", count(Permission, Permission.candidate_id == candidate_id)),
         ("import rows", count(ImportRow, ImportRow.candidate_id == candidate_id)),
         ("messages", count(Message, or_(Message.candidate_id == candidate_id, Message.about_candidate_id == candidate_id))),
         ("document links", count(DocumentSubject, DocumentSubject.subject_id == candidate_id)),

@@ -6,7 +6,8 @@ import { FindMore } from "@/components/FindMore";
 import { HiringProfile } from "@/components/HiringProfile";
 import { Snippet } from "@/components/Claim";
 import { MultiUpload } from "@/components/MultiUpload";
-import { api, apiOr404, type Band, type InboxItem, type JobPage, type PersonOnJob } from "@/lib/api";
+import { SourcingTab } from "@/components/Sourcing";
+import { api, apiOr404, type Band, type InboxItem, type JobPage, type PersonOnJob, type SourcingPage, type SourcingStats } from "@/lib/api";
 import { BAND_LABEL, countryName, PIPELINE, reasonWords, STATE_LABEL, TIER_WORDS } from "@/lib/format";
 
 export const metadata = { title: "Job" };
@@ -22,7 +23,7 @@ const FACET_LABEL: Record<string, string> = {
   relocation_assistance: "Relocation assistance",
 };
 const BANDS: (Band | "archived")[] = ["priority", "review_later", "do_not_submit", "archived"];
-const TABS: [string, string][] = [["people", "People"], ["profile", "Hiring profile"], ["find", "Find more"], ["countries", "Countries"]];
+const TABS: [string, string][] = [["people", "People"], ["profile", "Hiring profile"], ["find", "Sourcing"], ["countries", "Countries"]];
 
 function facetValue(m: { facet: string; countries?: string[] | null; offered?: boolean | null }): string {
   if (m.facet === "residence") return (m.countries ?? []).map(countryName).join(", ") || "not stated";
@@ -96,6 +97,10 @@ export default async function Job({ params, searchParams }: {
   ]);
   const band = (BANDS as string[]).includes(sp.band ?? "") ? (sp.band as Band | "archived") : "priority";
   const tab = TABS.some(([k]) => k === sp.tab) ? sp.tab! : "people";
+  // The sourcing plan is made (paused) the first time the tab is opened: no request makes one otherwise.
+  const [engine, results] = tab === "find" && job.state === "open"
+    ? await Promise.all([api<SourcingPage>(`/v1/jobs/${id}/sourcing`), api<SourcingStats>(`/v1/sourcing/stats?job_id=${id}&group=tier`)])
+    : [null, null];
   const thin = sourcing.priority < sourcing.default_target;
   const tokens = job.requirements
     .filter((r) => r.payload.category === "skill" && r.payload.distinctive && r.payload.normalized_token)
@@ -212,9 +217,12 @@ export default async function Job({ params, searchParams }: {
         </>
       )}
 
+      {tab === "find" && engine && results && <SourcingTab s={engine} stats={results} />}
+      {tab === "find" && job.state !== "open" && <p className="empty">Only an open role is sourced.</p>}
+
       {tab === "find" && (
-        <section className="panel">
-          <h3>Find more people {thin ? `(priority is thin: ${sourcing.priority} of ${sourcing.default_target})` : ""}</h3>
+        <details className="panel">
+          <summary><strong>Search the desk only, by hand</strong>{thin ? <span className="sub"> (priority is thin: {sourcing.priority} of {sourcing.default_target})</span> : null}</summary>
           {thin ? <FindMore action={startCampaign.bind(null, job.id)} tokens={tokens} byProfile={sourcing.by_profile} />
             : <p className="sub">Priority has {sourcing.priority}; sourcing is for a thin queue.</p>}
           <p className="hint">Searches the desk&apos;s own people only. Everyone found is banded by the same rules as an uploaded CV; being found never changes a band.</p>
@@ -228,7 +236,7 @@ export default async function Job({ params, searchParams }: {
               ))}
             </ul>
           )}
-        </section>
+        </details>
       )}
 
       {tab === "countries" && (

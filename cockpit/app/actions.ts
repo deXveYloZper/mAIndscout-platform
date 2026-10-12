@@ -424,13 +424,16 @@ export async function acceptImportQuote(batchId: string, path: string): Promise<
 export type MessageState = FormState & { link?: string };
 
 export async function draftMessage(candidateId: string, path: string, _: FormState, form: FormData): Promise<FormState> {
-  const kind = String(form.get("kind") || "candidate_outreach");
+  const chosen = String(form.get("kind") || "candidate_outreach");
+  const linkedin = chosen === "linkedin_outreach";
+  const kind = linkedin ? "candidate_outreach" : chosen;
   const contact = String(form.get("contact_id") || "");
   const [contactId, contactJob] = contact ? contact.split("|") : [null, null];
   const body = {
     kind, candidate_id: candidateId, contact_id: contactId,
     job_id: contactJob || String(form.get("job_id") || "") || null,
     note: String(form.get("note") || "").trim() || null,
+    channel: linkedin ? "linkedin" : "email",
   };
   if (kind === "client_submission" && !contactId) return { error: "Choose who at the client it goes to." };
   try {
@@ -687,4 +690,136 @@ export async function mergePeople(candidateId: string, otherId: string, path: st
 export async function undoMerge(mergeId: string, path: string): Promise<void> {
   await idempotent(() => api(`/v1/merges/${mergeId}/undo`, { method: "POST" }));
   revalidatePath(path);
+}
+
+
+// --- the sourcing engine (docs/next/PLAN.md, phase 1) --------------------------------------------------------------
+
+async function apiSend<T>(path: string, method: "PATCH" | "PUT" | "DELETE" | "POST", body?: unknown): Promise<T> {
+  return api<T>(path, { method, body: body === undefined ? undefined : JSON.stringify(body),
+    headers: body === undefined ? undefined : { "Content-Type": "application/json" } });
+}
+
+const words = (v: FormDataEntryValue | null) => String(v || "").split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
+
+export async function setSourcingPlan(jobId: string, _: FormState, form: FormData): Promise<FormState> {
+  const body: Record<string, unknown> = {};
+  if (form.has("mode")) body.mode = String(form.get("mode"));
+  if (form.get("target")) body.target = Number(form.get("target"));
+  if (form.get("budget")) body.monthly_budget_usd = Number(form.get("budget"));
+  if (form.has("variants")) body.role_variants = words(form.get("variants"));
+  if (form.has("countries")) body.countries = words(form.get("countries")).map((c) => c.toUpperCase());
+  try {
+    await apiSend(`/v1/jobs/${jobId}/sourcing/plan`, "PATCH", body);
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return { message: "Saved: a new version of the plan." };
+}
+
+export async function setSourcingMode(jobId: string, mode: string): Promise<void> {
+  await apiSend(`/v1/jobs/${jobId}/sourcing/plan`, "PATCH", { mode });
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+export async function addSourcingTarget(jobId: string, _: FormState, form: FormData): Promise<FormState> {
+  const name = String(form.get("name") || "").trim();
+  if (!name) return { error: "Type a company name." };
+  try {
+    await apiJson(`/v1/jobs/${jobId}/sourcing/targets`, { name });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return { message: `${name} added, pinned to the top.` };
+}
+
+export async function changeSourcingTarget(jobId: string, companyId: string, change: "pin" | "unpin" | "remove" | "restore"): Promise<void> {
+  const body = change === "pin" ? { pinned: true } : change === "unpin" ? { pinned: false } : { removed: change === "remove" };
+  await idempotent(() => apiSend(`/v1/jobs/${jobId}/sourcing/targets/${companyId}`, "PATCH", body));
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+export async function findPeerCompanies(jobId: string, _: FormState): Promise<FormState> {
+  let out: { peers: { query: string; added: number; cost_usd: number } };
+  try {
+    out = await apiJson(`/v1/jobs/${jobId}/sourcing/peers`, {});
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return { message: `Searched "${out.peers.query}": ${out.peers.added} new compan${out.peers.added === 1 ? "y" : "ies"} ($${out.peers.cost_usd.toFixed(3)}).` };
+}
+
+export async function runSourcingNow(jobId: string, _: FormState): Promise<FormState> {
+  try {
+    await apiJson(`/v1/jobs/${jobId}/sourcing/run`, {});
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return { message: "Searching in the background: the pool first, then the web within the budgets. Reload in a minute." };
+}
+
+export async function draftLinkedIn(jobId: string, candidateId: string): Promise<void> {
+  await apiJson("/v1/messages", { kind: "candidate_outreach", candidate_id: candidateId, job_id: jobId, channel: "linkedin" });
+  redirect(`/people/${candidateId}?tab=messages`);
+}
+
+export async function recordPermission(candidateId: string, path: string, _: FormState, form: FormData): Promise<FormState> {
+  const body = { job_id: String(form.get("job_id") || "") || null, this_role: form.get("this_role") === "on",
+    other_roles: form.get("other_roles") === "on", how: String(form.get("how") || "") || null,
+    note: String(form.get("note") || "").trim() || null };
+  if (!body.this_role && !body.other_roles) return { error: "Tick what they said yes to." };
+  if (body.this_role && !body.job_id) return { error: "Choose the role they said yes to." };
+  try {
+    await apiJson(`/v1/candidates/${candidateId}/permission`, body);
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  return { message: "Recorded." };
+}
+
+export async function stopContact(candidateId: string, path: string, form: FormData): Promise<void> {
+  await apiJson(`/v1/candidates/${candidateId}/stop`, { note: String(form.get("note") || "").trim() || null });
+  revalidatePath(path);
+}
+
+export async function liftStopContact(candidateId: string, path: string, _: FormState, form: FormData): Promise<FormState> {
+  try {
+    await apiJson(`/v1/candidates/${candidateId}/stop/lift`, { note: String(form.get("note") || "").trim() });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  return { message: "They may be contacted again." };
+}
+
+export async function setDeskSourcingBudget(_: FormState, form: FormData): Promise<FormState> {
+  try {
+    await apiSend("/v1/sourcing/settings", "PUT", { sourcing_budget_usd: Number(form.get("budget")) });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath("/sourcing");
+  return { message: "Saved." };
+}
+
+export async function addOffLimits(_: FormState, form: FormData): Promise<FormState> {
+  const name = String(form.get("name") || "").trim();
+  if (!name) return { error: "Type a company name." };
+  try {
+    await apiJson("/v1/off-limits", { name, until: String(form.get("until") || "") || null, note: String(form.get("note") || "").trim() || null });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath("/sourcing");
+  return { message: `${name} is off-limits.` };
+}
+
+export async function removeOffLimits(rowId: string): Promise<void> {
+  await idempotent(() => apiSend(`/v1/off-limits/${rowId}`, "DELETE"));
+  revalidatePath("/sourcing");
 }

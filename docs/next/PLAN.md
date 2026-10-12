@@ -1,7 +1,8 @@
 # Next build: the talent-intelligence desk
 
-**Status: DRAFT, revised** 2026-10-12 with the owner's answers (section 9). Every decision phase 1 needs is taken;
-phase 1 starts when the owner approves it. Written after a survey of what is built ([STATUS](../build/STATUS.md)).
+**Status: Phase 1 APPROVED** 2026-10-12 by the owner ("go"), including a first look at Exa with a few test searches.
+Phases 2–6 stay drafts until the owner approves them. Revised the same day with the owner's answers (section 10).
+Written after a survey of what is built ([STATUS](../build/STATUS.md)).
 
 **How it will be used:** the owner is the only user for a period, to prove it works and improve it. Clients get their
 desk once it is solid. Selling the platform itself (section 7) is the ultimate goal, and comes last.

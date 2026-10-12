@@ -110,10 +110,22 @@ def evaluate(session: Session, org_id, candidate_id, cause: dict[str, Any], acto
         from maindscout.api import profiles
         from maindscout.api.process import _queue_research
 
-        _queue_research(session, candidate_id, org_id)
-        profiles.queue(session, org_id, candidate_id)
+        # Someone known only from a public profile (sourcing) gets no paid follow-up yet: their company research and
+        # career profile wait until they are a real candidate (a CV), or sourcing finds them relevant.
+        if not discovered_only(session, candidate_id):
+            _queue_research(session, candidate_id, org_id)
+            profiles.queue(session, org_id, candidate_id)
     session.flush()
     return verdict
+
+
+def discovered_only(session: Session, candidate_id) -> bool:
+    """True when everything we hold about this person came from public profiles found by sourcing."""
+    from maindscout.db.models import Document, DocumentSubject
+
+    kinds = set(session.scalars(select(Document.doc_type).join(DocumentSubject, DocumentSubject.document_id == Document.id)
+                                .where(DocumentSubject.subject_id == candidate_id)))
+    return bool(kinds) and kinds <= {"web_profile"}
 
 
 def would_accept(session: Session, org_id, candidate_id, job: Job) -> bool:

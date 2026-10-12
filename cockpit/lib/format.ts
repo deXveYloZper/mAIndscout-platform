@@ -181,3 +181,8 @@ export function ago(iso: string | null | undefined): string {
 export function jobsWorthShowing<T extends { band: string; state?: string }>(jobs: T[]): T[] {
   return jobs.filter((j) => j.band !== "do_not_submit" || !["new", "seen", undefined].includes(j.state));
 }
+
+/** How often a role's sourcing plan searches (docs/next/PLAN.md, phase 1). */
+export const MODE_LABEL: Record<"paused" | "daily" | "weekly" | "continuous", string> = {
+  paused: "Paused", daily: "Daily", weekly: "Weekly", continuous: "Until the target",
+};

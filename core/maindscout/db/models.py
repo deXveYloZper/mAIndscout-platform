@@ -32,7 +32,7 @@ def _in(column: str, values: tuple[str, ...]) -> str:
     return f"{column} IN ({', '.join(repr(v) for v in values)})"
 
 
-DOC_TYPES = ("cv", "jd", "transcript", "other")
+DOC_TYPES = ("cv", "jd", "transcript", "web_profile", "other")
 DOC_STATUS = ("received", "stored", "extracted", "processed", "needs_human", "reprocessable")
 SOURCE_AUTHORITY = (
     "verified_primary",
@@ -106,6 +106,7 @@ class Org(Base):
     __tablename__ = "org"
     id: Mapped[uuid.UUID] = _pk()
     name: Mapped[str] = mapped_column(String, nullable=False)
+    settings: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")  # e.g. sourcing_budget_usd
     created_at: Mapped[datetime] = _created()
 
 
@@ -179,6 +180,8 @@ class Candidate(Base):
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     archived_reason: Mapped[dict | None] = mapped_column(JSONB)
     coverage_override: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    do_not_contact_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # they said stop
+    do_not_contact_note: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = _created()
 
 
@@ -929,3 +932,134 @@ class LoginAttempt(Base):
     failures: Mapped[int] = mapped_column(nullable=False, default=0)
     first_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+# --- sourcing engine (docs/next/PLAN.md, phase 1) ----------------------------------------------
+
+SOURCING_MODES = ("daily", "weekly", "continuous", "paused")
+SOURCING_RUN_STATUS = ("running", "done", "stopped", "failed")
+OFF_LIMITS_REASONS = ("client", "placement", "manual")
+PERMISSION_SCOPES = ("this_role", "other_roles")
+
+
+class SourcingPlan(Base):
+    """A role's search strategy: target companies with why, role variants, countries, mode, target and budget.
+    Every change is a new version, so we always know which version found whom."""
+
+    __tablename__ = "sourcing_plan"
+    __table_args__ = (CheckConstraint(_in("mode", SOURCING_MODES), name="sourcing_plan_mode"),
+                      UniqueConstraint("job_id", "version", name="sourcing_plan_job_version"))
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("job.id"), nullable=False)
+    version: Mapped[int] = mapped_column(nullable=False)
+    mode: Mapped[str] = mapped_column(String, nullable=False, default="weekly")
+    target: Mapped[int] = mapped_column(nullable=False, default=10)  # strong suggestions waiting
+    monthly_budget_usd: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=5)
+    targets: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)  # [{name, company_id, tier, why[], pinned, removed, source}]
+    role_variants: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    countries: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = _created()
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SourcingRun(Base):
+    """One run of a role's plan: what was searched, found, refused and spent."""
+
+    __tablename__ = "sourcing_run"
+    __table_args__ = (CheckConstraint(_in("status", SOURCING_RUN_STATUS), name="sourcing_run_status"),
+                      Index("ix_sourcing_run_job", "job_id", "started_at"))
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("job.id"), nullable=False)
+    plan_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sourcing_plan.id"), nullable=False)
+    trigger: Mapped[str] = mapped_column(String, nullable=False)  # schedule | manual
+    status: Mapped[str] = mapped_column(String, nullable=False, default="running")
+    stop_reason: Mapped[str | None] = mapped_column(String)  # target | budget | desk_budget | no_queries | error
+    found: Mapped[int] = mapped_column(nullable=False, default=0)
+    new: Mapped[int] = mapped_column(nullable=False, default=0)
+    known: Mapped[int] = mapped_column(nullable=False, default=0)
+    refused: Mapped[int] = mapped_column(nullable=False, default=0)
+    strong: Mapped[int] = mapped_column(nullable=False, default=0)
+    cost_usd: Mapped[float] = mapped_column(Numeric(10, 4), nullable=False, default=0)
+    report: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)  # per channel and refusal reason
+    error: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime] = _created()
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SourcingQuery(Base):
+    """One search a role's plan made (deduplicated per role), with what it brought and cost."""
+
+    __tablename__ = "sourcing_query"
+    __table_args__ = (UniqueConstraint("job_id", "key", name="sourcing_query_job_key"),)
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("job.id"), nullable=False)
+    key: Mapped[str] = mapped_column(String, nullable=False)
+    channel: Mapped[str] = mapped_column(String, nullable=False)  # exa_people | pool
+    text: Mapped[str] = mapped_column(String, nullable=False)
+    target: Mapped[str | None] = mapped_column(String)  # the target company it aimed at
+    tier: Mapped[str | None] = mapped_column(String)
+    country: Mapped[str | None] = mapped_column(String(2))
+    runs: Mapped[int] = mapped_column(nullable=False, default=0)
+    results: Mapped[int] = mapped_column(nullable=False, default=0)
+    new: Mapped[int] = mapped_column(nullable=False, default=0)
+    cost_usd: Mapped[float] = mapped_column(Numeric(10, 4), nullable=False, default=0)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created()
+
+
+class SourcingHit(Base):
+    """Who found a person for a role, first (the strategy that gets the credit in results and spend).
+    Erased with the person."""
+
+    __tablename__ = "sourcing_hit"
+    __table_args__ = (UniqueConstraint("job_id", "candidate_id", name="sourcing_hit_job_person"),
+                      Index("ix_sourcing_hit_candidate", "candidate_id"))
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("job.id"), nullable=False)
+    candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate.id"), nullable=False)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sourcing_run.id"), nullable=False)
+    query_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sourcing_query.id"))
+    channel: Mapped[str] = mapped_column(String, nullable=False)
+    target: Mapped[str | None] = mapped_column(String)
+    tier: Mapped[str | None] = mapped_column(String)
+    new_to_desk: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = _created()
+
+
+class OffLimits(Base):
+    """A company the desk never sources from, added by hand (active clients and recent placements are derived)."""
+
+    __tablename__ = "off_limits"
+    __table_args__ = (CheckConstraint(_in("reason", OFF_LIMITS_REASONS), name="off_limits_reason"),)
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("company.id"), nullable=False)
+    reason: Mapped[str] = mapped_column(String, nullable=False, default="manual")
+    until: Mapped[date | None] = mapped_column(Date)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = _created()
+    removed_by: Mapped[str | None] = mapped_column(String)
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Permission(Base):
+    """What a person said yes to: being put forward for this role, and/or for other roles. Erased with the person."""
+
+    __tablename__ = "permission"
+    __table_args__ = (CheckConstraint(_in("scope", PERMISSION_SCOPES), name="permission_scope"),
+                      Index("ix_permission_candidate", "candidate_id"))
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate.id"), nullable=False)
+    job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("job.id"))
+    scope: Mapped[str] = mapped_column(String, nullable=False)
+    how: Mapped[str | None] = mapped_column(String)  # message | call | email | other
+    note: Mapped[str | None] = mapped_column(Text)
+    recorded_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = _created()

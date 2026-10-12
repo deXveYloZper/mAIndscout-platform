@@ -56,6 +56,30 @@ def _email(session: Session, org_id, candidate_id) -> str | None:
     return (rows[0].approved_view or rows[0].payload)["value"] if rows else None
 
 
+def _public_facts(session: Session, org_id, candidate_id) -> list[str]:
+    """Someone known only from their public profile (sourcing): what that profile says (their current roles and the
+    role's skills it shows), as a guide for a first LinkedIn message. Nothing else is known about them yet."""
+    live = list(session.scalars(select(Claim).where(Claim.org_id == org_id, Claim.subject_id == candidate_id,
+                                                    Claim.claim_type.in_(("CareerStepClaim", "SkillClaim")),
+                                                    Claim.status.in_(("proposed", "approved")))))
+    steps = sorted((c for c in live if c.claim_type == "CareerStepClaim"),
+                   key=lambda c: (c.valid_to is not None, -(c.valid_from.toordinal() if c.valid_from else 0)))
+    out = [f"{(c.approved_view or c.payload)['title_raw']} at {(c.approved_view or c.payload)['company']['raw_name']} "
+           "(on their public profile)" for c in steps[:2]]
+    skills = [(c.approved_view or c.payload)["raw_label"] for c in live if c.claim_type == "SkillClaim"][:4]
+    if skills:
+        out.append("skills on their public profile: " + ", ".join(skills))
+    return out
+
+
+def _linkedin(session: Session, org_id, candidate_id) -> str | None:
+    rows = list(session.scalars(select(Claim).where(Claim.org_id == org_id, Claim.subject_id == candidate_id,
+                                                    Claim.claim_type == "ContactClaim", Claim.status.in_(("approved", "proposed")),
+                                                    Claim.payload["kind"].astext == "linkedin")))
+    rows.sort(key=lambda c: c.status != "approved")
+    return (rows[0].approved_view or rows[0].payload)["value"] if rows else None
+
+
 def _facts(session: Session, org_id, candidate_id) -> list[str]:
     """Approved facts only: current role, recent roles, skills. Never anything the desk has not approved."""
     out = []
@@ -97,7 +121,8 @@ def _call_answers(session: Session, candidate_id, job_id) -> list[str]:
 
 
 def projection(session: Session, org_id, kind: str, *, candidate_id=None, contact: ClientContact | None = None,
-               job: Job | None = None, thread: list[Message] | None = None, note: str | None = None) -> drafts.Projection:
+               job: Job | None = None, thread: list[Message] | None = None, note: str | None = None,
+               channel: str = "email") -> drafts.Projection:
     recruiter = env("RECRUITER_NAME", "") or None
     if kind == "client_submission":
         first = (contact.name.split()[0] if contact and contact.name else None)
@@ -112,17 +137,23 @@ def projection(session: Session, org_id, kind: str, *, candidate_id=None, contac
         return drafts.Projection(kind, first, recruiter, _job(session, job), [], [],
                                  [{"subject": m.subject, "body": m.body} for m in thread or []], note)
     name = _name(session, org_id, candidate_id)
-    return drafts.Projection(kind, name.split()[0] if name else None, recruiter, _job(session, job), _facts(session, org_id, candidate_id),
-                             [], [{"subject": m.subject, "body": m.body} for m in thread or []], note)
+    from maindscout.api.coverage import discovered_only
+
+    facts = (_public_facts if channel == "linkedin" and discovered_only(session, candidate_id) else _facts)(session, org_id, candidate_id)
+    return drafts.Projection(kind, name.split()[0] if name else None, recruiter, _job(session, job), facts,
+                             [], [{"subject": m.subject, "body": m.body} for m in thread or []], note, channel)
 
 
 # --- drafting -------------------------------------------------------------------------------------------
 
 
 def draft(session: Session, org_id, kind: str, actor: str, client, *, candidate_id: uuid.UUID | None = None,
-          contact_id: uuid.UUID | None = None, job_id: uuid.UUID | None = None, note: str | None = None) -> Message:
+          contact_id: uuid.UUID | None = None, job_id: uuid.UUID | None = None, note: str | None = None,
+          channel: str = "email") -> Message:
     if kind not in drafts.KINDS or kind == "follow_up":
         raise MessageError("kind must be candidate_outreach, client_submission, interview_confirm or decline")
+    if channel not in ("email", "linkedin") or (channel == "linkedin" and kind != "candidate_outreach"):
+        raise MessageError("A LinkedIn message is a first contact with a candidate")
     job = session.get(Job, job_id) if job_id else None
     if job_id and (job is None or job.org_id != org_id):
         raise LookupError(f"No job {job_id}")
@@ -144,16 +175,22 @@ def draft(session: Session, org_id, kind: str, actor: str, client, *, candidate_
         person = session.get(Candidate, candidate_id) if candidate_id else None
         if person is None or person.org_id != org_id:
             raise LookupError(f"No candidate {candidate_id}")
-        to = _email(session, org_id, candidate_id)
+        if person.do_not_contact_at is not None:
+            raise MessageError("They asked not to be contacted")
+        to = _linkedin(session, org_id, candidate_id) if channel == "linkedin" else _email(session, org_id, candidate_id)
         if not to:
-            raise MessageError("No email for this person on file")
-    p = projection(session, org_id, kind, candidate_id=candidate_id, contact=contact, job=job, note=note)
+            raise MessageError("No LinkedIn page for this person on file" if channel == "linkedin" else "No email for this person on file")
+    p = projection(session, org_id, kind, candidate_id=candidate_id, contact=contact, job=job, note=note, channel=channel)
     if client is not None:
         costs.ensure_budget(session, org_id)
     out = drafts.write(p, client)
     if out.cost:
         costs.record(session, org_id, "draft_message", out.cost)
-    m = Message(org_id=org_id, kind=kind, to_address=to, subject=out.subject, body=out.body, status="draft", created_by=actor,
+    body = out.body
+    if channel == "linkedin" and kind == "candidate_outreach":
+        body = f"{body}\n\n{privacy_line()}"  # the one privacy line a first message carries
+    m = Message(org_id=org_id, kind=kind, to_address=to, subject=out.subject, body=body, status="draft", created_by=actor,
+                provider="linkedin" if channel == "linkedin" else None,
                 candidate_id=None if kind == "client_submission" else candidate_id,
                 about_candidate_id=candidate_id if kind == "client_submission" else None,
                 contact_id=contact.id if contact else None, company_id=contact.company_id if contact else (job.hiring_company_id if job else None),
@@ -190,6 +227,8 @@ def to_mailbox(session: Session, org_id, message_id: uuid.UUID) -> dict[str, Any
     m = get(session, org_id, message_id)
     if m.status != "draft":
         raise MessageError(f"This message is already {m.status.replace('_', ' ')}")
+    if m.provider == "linkedin":
+        raise MessageError("A LinkedIn message is sent from LinkedIn: copy it there, then mark it sent")
     box, provider = mailbox.provider_for(session, org_id)
     if provider is None:
         raise MessageError("No mailbox connected: connect Gmail or Outlook first, or copy the text and send it yourself")
@@ -223,8 +262,24 @@ def mark_sent(session: Session, org_id, message_id: uuid.UUID, when: datetime | 
     if m.kind in FOLLOW_UP_KINDS:
         m.follow_up_due = when + timedelta(days=follow_up_days())
     _log(session, m, "out", when, f"Sent: {m.subject}")
+    if m.kind in ("candidate_outreach", "follow_up") and m.job_id and m.candidate_id:
+        _contacted(session, org_id, m.job_id, m.candidate_id)
     session.flush()
     return m
+
+
+def _contacted(session: Session, org_id, job_id, candidate_id) -> None:
+    """A first message sent: the person on that role is contacted (sourcing stops counting them as waiting)."""
+    from maindscout.api import review
+    from maindscout.db.models import CandidateJob
+
+    pair = session.scalar(select(CandidateJob).where(CandidateJob.job_id == job_id, CandidateJob.candidate_id == candidate_id))
+    if pair is not None and pair.pair_state in ("new", "seen"):
+        review.set_state(session, org_id, job_id, candidate_id, "contacted", "system")
+
+
+def privacy_line() -> str:
+    return f"How I handle your details: {env('PRIVACY_URL', 'maindscout.com/legal')}"
 
 
 def mark_replied(session: Session, org_id, message_id: uuid.UUID, when: datetime | None = None) -> Message:
@@ -268,10 +323,12 @@ def due_follow_ups(session: Session, org_id, client=None, now: datetime | None =
         f = Message(org_id=org_id, kind="follow_up", to_address=m.to_address, subject=out.subject, body=out.body, status="draft",
                     created_by="system", candidate_id=m.candidate_id, about_candidate_id=m.about_candidate_id, contact_id=m.contact_id,
                     company_id=m.company_id, job_id=m.job_id, follow_up_of=m.id, provider_thread_id=m.provider_thread_id)
+        if m.provider == "linkedin":
+            f.provider = "linkedin"  # copied to LinkedIn by the recruiter, like the first message
         session.add(f)
         m.follow_up_due = None
         session.flush()
-        box, provider = mailbox.provider_for(session, org_id)
+        box, provider = mailbox.provider_for(session, org_id) if m.provider != "linkedin" else (None, None)
         if provider is not None:
             created = provider.create_draft(f.to_address, f.subject, f.body, f.provider_thread_id)
             f.provider, f.provider_draft_id, f.status = box.provider, created["draft_id"], "in_mailbox"

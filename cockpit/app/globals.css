@@ -838,3 +838,35 @@ q.cl-quote { quotes: none; }
   .wantlist .strength { grid-column: 1; grid-row: auto; }
   .wantlist form { grid-column: 2; grid-row: 1; }
 }
+
+/* ---------------------------------------------------------------------------------------------------------------
+   Sourcing engine (docs/next/PLAN.md, phase 1): the role's Sourcing tab and the desk's results and spend
+   --------------------------------------------------------------------------------------------------------------- */
+.row.spread { justify-content: space-between; }
+.h-icon { width: 16px; height: 16px; vertical-align: -2px; margin-right: 6px; color: var(--amber-text); }
+label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--cream-dim); }
+label.field.grow { flex: 1; min-width: 220px; }
+label.field textarea { width: 100%; font-family: var(--mono); font-size: 13px; }
+label.check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--cream-dim); }
+.tiertag.possible { color: var(--cream-dim); }
+.funnel { font-size: 14px; line-height: 1.9; margin: 4px 0; }
+.funnel strong { font-family: var(--mono); color: var(--cream); font-weight: 500; }
+.flags { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.flag { padding: 8px 12px; border-radius: var(--r-sm); font-size: 13px; border: 1px solid var(--line); }
+.flag.warn { background: var(--red-soft); border-color: rgba(220, 122, 99, 0.35); color: var(--cream); }
+.flag.info { background: var(--slate-soft); border-color: rgba(154, 167, 184, 0.3); }
+.flag.good { background: var(--green-soft); border-color: rgba(147, 182, 125, 0.35); }
+.targets, .runs { list-style: none; margin: 4px 0 10px; padding: 0; }
+.targets li, .runs li { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 10px 0;
+  border-bottom: 1px solid var(--line); }
+.runs li { flex-direction: column; gap: 4px; }
+.targets li:last-child, .runs li:last-child { border-bottom: 0; }
+.targets li.off strong { text-decoration: line-through; color: var(--cream-faint); }
+.targets .hint, .runs .hint { margin-top: 2px; }
+.groupnav { display: flex; gap: 4px; flex-wrap: wrap; margin: 4px 0 12px; }
+.groupnav a { padding: 4px 10px; border-radius: var(--r-sm); font-size: 12px; color: var(--cream-dim); text-decoration: none;
+  border: 1px solid var(--line); }
+.groupnav a[aria-current="page"] { color: var(--amber-text); border-color: var(--amber-line); background: var(--amber-soft); }
+table.results td.num, table.results th.num { width: 72px; font-family: var(--mono); }
+table.results td:first-child { max-width: 320px; }
+.stopnote { border-color: rgba(220, 122, 99, 0.45); }

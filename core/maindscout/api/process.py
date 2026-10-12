@@ -557,14 +557,16 @@ def process_document(session: Session, blobs: BlobStore, client: LLMClient, *, o
 
     from maindscout.api import costs
 
-    costs.ensure_budget(session, org_id)
+    if not getattr(client, "free", False):
+        costs.ensure_budget(session, org_id)
     run = IntelligenceRun(org_id=org_id, document_id=doc.id, version_manifest=_manifest(client), status="running")
     session.add(run)
     session.flush()
 
     if doc.doc_type == "jd":
         result = _process_jd(session, doc, artifact, run, client, job, forced=force and prior is not None)
-    elif doc.doc_type == "cv":
+    elif doc.doc_type in ("cv", "web_profile"):
+        # A public profile found by sourcing is read like a short CV (by `webprofile.EntityReader`, no model).
         result = _process_cv(session, blobs, doc, artifact, run, client, job, forced=force and prior is not None)
         if result.status == "suppressed":
             session.flush()
@@ -576,7 +578,7 @@ def process_document(session: Session, blobs: BlobStore, client: LLMClient, *, o
         session.flush()
         return ProcessResult(run.id, doc.id, "needs_human")
 
-    if result.cost:
+    if result.cost and doc.doc_type != "web_profile":  # a found profile is read without a model: nothing to record
         costs.record(session, org_id, "read_jd" if doc.doc_type == "jd" else "read_cv", result.cost,
                      subject_type="document", subject_id=doc.id)
     run.status, run.committed_at = "committed", datetime.now(timezone.utc)
@@ -675,6 +677,9 @@ def _discard_suppressed(session: Session, blobs: BlobStore, doc: Document, run: 
 def _process_cv(session: Session, blobs: BlobStore, doc: Document, artifact: ExtractionArtifact, run: IntelligenceRun,
                 client: LLMClient, job: Job | None, forced: bool = False) -> ProcessResult:
     outcome = extract.extract_cv(artifact.content, artifact.id, artifact.annotations or [], client)
+    if doc.doc_type == "web_profile":
+        for s in outcome.staged:
+            s.origin = "independent_web"  # what they published, as a public page shows it: a guide, not their CV
     # Suppression first: a person who was erased is not ingested again. Nothing about them is kept.
     identifiers = [(c.payload["kind"], c.payload["normalized"]) for c in outcome.staged if c.claim_type == "ContactClaim"]
     entry = erasure.is_suppressed(session, doc.org_id, identifiers)

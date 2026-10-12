@@ -141,7 +141,7 @@ export type PersonPage = {
   name: string | null;
   claims: Record<string, ClaimView[]>;
   jobs: { job_id: string; title: string; band: Band; reason: string | null; state?: string }[];
-  documents: { id: string; filename: string | null; doc_type: "cv" | "jd" | "transcript" | "other"; needs_vision: boolean; as_of: string | null }[];
+  documents: { id: string; filename: string | null; doc_type: "cv" | "jd" | "transcript" | "web_profile" | "other"; needs_vision: boolean; as_of: string | null }[];
   open_decisions: string[];
   archived: { at: string; reason: string | null } | null;
   coverage_override: boolean;
@@ -157,7 +157,13 @@ export type PersonPage = {
   client_contacts: { id: string; name: string; role: string | null; job_id: string; job: string }[];
   merged_into: string | null;
   merges: { id: string; drop_id: string; merged_by: string; merged_at: string | null; facts: number; documents: number; jobs: number }[];
+  do_not_contact: { at: string | null; note: string | null } | null;
+  permissions: Permission[];
+  found_by: { job_id: string; job: string; channel: string; target: string | null; query: string | null; at: string | null }[];
 };
+
+export type Permission = { id: string; scope: "this_role" | "other_roles"; job_id: string | null; job: string | null;
+  how: string | null; note: string | null; by: string; at: string | null };
 
 /** Calls: one line of a Call review (what the transcript said), ticked by default. */
 export type CallLine = {
@@ -330,3 +336,38 @@ export async function apiOptional<T>(path: string): Promise<T | null> {
     return null;
   }
 }
+
+
+// --- the sourcing engine (docs/next/PLAN.md, phase 1) --------------------------------------------------------------
+
+export type SourcingMode = "daily" | "weekly" | "continuous" | "paused";
+
+export type SourcingTarget = { name: string; company_id: string; tier: string; why: string[]; source: string;
+  people_on_desk: number; pinned: boolean; removed: boolean; country: string | null; website?: string; off_limits?: string | null };
+
+export type SourcingRunView = { id: string; trigger: string; status: string; stop_reason: string | null; found: number; new: number;
+  known: number; refused: number; strong: number; cost_usd: number; error: string | null; started_at: string | null; ended_at: string | null;
+  report: { pool?: { looked: number; added: number; strong: number }; refused?: Record<string, number>; plan_version?: number;
+    web?: { people: number; queries: { text: string; target: string | null; results: number; new: number; strong: number }[] } } };
+
+export type Suggestion = { candidate_id: string; name: string | null; band: Band; reason: string | null; match_tier: string | null;
+  state: string; current: string | null; location: string | null; profile: string | null;
+  gaps?: PersonOnJob["gaps"]; coverage?: PersonOnJob["coverage"];
+  found_by: { channel: string; target: string | null; tier: string | null; query: string | null; at: string | null; new_to_desk: boolean } };
+
+export type SourcingPage = {
+  job_id: string; title: string; state: string;
+  plan: { version: number; mode: SourcingMode; target: number; monthly_budget_usd: number; role_variants: string[]; countries: string[];
+    targets: SourcingTarget[]; changed_by: string; changed_at: string | null };
+  hiring: { name: string; stage?: string | null; domains?: string[]; kind?: string | null; team?: string; hq?: string } | null;
+  budget: { role_spent_usd: number; role_budget_usd: number; desk_spent_usd: number; desk_budget_usd: number };
+  strong_waiting: number; web_ready: boolean; running: boolean;
+  runs: SourcingRunView[]; suggestions: Suggestion[]; suggestions_total: number;
+};
+
+export type FunnelCounts = { found: number; new_to_desk: number; relevant: number; possible: number; contacted: number; replied: number;
+  interested: number; cv: number; submitted: number; interviewed: number; offered: number; placed: number; spend_usd: number;
+  cost_per_relevant: number | null; cost_per_interview: number | null; cost_per_placement: number | null };
+
+export type SourcingStats = { job_id: string | null; since: string | null; group: string; totals: FunnelCounts;
+  groups: (FunnelCounts & { key: string; label: string })[]; flags: { level: "warn" | "info" | "good"; key: string; text: string }[] };
