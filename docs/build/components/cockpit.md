@@ -28,7 +28,7 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
   - recent activity.
 - **Uploads** use drop zones (`components/DropZone.tsx`): drag files on, or click to choose.
 - **Errors** inside the desk keep the navigation (`app/(desk)/error.tsx`). Search in your own words says when the model is unavailable, and keeps the filters.
-- **All data comes from the API, server-side.** `lib/api.ts` adds the operator token and org id from `cockpit/.env.local`; the browser never sees them. Actions (`app/actions.ts`) are server actions that call the API and refresh the page.
+- **All data comes from the API, server-side.** `lib/api.ts` forwards the signed-in person's session (an httpOnly cookie) and their chosen desk; page scripts never see the session ([access](access.md)). Actions (`app/actions.ts`) are server actions that call the API and refresh the page.
 - **Jobs (`/jobs`):** list with band counts and what waits for review, whole rows clickable; drop a job ad to create a job.
 - **Job (`/jobs/[id]`):**
   - a header with the company, where, the ad and the inbox;
@@ -61,7 +61,7 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
 - **Inbox (`/inbox`):** inside a job, default is its priority people ("Everyone on this job" widens it); without a job, everything, with a job picker. Cards: confirm a contact (approve as is, type the correct value, or reject), who-is-this note (named links, open the CV, type a missing name), revision diff (keep official or accept new), same job or two, contradiction (pick one).
 - **Forget this person** at the foot of the person page (type `forget`); see [erasure.md](erasure.md).
 - **Sign-in** (`/login`, `/invite/[token]`, `/account`, `/members` for owners) ([access.md](access.md)): every page needs a signed-in user; the header shows who, a desk switcher (more than one desk) and Sign out.
-- **Original files** are streamed through `/files/[id]`, which only accepts a document id. Only a real PDF or plain text opens in the browser; anything else downloads (`nosniff`, sandboxing CSP), so an uploaded HTML or SVG never runs on the desk's origin. `lib/api.ts` is `server-only`: the operator token can never be bundled into the browser.
+- **Original files** are streamed through `/files/[id]`, which only accepts a document id. Only a real PDF or plain text opens in the browser; anything else downloads (`nosniff`, sandboxing CSP), so an uploaded HTML or SVG never runs on the desk's origin. `lib/api.ts` is `server-only`: the code that handles the session can never be bundled into the browser.
 - **Bound to this machine** (`next dev -H 127.0.0.1`): the cockpit has no login of its own yet, so it must not be reachable from the network.
 - Same palette and fonts as the public site; dense layout; works at phone width.
 

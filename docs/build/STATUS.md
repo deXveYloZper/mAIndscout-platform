@@ -27,7 +27,9 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 
 **Access** ([plan](../access/PLAN.md), approved 2026-10-05): built 2026-10-05 ([access](components/access.md)). Personal sign-in with optional two-step codes, desks and roles, members page; the shared operator token and `X-Actor` are gone. Hosting and HTTPS are a separate decision; until then everything listens on this machine only.
 
-**Calls** ([plan](../calls/PLAN.md), approved 2026-10-06): built 2026-10-06 ([calls](components/calls.md)). Call transcripts into one bulk-approved Call review; what people want in matching and sourcing; approve all from a CV. Reading a transcript needs model credits (tested with a scripted fake).
+**Calls** ([plan](../calls/PLAN.md), approved 2026-10-06): built 2026-10-06 ([calls](components/calls.md)). Call transcripts into one bulk-approved Call review; what people want in matching and sourcing; approve all from a CV. Reading a transcript needs model credits; first real-model run 2026-10-08 (three reader fixes followed).
+
+**Since Calls** (2026-10-06 to 10-08): fewer contact questions, merging two records of one person ([merge](components/merge.md)), "Same company?" asked on the call, company sizes read correctly, and the golden eval run on 43 real files: RED on two known cases (an image-only CV that needs a vision reader; Veljko's oracle, waiting on the owner) ([golden eval](components/golden-eval.md)).
 
 **Slice 4 (closed):** ATS core and import ([plan](../slice-4/PLAN.md)): rescoped by the owner (we are the source of truth; import 100 candidates / 25 clients free, more as paid analysis at compute cost + 90%, [decision](../decisions/2026-10-04-source-of-truth-and-imports.md)); plan approved 2026-10-04.
 
@@ -41,7 +43,7 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 
 All five Slice 4 steps built; gate declared GREEN 2026-10-05.
 
-**Next:** run live jobs on the desk (and, before it is reachable beyond this machine, per-desk logins). Slice 5 and I7 calibration follow from real use.
+**Next:** run live jobs on the desk. Before it is reachable beyond this machine: hosting and HTTPS (a separate decision; sign-in itself is built). Slice 5 and I7 calibration follow from real use.
 
 Slice 3 (the Brief, closed): built 2026-10-04 ([brief](components/brief.md)).
 

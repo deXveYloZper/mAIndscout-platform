@@ -40,6 +40,8 @@ Local setup: [core/README.md](../../core/README.md).
 | Freshness: stale people and clients, re-contact list by value with reasons (Slice 4) | built | [freshness.md](components/freshness.md) |
 | Import (CSV; 100 / 25 free, vouched; quote beyond) and free export (Slice 4) | built | [imports.md](components/imports.md) |
 | Messages: drafts, Gmail / Outlook drafts, sent / reply detection, follow-ups (Slice 4) | built | [messages.md](components/messages.md) |
+| Calls: transcripts read into one bulk-approved Call review; what people want, in matching and sourcing | built | [calls.md](components/calls.md) |
+| Same person: merge two records of one person, undoable; "different people" remembered | built | [merge.md](components/merge.md) |
 | Access: sign-in, two-step codes, desks, roles, members | built | [access.md](components/access.md) |
 | Model recordings: record once, replay free (tests, e2e, eval) | built | [model-recordings.md](components/model-recordings.md) |
 | Performance check: 3,000-person benchmark desk, timings and query counts | built | [performance.md](components/performance.md) |
@@ -54,11 +56,11 @@ Local setup: [core/README.md](../../core/README.md).
 | Process document: commit proposed claims | built | [process.md](components/process.md) |
 | Intelligence: extract, span check, triage | built | [intelligence.md](components/intelligence.md) |
 | Ingestion: upload + text layer | built | [ingestion.md](components/ingestion.md) |
-| Writer: `api/` + registries | in progress | [writer.md](components/writer.md) |
+| Writer: `api/` + registries | built | [writer.md](components/writer.md) |
 | Persistence: tables + migrations | built | [persistence.md](components/persistence.md) |
 | Contracts (vendored `slice0/`) | built | [contracts.md](components/contracts.md) |
 
-Vendored contracts (from the blueprint, not yet implemented against): `slice0/schemas`, `slice0/registry`, `slice0/domain/reconcile.py`, `slice0/api/openapi.yaml`. See [components/contracts.md](components/contracts.md).
+Vendored contracts (from the blueprint; every claim write is checked against the schemas and registries, which have grown with each slice): `slice0/schemas`, `slice0/registry`, `slice0/domain/reconcile.py`, `slice0/api/openapi.yaml` (the original Slice 0 target; the live API is FastAPI's own). See [components/contracts.md](components/contracts.md).
 
 ## Dependency rules
 

@@ -18,5 +18,6 @@ Recruiters work in the platform. The website should never hold its own copy of t
 In the website repo: `lib/inventory.ts` (static roles and people), `app/api/roles`, `app/api/people`, `app/api/contact`, `app/api/cv`, `data/inquiries.json`, and the CV files in `data/cv/` (stored as `<inquiry id>.<pdf|docx|doc>`, type checked from the bytes; see the website's `docs/components/inquiries.md`).
 
 ## To do
+- The website accepts Word CVs (.docx, .doc) from its talent page; the platform reads only PDF CVs today ([ingestion](../components/ingestion.md)). Read Word here, or convert, before the ingest seam is built.
 - Define both contracts in `slice0/api/openapi.yaml` (or a sibling file) before building either side.
 - Decide the anonymisation fields and the showcase approval step.

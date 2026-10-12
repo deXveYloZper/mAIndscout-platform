@@ -34,7 +34,7 @@ Milestone D (extract claims), which reads artifacts, never raw bytes.
 - **Letter-spaced text is repaired** (2026-10-05): some designer CVs store every letter as its own word ("S p a n i s h  ( n a t i v e )"), so no quote could ever match. A line that is mostly single characters is rejoined, with two or more spaces as word breaks; ordinary lines are untouched. `text_repair` is recorded with the reading, and a forced re-read refreshes a reading made before the current repair.
 
 ## Known limits
-- Word documents, images and scans are not read yet (scans are flagged `needs_vision` and stay unread).
+- Word CVs, images and scans are not read yet (scans are flagged `needs_vision` and stay unread). Call transcripts in .docx are ([calls](calls.md)). The website's talent page accepts Word CVs, so this matters once the [website seam](../connections/website.md) is built.
 - Images stored as inline PDF image data are not detected; embedded image objects are.
 - Blob store is a local folder (`BLOB_DIR`, default `core/.blobs`); an S3-compatible store implements the same two methods later.
 - Text order comes from pypdf and is not perfect for multi-column layouts; downstream steps must treat it as raw material.
