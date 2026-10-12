@@ -35,7 +35,7 @@ STAGES = ["new", "seen", "contacted", "screened", "submitted", "interviewing", "
 COUNTS = ["found", "new_to_desk", "relevant", "possible", "contacted", "replied", "interested", "cv", "submitted",
           "interviewed", "offered", "placed"]
 GROUPS = ("channel", "tier", "target", "query", "week", "job")
-CHANNEL_LABEL = {"pool": "our own pool", "exa_people": "web people search"}
+CHANNEL_LABEL = {"pool": "our own pool", "exa_people": "web people search", "exa_news": "talent-release radar (news)"}
 TIER_LABEL = {"named": "companies the hiring manager named", "known": "companies our people worked at", "peer": "peer companies",
               "adjacent": "adjacent industries", "release": "companies releasing talent", "manual": "companies you added",
               "market": "market-wide searches"}
@@ -128,6 +128,8 @@ def stats(session: Session, org_id: uuid.UUID, job_id: uuid.UUID | None = None, 
             "offered": reached >= _rank("offer"),
             "placed": reached >= _rank("placed"),
         }
+        if flags["interested"]:  # the funnel only narrows: someone who said yes was reached and answered
+            flags["contacted"] = flags["replied"] = True
         for k, v in flags.items():
             if v:
                 row[k] += 1

@@ -12,7 +12,8 @@ A CV read before a name was known, or the same person sent twice with no contact
 
 ## How
 - Facts move to the kept record; a fact both had (same natural key) is kept once, the copy superseded (an approved copy beats a proposed one).
-- Documents, Brief questions (an open duplicate is set aside), notes, tags, client blocks, messages, call reviews, import rows, score snapshots and open questions move.
+- Documents, Brief questions (an open duplicate is set aside), notes, tags, client blocks, messages, call reviews, import rows, score snapshots, permissions and open questions move. Who found them for a role (`sourcing_hit`) moves unless the kept record was already found for that role.
+- **"Stop" wins:** if the merged record asked not to be contacted, the kept one now has too; undo takes it back off ([permission and stop](permission-and-stop.md)).
 - Jobs: a pair moves; on a job both were on, the kept pair stays, takes the further stage, and the other pair's history moves onto it (the empty pair row is the one other place a pair may be deleted, besides erasure).
 - The "Who is this?" questions about only these two are answered; the merged record points to the kept one (its page redirects) and leaves the people list.
 - `person_merge` records every moved row and what it was before; undo uses it. Changes made since to moved rows stay with them.

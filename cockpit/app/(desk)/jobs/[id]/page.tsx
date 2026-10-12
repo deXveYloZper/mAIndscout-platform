@@ -59,6 +59,7 @@ function People({ jobId, people }: { jobId: string; people: PersonOnJob[] }) {
               {p.state && p.state !== "new" && <span className={`statetag ${p.state}`}>{STATE_LABEL[p.state]}</span>}
               {p.match_tier && p.match_tier !== "unclear" && <span className={`tiertag ${p.match_tier}`}>{TIER_WORDS[p.match_tier]}</span>}
               {p.blocked && <span className="blocktag" title="The client said no to this person">blocked by client</span>}
+              {p.stopped && <span className="blocktag" title="They asked not to be contacted: never drafted to or put forward">asked not to be contacted</span>}
               {p.coverage && !p.coverage.met && p.coverage.applicable > 0 && <span className="thintag" title={p.coverage.words}>thin</span>}
               {p.open_decisions > 0 && <span className="pill">{p.open_decisions} to review</span>}
             </div>

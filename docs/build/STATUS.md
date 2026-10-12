@@ -43,9 +43,14 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 
 All five Slice 4 steps built; gate declared GREEN 2026-10-05.
 
-**Proposed next build** (draft, waiting for the owner): sourcing engine, client desk, going live, website ([plan](../next/PLAN.md)).
+**Next build** ([plan](../next/PLAN.md)): phase 1 approved by the owner 2026-10-12 ("go"); phases 2–6 are drafts.
 
-**Next:** run live jobs on the desk. Before it is reachable beyond this machine: hosting and HTTPS (a separate decision; sign-in itself is built). Slice 5 and I7 calibration follow from real use.
+| Phase | What | State |
+|---|---|---|
+| 1 | Sourcing engine: market map, pool + Exa, runs with modes and budgets, LinkedIn first messages and permission, results and spend | built 2026-10-12 ([engine](components/sourcing-engine.md), [web discovery](components/web-discovery.md), [results](components/sourcing-results.md), [permission](components/permission-and-stop.md), [radar](components/talent-release-radar.md), [decision](../decisions/2026-10-12-sourcing-engine.md)); not yet run on a real role; gate: two weeks on a real role, declared by the owner |
+| 2–6 | Coversheet, going live, client desk, learn and widen, paid plan | drafts |
+
+**Next:** run live jobs on the desk, starting the sourcing engine on a real role (the owner reviews its market map, then presses "Search now"). Before it is reachable beyond this machine: hosting and HTTPS (a separate decision; sign-in itself is built). Slice 5 and I7 calibration follow from real use.
 
 Slice 3 (the Brief, closed): built 2026-10-04 ([brief](components/brief.md)).
 

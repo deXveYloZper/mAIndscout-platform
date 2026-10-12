@@ -22,7 +22,7 @@ export const REFUSED: Record<string, string> = {
   not_for_them: "said this kind of role isn't for them", outside_countries: "outside the role's countries",
   not_a_profile: "not a person's profile", unreadable: "profile could not be read",
 };
-const CHANNEL: Record<string, string> = { pool: "our own pool", exa_people: "web people search" };
+const CHANNEL: Record<string, string> = { pool: "our own pool", exa_people: "web people search", exa_news: "talent-release radar" };
 
 const usd = (n: number) => `$${n < 1 ? n.toFixed(3) : n.toFixed(2)}`;
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
@@ -141,7 +141,12 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
                   {t.pinned && <span className="pill">pinned</span>}
                   <span className="chip small">{TARGET_TIER[t.tier] ?? t.tier}</span>
                   {t.off_limits && <span className="blocktag" title="Never sourced from">off-limits: {t.off_limits}</span>}
+                  {t.release && t.tier !== "release" && <span className="releasetag" title="Searched first while this is recent">releasing talent: {t.release.label}</span>}
                   {t.why.filter((w) => w !== TARGET_TIER[t.tier]).length > 0 && <p className="hint">{t.why.filter((w) => w !== TARGET_TIER[t.tier]).join(" · ")}</p>}
+                  {t.release && t.tier !== "release" && (
+                    <p className="hint">&ldquo;{t.release.quote}&rdquo; <a href={t.release.url} target="_blank" rel="noreferrer">{t.release.source}</a>
+                      {t.release.published ? `, ${t.release.published}` : ""}</p>
+                  )}
                 </div>
                 <div className="row">
                   <form action={changeSourcingTarget.bind(null, jobId, t.company_id, t.pinned ? "unpin" : "pin")}>
@@ -204,6 +209,21 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
                     <summary className="sub">{r.report.web!.queries.length} web searches</summary>
                     <ul className="hint">
                       {r.report.web!.queries.map((q, i) => <li key={i}>&ldquo;{q.text}&rdquo;: {q.results} results, {q.new} new, {q.strong} strong</li>)}
+                    </ul>
+                  </details>
+                )}
+                {(r.report.radar?.queries?.length ?? 0) > 0 && (
+                  <details>
+                    <summary className="sub">
+                      {r.report.radar!.queries.length} news {r.report.radar!.queries.length === 1 ? "search" : "searches"} (talent-release radar)
+                      {r.report.radar!.added.length > 0 ? ` · added ${r.report.radar!.added.join(", ")}` : ""}
+                      {r.report.radar!.flagged.length > 0 ? ` · releasing talent: ${r.report.radar!.flagged.join(", ")}` : ""}
+                    </summary>
+                    <ul className="hint">
+                      {r.report.radar!.queries.map((q, i) => (
+                        <li key={i}>&ldquo;{q.text}&rdquo;: {q.results} articles, {q.signals} {q.signals === 1 ? "signal" : "signals"}
+                          {q.companies.length ? ` (${q.companies.join(", ")})` : ""}</li>
+                      ))}
                     </ul>
                   </details>
                 )}

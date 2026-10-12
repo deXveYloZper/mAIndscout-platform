@@ -4,10 +4,11 @@ Exa returns structured data with each profile (name, location, work and educatio
 `api/process.py` needs every value quoted from the page text, so each value is located in the text and quoted from the
 person's own lines only:
 - the name heading, the headline and the location line at the top;
-- a job: its heading ("### Title - [Company]") and the date line under it, and only when both the title and the
-  company are in that heading;
-- an education entry: its heading and the lines under it;
-- skills: only the role's own skill words, found as whole words in the headline or the About section.
+- a job: its heading ("### Title - [Company]") and the date line under it, only when both the title and the company
+  are in that heading; or, for several roles at one company ("### [Company]", then "#### Title" and a date line),
+  the company heading, the role and its dates as one quote in pieces;
+- an education entry: its heading and its date line;
+- skills: only the role's own skill words, found as whole words in the headline, the About section or the Skills list.
 The descriptions Exa writes under each job (company size, funding, …) are about companies, not the person: nothing is
 ever read from them. What cannot be quoted is left out, exactly as the span check does for a CV.
 """

@@ -13,8 +13,8 @@ The cockpit must never touch the database. Every action goes through one guarded
 ## How
 - **Access** ([access](access.md)): every route except health, sign-in, invite links and the mailbox callback needs `Authorization: Bearer <session or personal token>`. `X-Org-Id` may pick another desk the user belongs to (else 403). The actor is always the signed-in user. Not signed in 401, not allowed 403, too many wrong tries 429.
 - **One request, one transaction:** a route commits only when everything succeeded; any error discards the whole request.
-- **Errors:** not found 404, unsupported file 415, rule broken (bad band, invented payload field, unknown flag, already approved) 422, monthly budget reached 402, model provider down 502. Uploads over 20 MB are refused (413).
-- **Config** (`settings.env`): environment first, then `core/.env` (git-ignored): `AUTH_KEY`, `XAI_API_KEY`, `SUPPRESSION_KEY`, `MAILBOX_KEY`, `DATABASE_URL`, `BLOB_DIR`, `COCKPIT_ORIGINS` (CORS, default `http://localhost:3001`).
+- **Errors:** not found 404, unsupported file 415, rule broken (bad band, invented payload field, unknown flag, already approved) 422, monthly budget reached 402, model provider or Exa down 502. Uploads over 20 MB are refused (413).
+- **Config** (`settings.env`): environment first, then `core/.env` (git-ignored): `AUTH_KEY`, `XAI_API_KEY`, `EXA_API_KEY`, `SUPPRESSION_KEY`, `MAILBOX_KEY`, `DATABASE_URL`, `BLOB_DIR`, `COCKPIT_ORIGINS` (CORS, default `http://localhost:3001`), `SOURCING_AUTO`, `PRIVACY_URL`.
 - **Setup:** `python -m maindscout init` migrates, seeds registries, creates the org if none, and prints the org id.
 
 ## Routes
@@ -50,6 +50,10 @@ The cockpit must never touch the database. Every action goes through one guarded
 | `POST /v1/blocks/{id}/lift` | Lift a client's block with a note ([pipeline.md](pipeline.md)) |
 | `…/activities` · `…/tags` · `GET /v1/tags` · `…/contacts` | Relationship memory ([relationship-memory.md](relationship-memory.md)) |
 | `GET /v1/search` | Search the desk by career profile ([people-search.md](people-search.md)) |
+| `GET /v1/jobs/{id}/sourcing` · `PATCH …/sourcing/plan` · `POST …/sourcing/targets` · `PATCH …/sourcing/targets/{company_id}` · `POST …/sourcing/peers` · `POST …/sourcing/run` | A role's sourcing plan, suggestions and runs; change the plan; add, pin or drop a company; find peer companies; run now (202) ([sourcing-engine.md](sourcing-engine.md)) |
+| `GET /v1/sourcing/stats` · `GET/PUT /v1/sourcing/settings` | Results and spend per strategy; the desk's sourcing budget (owner only to change) ([sourcing-results.md](sourcing-results.md)) |
+| `GET/POST /v1/off-limits` · `DELETE /v1/off-limits/{id}` | Companies never sourced from ([sourcing-engine.md](sourcing-engine.md)) |
+| `POST /v1/candidates/{id}/permission` · `…/stop` · `…/stop/lift` | Record what a person said yes to; they asked not to be contacted; lift it with a reason ([permission-and-stop.md](permission-and-stop.md)) |
 | `PUT /v1/jobs/{id}/countries` · `POST /v1/candidates/{id}/bring-back` | Open a job to more countries; un-archive a person ([coverage-gate.md](coverage-gate.md)) |
 | `POST /v1/companies/{id}/research` | Queue fresh public research now; `202` with a task id ([company-research.md](company-research.md)) |
 | `?background=true` on `POST /v1/jobs/{id}/documents` and `POST /v1/candidates` · `GET /v1/tasks?ids=` | Store now, read in the background (202 + task id); task progress (the desk's own tasks and the shared research it queued) |

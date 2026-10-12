@@ -18,7 +18,7 @@ npm run e2e:free                     # replay only: costs nothing (see docs/buil
 
 Sign-in is per person: after `init`, create the first owner with `python -m maindscout user create --email you@example.com --name "Your Name" --role owner` and open the printed link to set a password. Scripts use a personal token (`python -m maindscout token create --email … --label …`). See [access](../docs/build/components/access.md).
 
-Model: set `XAI_API_KEY` in `core/.env` (git-ignored); `MONTHLY_BUDGET_USD` caps paid calls (default 25). Live check over real files: `RUN_LIVE=1 python -m pytest tests/test_live_artifacts.py` (costs a few cents).
+Model: set `XAI_API_KEY` in `core/.env` (git-ignored); `MONTHLY_BUDGET_USD` caps paid calls (default 25). Sourcing: `EXA_API_KEY` for web people search (without it, runs use the desk's own pool only); its budgets are set per role and for the desk in the cockpit, apart from the model budget; `SOURCING_AUTO=false` stops the sourcing clock; `PRIVACY_URL` is the page a first LinkedIn message links to (default `maindscout.com/legal`). Live check over real files: `RUN_LIVE=1 python -m pytest tests/test_live_artifacts.py` (costs a few cents).
 
 **If this machine's Python cannot load the database driver** (Windows Application Control blocking psycopg's DLL), run any of the
 commands above in Docker instead: `docker compose run --rm core python -m pytest`, `docker compose run --rm core python -m maindscout init`,

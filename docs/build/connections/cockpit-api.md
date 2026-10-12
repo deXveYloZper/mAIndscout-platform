@@ -9,7 +9,7 @@ The cockpit's server calls the API over HTTP (`MAINDSCOUT_API`, default `http://
 The session token stays on the server; the cockpit holds no data and no rules, so every trust rule lives in one place (`api/`).
 
 ## Configuration
-- `core/.env`: `XAI_API_KEY`, and the keys `init` creates (`SUPPRESSION_KEY`, `MAILBOX_KEY`, `AUTH_KEY`).
+- `core/.env`: `XAI_API_KEY`, `EXA_API_KEY` (web search for sourcing; without it sourcing uses the desk's own pool only), and the keys `init` creates (`SUPPRESSION_KEY`, `MAILBOX_KEY`, `AUTH_KEY`). `SOURCING_AUTO=false` stops the sourcing clock.
 - `cockpit/.env.local`: `MAINDSCOUT_API` (and `COOKIE_SECURE=true` behind HTTPS). Template: `cockpit/.env.local.example`. Both files are git-ignored.
 
 ## Running locally

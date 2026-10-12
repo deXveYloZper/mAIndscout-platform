@@ -26,6 +26,7 @@ Model credits ran out on 2026-10-05, and every e2e run spent a few cents. Record
 ## How
 - **The key is the exact request:** instructions, input text, model, schema and call name (SHA-256). A changed prompt, a changed document or a different model is a new request, never answered with an old reply. No prompt contains today's date or a database id, so recordings stay valid across fresh test databases.
 - **Stored** as one JSON file per answer in `LLM_RECORDINGS` (default `core/.llm-recordings/{chat|search}/{call}/`), written atomically.
+- **Exa searches too** (`wrap_exa`, next build phase 1): keyed by the exact request body and stored in `core/.llm-recordings/exa/search/`. Only what the reader uses is kept (`exa.slim`), so a recording never holds a photo's address ([web discovery](web-discovery.md)).
 - **Replayed answers carry the recorded tokens and cost,** so the cost ledger and Costs page look as they did when recorded. Nothing is actually charged.
 - In `replay`, the real client is never even created, so no API key is needed. A missing recording is a permanent task failure (no retries).
 
@@ -33,11 +34,12 @@ Model credits ran out on 2026-10-05, and every e2e run spent a few cents. Record
 Recordings contain what the model was sent and said, which includes real CV text. They are git-ignored (`core/.llm-recordings/`) and never leave the machine, like the eval reports. Erasing a person on the desk does not touch recordings made from test files. Delete the folder to remove them all.
 
 ## Tests
-`core/tests/test_recording.py` (6):
+`core/tests/test_recording.py` (7):
 - auto records once, then answers for free with the recorded cost;
 - replay never builds the real client and fails loudly on a new request;
 - a changed prompt, schema or model is a new key;
 - web search is recorded too;
+- Exa searches are recorded too, without photos;
 - record always calls;
 - off is the real client, and a bad mode is refused.
 

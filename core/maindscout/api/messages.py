@@ -170,6 +170,9 @@ def draft(session: Session, org_id, kind: str, actor: str, client, *, candidate_
 
         if active_block(session, org_id, job.id, candidate_id) is not None:
             raise MessageError("The client said no to this person: lift the block first if that has changed")
+        person = session.get(Candidate, candidate_id)
+        if person is not None and person.do_not_contact_at is not None:
+            raise MessageError("They asked not to be contacted, so they are not put forward")
         to = contact.email
     else:
         person = session.get(Candidate, candidate_id) if candidate_id else None

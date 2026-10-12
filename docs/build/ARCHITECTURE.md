@@ -26,6 +26,11 @@ Local setup: [core/README.md](../../core/README.md).
 
 | Component | Status | Page |
 |---|---|---|
+| Sourcing results and spend: funnel per strategy, cost per relevant / interview / placement, flags (next build, phase 1) | built | [sourcing-results.md](components/sourcing-results.md) |
+| Sourcing engine: per-role plans (market map, modes, target, budgets), runs pool-first then web, off-limits and "stop" gates, the clock (next build, phase 1) | built, not yet run on a real role | [sourcing-engine.md](components/sourcing-engine.md) |
+| Talent-release radar: news that companies are releasing talent, quoted, never a person's name (next build, phase 1) | built, not yet run on real news | [talent-release-radar.md](components/talent-release-radar.md) |
+| Web discovery: Exa people search read into public-data people through the CV path, no model (next build, phase 1) | built | [web-discovery.md](components/web-discovery.md) |
+| Permission and "stop": what a person said yes to; never contacted again (next build, phase 1) | built | [permission-and-stop.md](components/permission-and-stop.md) |
 | Background tasks + cost ledger (I1) | built | [tasks-and-costs.md](components/tasks-and-costs.md) |
 | Companies: shared records, who we know there (I1) | built | [companies.md](components/companies.md) |
 | Company research: targeted public facts with sources (I2) | built | [company-research.md](components/company-research.md) |

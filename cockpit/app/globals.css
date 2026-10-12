@@ -371,7 +371,7 @@ tr.rowlink { cursor: pointer; }
 /* ---------------------------------------------------------------------------------------------------------------
    Badges: bands, states, statuses, tags (all one shape, colour carries the meaning)
    --------------------------------------------------------------------------------------------------------------- */
-.pill, .tag, .status, .bandtag, .statetag, .tiertag, .thintag, .blocktag, .stale-tag, .verdict, .gapstatus, .chip {
+.pill, .tag, .status, .bandtag, .statetag, .tiertag, .thintag, .blocktag, .releasetag, .stale-tag, .verdict, .gapstatus, .chip {
   display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px; border-radius: 999px;
   font-size: 11px; font-weight: 500; line-height: 1; white-space: nowrap; vertical-align: middle;
   background: var(--bg-raise-3); color: var(--cream-dim); border: 1px solid transparent;
@@ -389,6 +389,7 @@ tr.rowlink { cursor: pointer; }
 .statetag.seen { color: var(--cream); }
 .tiertag, .thintag, .stale-tag { background: transparent; border: 1px dashed var(--line-strong); }
 .thintag, .stale-tag, .blocktag { border-color: var(--amber-line); color: var(--amber-text); }
+.releasetag { border-color: var(--amber-line); color: var(--amber-text); border-style: dashed; }
 .blocktag { background: var(--amber-soft); border-style: solid; }
 .verdict.gap, .verdict.against { color: var(--cream-faint); text-decoration: line-through; }
 .chip { height: 24px; padding: 0 10px; font-size: 12px; margin: 2px 4px 2px 0; }

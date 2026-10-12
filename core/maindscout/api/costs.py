@@ -92,11 +92,13 @@ def summary(session: Session, org_id: uuid.UUID) -> dict[str, Any]:
     days = session.execute(select(day, func.sum(CostEntry.usd))
                            .where(CostEntry.org_id == org_id, CostEntry.created_at >= start)
                            .group_by(day).order_by(day)).all()
+    from maindscout.api import autosource
+
     spent = month_spent(session, org_id)
     return {
         "month": start.strftime("%Y-%m"), "spent_usd": round(spent, 4), "budget_usd": monthly_budget(),
         "shared_research_usd": round(month_spent(session, None), 4), "research_budget_usd": monthly_budget(shared=True),
-        "sourcing_usd": round(sourcing_spent(session, org_id), 4),
+        "sourcing_usd": round(sourcing_spent(session, org_id), 4), "sourcing_budget_usd": autosource.desk_budget(session, org_id),
         "by_purpose": [{"purpose": p, "calls": n, "usd": round(float(u or 0), 4), "input_tokens": int(i or 0),
                         "output_tokens": int(o or 0), "sources": int(src or 0)} for p, n, u, i, o, src in rows],
         "by_day": [{"day": d.date().isoformat(), "usd": round(float(u or 0), 4)} for d, u in days],

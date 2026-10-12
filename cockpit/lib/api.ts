@@ -108,6 +108,7 @@ export type JobSummary = {
 export type PersonOnJob = {
   match_tier?: string | null;
   blocked?: boolean;
+  stopped?: boolean;
   candidate_id: string;
   name: string | null;
   band: Band;
@@ -342,13 +343,18 @@ export async function apiOptional<T>(path: string): Promise<T | null> {
 
 export type SourcingMode = "daily" | "weekly" | "continuous" | "paused";
 
+export type ReleaseSignal = { kind: string; label: string; quote: string; url: string; source: string; published: string | null };
+
 export type SourcingTarget = { name: string; company_id: string; tier: string; why: string[]; source: string;
-  people_on_desk: number; pinned: boolean; removed: boolean; country: string | null; website?: string; off_limits?: string | null };
+  people_on_desk: number; pinned: boolean; removed: boolean; country: string | null; website?: string; off_limits?: string | null;
+  release?: ReleaseSignal | null };
 
 export type SourcingRunView = { id: string; trigger: string; status: string; stop_reason: string | null; found: number; new: number;
   known: number; refused: number; strong: number; cost_usd: number; error: string | null; started_at: string | null; ended_at: string | null;
   report: { pool?: { looked: number; added: number; strong: number }; refused?: Record<string, number>; plan_version?: number;
-    web?: { people: number; queries: { text: string; target: string | null; results: number; new: number; strong: number }[] } } };
+    web?: { people: number; queries: { text: string; target: string | null; results: number; new: number; strong: number }[] };
+    radar?: { queries: { text: string; results: number; signals: number; companies: string[] }[]; flagged: string[]; added: string[];
+      stopped: string | null } } };
 
 export type Suggestion = { candidate_id: string; name: string | null; band: Band; reason: string | null; match_tier: string | null;
   state: string; current: string | null; location: string | null; profile: string | null;

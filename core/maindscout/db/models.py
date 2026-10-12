@@ -940,6 +940,8 @@ SOURCING_MODES = ("daily", "weekly", "continuous", "paused")
 SOURCING_RUN_STATUS = ("running", "done", "stopped", "failed")
 OFF_LIMITS_REASONS = ("client", "placement", "manual")
 PERMISSION_SCOPES = ("this_role", "other_roles")
+SIGNAL_KINDS = ("layoffs", "insolvency", "shutdown", "office_closure", "acquisition", "restructuring", "hiring_freeze",
+                "funding_trouble")
 
 
 class SourcingPlan(Base):
@@ -1028,6 +1030,24 @@ class SourcingHit(Base):
     target: Mapped[str | None] = mapped_column(String)
     tier: Mapped[str | None] = mapped_column(String)
     new_to_desk: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = _created()
+
+
+class CompanySignal(Base):
+    """News that a company is releasing talent (the talent-release radar): what kind, the sentence that says so, where
+    and when it was published. About companies only: never a person's name. Moves the company up a role's searches."""
+
+    __tablename__ = "company_signal"
+    __table_args__ = (CheckConstraint(_in("kind", SIGNAL_KINDS), name="company_signal_kind"),
+                      UniqueConstraint("org_id", "company_id", "url", "kind", name="company_signal_once"))
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID] = _org()
+    company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("company.id"), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    quote: Mapped[str] = mapped_column(Text, nullable=False)
+    url: Mapped[str] = mapped_column(String, nullable=False)
+    published: Mapped[date | None] = mapped_column(Date)
+    job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("job.id"))  # the role whose radar found it
     created_at: Mapped[datetime] = _created()
 
 

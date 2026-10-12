@@ -7,8 +7,9 @@ What is actually built: `docs/build/`.
 ## Where the build is (2026-10-12)
 
 Slices 0–4 are built and their gates green; the intelligence track I1–I6 is built and green; Access (sign-in), Calls
-(transcripts) and the desk design are built. Next is running live jobs on the desk. Slice 5 and I7 calibration wait for
-real use. Details and dates: `docs/build/STATUS.md`.
+(transcripts) and the desk design are built. The next build ([plan](docs/next/PLAN.md)): phase 1, the sourcing engine
+with Exa, is built and waits for its first real role (its gate is the owner's); phases 2–6 are drafts. Slice 5 and I7
+calibration wait for real use. Details and dates: `docs/build/STATUS.md`.
 
 ## Read first, in this order
 
@@ -43,18 +44,23 @@ cockpit  →  api/  →  database
 - **Where someone lives and works now, never where they are from.** Country alone never puts anyone in
   `do_not_submit`. Never protected characteristics, appearance, personality, culture or fit.
 - **Company research** asks only the fixed list of public facts: never people (names, titles), never tech stack.
-- **The desk never sends mail**: drafts go into the user's own mailbox. Calls need no consent step (the call tools'
-  notetakers already have it).
-- **Model calls cost the owner money.** Tests and e2e use fakes or recordings (`LLM_REPLAY`); keep `RESEARCH_AUTO=false`
-  while testing; run paid checks only when the owner has agreed to them.
+- **The desk never sends mail** or LinkedIn messages: drafts go into the user's own mailbox, or are copied by the
+  owner. Calls need no consent step (the call tools' notetakers already have it).
+- **Sourcing** ([decision](docs/decisions/2026-10-12-sourcing-engine.md)): people found on the web are public data only,
+  a guide to contact them, read through the CV path with every value quoted; never a photo. Searches name roles,
+  companies and places, never a person. Off-limits companies and "stop" win; "stop" and erasure win over everything.
+  The talent-release radar quotes company news only, never a person's name. Keep `SOURCING_AUTO=false` while testing.
+- **Model and Exa calls cost the owner money.** Tests and e2e use fakes or recordings (`LLM_REPLAY`); keep
+  `RESEARCH_AUTO=false` while testing; run paid checks only when the owner has agreed to them.
 - **Secrets and real data stay out of git**: `core/.env`, `cockpit/.env.local`, real CVs, `core/eval-reports/`,
   `core/.llm-recordings/`. Never print an API key.
 
 ## Still locked
 
 Until opened in writing in `docs/decisions/`: Slice 5 (critic, embeddings, BD two-stage), a vision/OCR model (scans
-stay flagged `needs_vision`), an external sourcing adapter (needs a data-use decision), a workflow engine (Temporal,
-LangGraph), hosting beyond this machine (everything listens on 127.0.0.1).
+stay flagged `needs_vision`), sourcing sources beyond Exa's public profiles and news (opened 2026-10-12; GitHub may
+point to a person, never be a contact source), a workflow engine (Temporal, LangGraph), hosting beyond this machine
+(everything listens on 127.0.0.1), and phases 2–6 of the next build until the owner approves each.
 
 ## Done
 

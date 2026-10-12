@@ -8,11 +8,12 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy import func, select
 
-from maindscout.api import autosource, consent, costs, discovery, erasure, messages, review, sourcing_stats
+from maindscout.api import autosource, consent, costs, discovery, erasure, messages, review, sourcing, sourcing_stats
 from maindscout.db.models import (
     Candidate,
     CandidateJob,
     Claim,
+    Company,
     CostEntry,
     Document,
     Evidence,
@@ -72,14 +73,14 @@ NOT_A_PERSON = {"url": "https://orbital-testworks.example", "title": "Orbital Te
 class FakeExa:
     model = "exa"
 
-    def __init__(self, people=None, companies=None, cost=0.007):
+    def __init__(self, people=None, companies=None, cost=0.007, news=None):
         self.people = people if people is not None else [ADA, BEN, CARA, DEV, NOT_A_PERSON]
-        self.companies = companies or []
+        self.companies, self.news = companies or [], news or []
         self.cost, self.calls = cost, []
 
     def call(self, body):
         self.calls.append(body)
-        results = self.companies if body["category"] == "company" else self.people
+        results = {"company": self.companies, "news": self.news}.get(body["category"], self.people)
         return {"results": results[: body.get("numResults", 10)], "costDollars": {"total": self.cost}}
 
 
@@ -243,20 +244,48 @@ def test_budgets_stop_web_search_but_not_the_free_pool(session, job, blobs):
     assert row.stop_reason == "desk_budget" and fake_exa.calls == []
 
 
-def test_stop_and_erasure_are_never_suggested_again(session, job, blobs, monkeypatch):
+def test_stop_and_erasure_are_never_suggested_again(client, session, job, blobs, monkeypatch):
     monkeypatch.setenv("SUPPRESSION_KEY", "test-suppression-key")
     go(session, job, FakeExa(), blobs)
     ada, ben = person_named(session, "Ada Testperson"), person_named(session, "Ben Testperson")
+    assert str(ada) in {s["candidate_id"] for s in autosource.page(session, job.org_id, job.id)["suggestions"]}
+    assert autosource.strong_waiting(session, job.id) == 1
     consent.stop(session, job.org_id, ada, "owner@desk.test", "replied: not interested, please stop")
     assert autosource.refusal(session, job.org_id, job, ada, {}) == "stop"
+    assert str(ada) not in {s["candidate_id"] for s in autosource.page(session, job.org_id, job.id)["suggestions"]}
+    assert autosource.strong_waiting(session, job.id) == 0, "someone who said stop never counts towards the target"
+    assert client.get(f"/v1/jobs/{job.id}").json()["people"]["priority"][0]["stopped"] is True, "the role's queue says so"
     with pytest.raises(messages.MessageError):
         messages.draft(session, job.org_id, "candidate_outreach", "owner@desk.test", None, candidate_id=ada,
                        job_id=job.id, channel="linkedin")
+    contact = client.post(f"/v1/companies/{job.hiring_company_id}/contacts",
+                          json={"name": "Anna Example", "email": "anna@catalyst.example"}).json()["id"]
+    with pytest.raises(messages.MessageError, match="not put forward"):
+        messages.draft(session, job.org_id, "client_submission", "owner@desk.test", None, candidate_id=ada,
+                       job_id=job.id, contact_id=uuid.UUID(contact))
     erasure.erase_candidate(session, blobs, job.org_id, ben, "owner@desk.test")
     assert erasure.verify_erasure(session, blobs, job.org_id, ben) == []
     cid, outcome = discovery.add(session, blobs, job.org_id, exa.parse({"results": [BEN]}, "q", "people").found[0], [])
     assert (cid, outcome) == (None, "stop"), "an erased person's profile is not stored again"
     assert person_named(session, "Ben Testperson") is None
+
+
+def test_the_desk_search_skips_stop_and_off_limits_people_too(session, job, blobs):
+    """"Find more people" (the older desk search) follows the same two rules as a run."""
+    eve = profile("eve-testperson-demo", "Eve Testperson", "InSAR Engineer", MUNICH, "DE",
+                  [("InSAR Engineer", "Radar Testworks", "May 2021", "Present", "2021-05-01", None)], skills=["insar"])
+    skills = discovery.skill_tokens(session, job)
+    ids = {}
+    for raw in (ADA, CARA, eve):
+        found = exa.parse({"results": [raw]}, "q", "people").found[0]
+        ids[found.title], _ = discovery.add(session, blobs, job.org_id, found, skills)
+    ada, cara, eve_id = ids["Ada Testperson"], ids["Cara Testperson"], ids["Eve Testperson"]
+    consent.stop(session, job.org_id, ada, "owner@desk.test")
+    assert autosource.never_sourced(session, job.org_id) == {ada, cara}, "Cara works at the hiring company, an active client"
+    campaign = sourcing.start(session, job.org_id, job.id, "owner@desk.test", source="desk")
+    on_job = set(session.scalars(select(CandidateJob.candidate_id).where(CandidateJob.job_id == job.id)))
+    assert eve_id in on_job and not on_job & {ada, cara}
+    assert campaign.added == 1
 
 
 def test_the_clock_runs_only_plans_that_are_due(session, job, blobs):
@@ -304,6 +333,10 @@ def test_linkedin_message_permission_and_results_and_spend(session, job, blobs):
     assert web["label"] == "web people search" and web["spend_usd"] == pytest.approx(0.007)
     assert any(f["level"] == "good" for f in s["flags"])
     assert sourcing_stats.stats(session, job.org_id, None, "query")["groups"]
+    consent.record(session, job.org_id, person_named(session, "Ben Testperson"), "owner@desk.test", this_role=False,
+                   other_roles=True, how="call")
+    t = sourcing_stats.stats(session, job.org_id, job.id, "channel")["totals"]
+    assert (t["contacted"], t["replied"], t["interested"]) == (2, 2, 2), "the funnel only narrows: a yes means they were reached"
 
 
 def test_erasure_takes_finds_and_permissions(session, job, blobs, monkeypatch):

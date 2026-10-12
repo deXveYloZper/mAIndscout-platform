@@ -33,7 +33,7 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
 - **Job (`/jobs/[id]`):**
   - a header with the company, where, the ad and the inbox;
   - band tiles that act as tabs (Priority, Review later, Do not submit, Archived);
-  - section tabs: People, Hiring profile, Find more, Countries;
+  - section tabs: People, Hiring profile, Sourcing, Countries;
   - each person as a card with tier, tags, reason, a bar of evidence / to ask / missing / conflict, Brief, and Move (a band change with a reason).
 - **People and person pages show a person's jobs only when they fit** (Priority or Review later) **or something happened on that pair** (contacted, submitted, passed, client answered). A plain "Do not submit" stays on the job page; otherwise the person reads "no match on open jobs" (owner, 2026-10-06).
 - **Brief everywhere:** a Brief button on every People row and every job card, and "Brief for a call" in the person header (a job-free Brief, `/people/[id]/brief`).
@@ -41,7 +41,25 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
   - a header card: name, current role, where, freshness, tags, put on a job, draft a message, the CV;
   - section tabs: Overview (jobs, career profile, relationship), Facts, Messages, Timeline, Documents (and Forget).
 - **Uploads** are stored at once and read in the background; each file's row fills in when its read finishes (you can leave the page).
-- **Costs (`/costs`):** this month's spend against the budget, by purpose and day.
+- **Costs (`/costs`):** this month's spend against the budget, by purpose and day; sourcing's own budget as one line.
+- **Sourcing (next build, phase 1):**
+  - the role's **Sourcing tab** ([sourcing-engine.md](sourcing-engine.md)):
+    - how often it searches, the target and the budget;
+    - the market map (companies with why; pin, drop, add, find peers; "releasing talent" with the news sentence and its source, [talent-release-radar.md](talent-release-radar.md));
+    - the role titles and countries;
+    - "Run now";
+    - the suggestions waiting, each with who found them and why;
+    - the funnel, and recent runs (with their web and news searches).
+
+    The older campaign sits folded below ("Search the desk only, by hand").
+  - the **Sourcing page** (`/sourcing`, [sourcing-results.md](sourcing-results.md)): results and spend by channel, company group, company, search, week or role; flags; the desk's sourcing budget; off-limits companies.
+  - on the **person page**:
+    - a "Found by sourcing for …" line;
+    - for someone known only from a public profile, a note saying so;
+    - the **Permission** panel (record a yes, "They asked not to be contacted");
+    - the stop banner with "Lift" ([permission-and-stop.md](permission-and-stop.md));
+    - "First contact on LinkedIn" in Draft a message, with "Open their LinkedIn" on the draft.
+  - on a **role's queue**: an "asked not to be contacted" tag.
 - **Companies (`/companies`, `/companies/[id]`):** search; who we know at a company (one row per person, all roles); the company's jobs; its public facts, each with the page and quote it came from, and "Research now" ([company-research.md](company-research.md)). Career rows on a person link to their company.
 - **People (`/people`):** everyone, or only those on no job (the pool); upload CVs without a job.
 - **Messages (person page) and Mailbox (`/mailbox`) ([messages.md](messages.md)):** draft, edit, put in your Gmail or Outlook drafts or copy; mark sent or replied; connect or disconnect the mailbox.
@@ -62,7 +80,7 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
 - **Forget this person** at the foot of the person page (type `forget`); see [erasure.md](erasure.md).
 - **Sign-in** (`/login`, `/invite/[token]`, `/account`, `/members` for owners) ([access.md](access.md)): every page needs a signed-in user; the header shows who, a desk switcher (more than one desk) and Sign out.
 - **Original files** are streamed through `/files/[id]`, which only accepts a document id. Only a real PDF or plain text opens in the browser; anything else downloads (`nosniff`, sandboxing CSP), so an uploaded HTML or SVG never runs on the desk's origin. `lib/api.ts` is `server-only`: the code that handles the session can never be bundled into the browser.
-- **Bound to this machine** (`next dev -H 127.0.0.1`): the cockpit has no login of its own yet, so it must not be reachable from the network.
+- **Bound to this machine** (`next dev` and `next start` with `-H 127.0.0.1`): sign-in is built ([access](access.md)), but there is no HTTPS yet, so the cockpit must not be reachable from the network until hosting is decided (next build, phase 3).
 - Same palette and fonts as the public site; dense layout; works at phone width.
 
 ## Depends on
@@ -72,9 +90,9 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
 The recruiter.
 
 ## Tests
-`npm run typecheck` and `npm run build` (in CI). End to end: `npm run e2e` (Playwright, 17 tests, real files and model against a production build, fresh `maindscout_e2e` database; local only). Report: [../../slice-0/TEST-REPORT.md](../../slice-0/TEST-REPORT.md). Checked by hand on 2026-10-02 against the running API with all 13 test files: job pages, inbox (Ovi's two emails, Yousuf's unreadable name), person page, approving a name, original-file download.
+`npm run typecheck` and `npm run build` (in CI). End to end: `npm run e2e` (Playwright, 32 tests, real files and model against a production build, fresh `maindscout_e2e` database; local only). Report: [../../slice-0/TEST-REPORT.md](../../slice-0/TEST-REPORT.md). Checked by hand on 2026-10-02 against the running API with all 13 test files: job pages, inbox (Ovi's two emails, Yousuf's unreadable name), person page, approving a name, original-file download.
 
 ## Known limits
-- e2e is local only (needs the real files and the model key).
-- Uploads run in the request: about 15 seconds per CV while the page waits.
-- No sign-in: whoever can reach the cockpit acts as the operator. Run it only on a trusted machine or network until accounts exist.
+- e2e is local only (needs the real files and the model key, or recorded answers). It starts the API with the host's Python, so it cannot run on a machine where only the Docker core works ([cockpit-api](../connections/cockpit-api.md)).
+- The sourcing screens (Sourcing tab, Sourcing page, Permission panel, LinkedIn drafts) were checked by hand in the browser on a throwaway desk (2026-10-12); they have no e2e test yet.
+- No HTTPS: see "Bound to this machine" above.

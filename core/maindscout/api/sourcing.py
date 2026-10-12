@@ -32,8 +32,10 @@ class SourcingError(ValueError):
 class SourceAdapter(Protocol):
     name: str
 
-    def find(self, session: Session, org_id: uuid.UUID, job: Job, query: dict, limit: int) -> list[uuid.UUID]:
-        """Up to `limit` candidate ids not yet on the job, in a fixed order that is NOT a ranking by fit."""
+    def find(self, session: Session, org_id: uuid.UUID, job: Job, query: dict, limit: int,
+             exclude: frozenset[uuid.UUID] = frozenset()) -> list[uuid.UUID]:
+        """Up to `limit` candidate ids not yet on the job and not in `exclude`, in a fixed order that is NOT a ranking
+        by fit."""
 
 
 class DeskAdapter:
@@ -42,13 +44,14 @@ class DeskAdapter:
 
     name = "desk"
 
-    def find(self, session: Session, org_id: uuid.UUID, job: Job, query: dict, limit: int) -> list[uuid.UUID]:
+    def find(self, session: Session, org_id: uuid.UUID, job: Job, query: dict, limit: int,
+             exclude: frozenset[uuid.UUID] = frozenset()) -> list[uuid.UUID]:
         from maindscout.api.pipeline import blocked_ids_for_job
 
         from maindscout.api.process import not_wanted_by
 
         tokens = query["tokens"]
-        blocked = blocked_ids_for_job(session, org_id, job) | not_wanted_by(session, org_id, job)
+        blocked = blocked_ids_for_job(session, org_id, job) | not_wanted_by(session, org_id, job) | set(exclude)
         on_job = select(CandidateJob.candidate_id).where(CandidateJob.job_id == job.id)
         people = session.scalars(select(Candidate).where(Candidate.org_id == org_id, Candidate.merged_into_id.is_(None),
                                                          Candidate.id.not_in(on_job)).order_by(Candidate.created_at.desc()))
@@ -78,7 +81,8 @@ class ProfileAdapter:
 
     name = "profile"
 
-    def find(self, session: Session, org_id: uuid.UUID, job: Job, query: dict, limit: int) -> list[uuid.UUID]:
+    def find(self, session: Session, org_id: uuid.UUID, job: Job, query: dict, limit: int,
+             exclude: frozenset[uuid.UUID] = frozenset()) -> list[uuid.UUID]:
         from maindscout.api import coverage, search
 
         from maindscout.api.pipeline import blocked_ids_for_job
@@ -88,6 +92,7 @@ class ProfileAdapter:
 
         on_job |= blocked_ids_for_job(session, org_id, job)  # the client said no to them: never sourced for this client
         on_job |= not_wanted_by(session, org_id, job)  # they said they will not consider a job like this one
+        on_job |= set(exclude)
         found: list[uuid.UUID] = []
         channels = []
         if query.get("targets"):
@@ -164,14 +169,17 @@ def start(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str, so
 
 def run(session: Session, campaign: Campaign) -> Campaign:
     """Look at people one by one until the cap, the target, or the source runs out."""
+    from maindscout.api import autosource
+
     job = session.get(Job, campaign.job_id)
     adapter = ADAPTERS[campaign.source]
+    skip = frozenset(autosource.never_sourced(session, campaign.org_id))  # "stop", and people at off-limits companies
     while campaign.status == "running":
         if priority_count(session, job.id) >= campaign.target_priority:
             return _end(campaign, "stopped", "target_reached")
         if campaign.spent >= campaign.cap:
             return _end(campaign, "stopped", "cap")
-        batch = adapter.find(session, campaign.org_id, job, campaign.query, limit=1)
+        batch = adapter.find(session, campaign.org_id, job, campaign.query, limit=1, exclude=skip)
         if not batch:
             return _end(campaign, "exhausted", None)
         campaign.spent += 1

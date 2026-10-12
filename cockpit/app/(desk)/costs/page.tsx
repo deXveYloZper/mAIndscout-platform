@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { api } from "@/lib/api";
 
 export const metadata = { title: "Costs" };
@@ -7,6 +8,8 @@ type Costs = {
   spent_usd: number;
   budget_usd: number;
   shared_research_usd: number;
+  sourcing_usd: number;
+  sourcing_budget_usd: number;
   by_purpose: { purpose: string; calls: number; usd: number; input_tokens: number; output_tokens: number; sources: number }[];
   by_day: { day: string; usd: number }[];
 };
@@ -15,6 +18,8 @@ const PURPOSE: Record<string, string> = {
   read_cv: "Reading CVs", read_jd: "Reading job ads", research_company: "Company research", research_institution: "University research",
   classify_steps: "Reading career steps", hiring_profile: "Hiring profiles from ads", hiring_intake: "Hiring manager notes",
   search_query: "Searches in your own words", draft_message: "Drafting messages",
+  sourcing_exa_people: "Sourcing: web people searches", sourcing_company_search: "Sourcing: company searches",
+  sourcing_exa_news: "Sourcing: news (talent-release radar)",
 };
 
 export default async function CostsPage() {
@@ -30,6 +35,8 @@ export default async function CostsPage() {
           <span style={{ width: `${Math.min((c.spent_usd / Math.max(c.budget_usd, 0.01)) * 100, 100)}%` }} />
         </div>
         <p className="hint">Shared company research this month (reused by every desk): ${c.shared_research_usd.toFixed(2)}. Budget is set with MONTHLY_BUDGET_USD in core/.env.</p>
+        <p className="hint">Sourcing has its own budget: ${c.sourcing_usd.toFixed(2)} of ${c.sourcing_budget_usd.toFixed(2)} this month
+          (<Link href="/sourcing">results and spend</Link>). It is not part of the budget above.</p>
       </section>
       <h2>By purpose</h2>
       {c.by_purpose.length === 0 ? <p className="empty">Nothing spent this month.</p> : (

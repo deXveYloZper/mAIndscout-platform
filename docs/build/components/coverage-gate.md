@@ -30,6 +30,7 @@ Owner's decision 2026-10-03 ([ADR](../../decisions/2026-10-03-coverage-gate.md))
   - ask nothing in the inbox;
   - are skipped by desk sourcing unless that job accepts their country.
 - **Bring back** (`POST /v1/candidates/{id}/bring-back`) un-archives the person and sets `coverage_override`, after which the gate leaves them alone. Their company research is queued.
+- **Found on the web only** (`discovered_only`, next build phase 1): someone known only from public profiles found by sourcing gets no company research and no career profile when they pass the gate. Those wait until a CV arrives. The [sourcing engine](sourcing-engine.md) uses `would_accept` to refuse people outside a role's countries.
 - **Light research:**
   - `research.LIGHT_RESEARCH` lists large consultancies and outsourcers (EPAM, TCS, Infosys, Wipro, Accenture, Capgemini, CGI and others).
   - A consultancy or outsourcer found by research to have at least 5,000 staff switches to `research_depth = basic`.

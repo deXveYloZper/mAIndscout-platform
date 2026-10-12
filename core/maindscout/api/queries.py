@@ -119,6 +119,8 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
     blocked = pipeline.blocked_ids_for_job(session, org_id, job)
     gone = {c.id: c.archived_reason for c in session.scalars(select(Candidate).where(
         Candidate.id.in_([p.candidate_id for p in pairs] or [None]), Candidate.archived_at.is_not(None)))}
+    stopped = set(session.scalars(select(Candidate.id).where(
+        Candidate.id.in_([p.candidate_id for p in pairs] or [None]), Candidate.do_not_contact_at.is_not(None))))
     archived = []
     gap_rows = _gap_rows_many(session, org_id, job, [p.candidate_id for p in pairs if p.candidate_id not in gone])
     for p in pairs:
@@ -131,6 +133,7 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
             "reason": p.triage_reason, "overridden_by": p.band_overridden_by, "open_decisions": open_counts.get(p.candidate_id, 0),
             **_gap_summary(gap_rows[p.candidate_id]),
             "state": p.pair_state, "outcome": p.outcome, "match_tier": p.match_tier, "blocked": p.candidate_id in blocked,
+            "stopped": p.candidate_id in stopped,
         })
     return {
         "id": str(job.id), "title": job.title, "hiring_company": job.hiring_company, "state": job.state,

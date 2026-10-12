@@ -136,7 +136,8 @@ class RecordingSearchClient:
 
 
 class RecordingExaClient:
-    """The same for Exa searches (`call`): keyed by the exact request body."""
+    """The same for Exa searches (`call`): keyed by the exact request body. Only what the reader uses is kept
+    (`exa.slim`), and recorded or replayed, the answer is the same."""
 
     def __init__(self, make_real: Callable[[], Any], how: str, root: Path | None = None):
         self.make_real, self.how, self.root, self.model = make_real, how, root or folder(), "exa"
@@ -152,9 +153,11 @@ class RecordingExaClient:
             if self.how == "replay":
                 raise NotRecorded(f"No recorded Exa answer for this search ({key[:12]}). Record it once with "
                                   "LLM_REPLAY=auto (or record).")
+        from maindscout.intelligence.exa import slim
+
         if self._real is None:
             self._real = self.make_real()
-        raw = self._real.call(body)
+        raw = slim(self._real.call(body))
         store.save(key, {"raw": raw, "recorded_at": datetime.now(timezone.utc).isoformat()})
         return raw
 

@@ -2,7 +2,8 @@
 
 Exa's `people` category searches public profiles (LinkedIn and the wider web). Each result comes with its page text
 and, at no extra cost, structured data: name, location, work and education history. Only public data is kept, and a
-result's photo is never read or stored. The `company` category finds companies for a role's market map.
+result's photo is never read or stored. The `company` category finds companies for a role's market map; `news`, with a
+start date, finds recent news about companies for the talent-release radar.
 
 A search costs about $0.007 for up to 10 results with their text (Exa's figure is recorded per call). Queries name
 roles, companies and places, never a person (owner's rule: sourcing finds people, it does not dig on someone).
@@ -20,6 +21,7 @@ from typing import Any, Protocol
 EXA_URL = "https://api.exa.ai/search"
 CATEGORIES = ("people", "company", "news", "publication", "personal site")
 MAX_RESULTS = 25  # Exa allows 100; a run never needs more than this from one query
+PERSON_KEYS = ("name", "firstName", "lastName", "location", "workHistory", "educationHistory")  # all we keep of a profile
 
 
 class ExaError(RuntimeError):
@@ -42,6 +44,7 @@ class Found:
     text: str
     person: dict[str, Any] | None = None  # name, location, workHistory, educationHistory
     published: str | None = None
+    summary: Any = None  # Exa's structured summary, when asked for (news: the companies an article is about)
 
 
 @dataclass
@@ -96,9 +99,10 @@ class ExaClient:
 
 
 def request(query: str, category: str, *, num_results: int = 10, country: str | None = None,
-            text_chars: int = 12000) -> dict[str, Any]:
+            text_chars: int = 12000, since: str | None = None, summary: dict[str, Any] | None = None) -> dict[str, Any]:
     """The search body. `country` (ISO code) is Exa's location hint: results lean to it, nothing is excluded by it,
-    so the coverage gate still decides who is in the role's countries."""
+    so the coverage gate still decides who is in the role's countries. `since` (YYYY-MM-DD) keeps pages published
+    from that day; `summary` ({query, schema}) asks Exa for a structured summary of each page."""
     if category not in CATEGORIES:
         raise ValueError(f"category must be one of {CATEGORIES}")
     query = " ".join(query.split())
@@ -108,13 +112,28 @@ def request(query: str, category: str, *, num_results: int = 10, country: str | 
                             "contents": {"text": {"maxCharacters": text_chars}}}
     if country:
         body["userLocation"] = country.upper()
+    if since:
+        body["startPublishedDate"] = f"{since}T00:00:00.000Z"
+    if summary:
+        body["contents"]["summary"] = summary
     return body
 
 
 def search(caller: Caller, query: str, category: str, *, num_results: int = 10, country: str | None = None,
-           text_chars: int = 12000) -> Results:
-    body = request(query, category, num_results=num_results, country=country, text_chars=text_chars)
+           text_chars: int = 12000, since: str | None = None, summary: dict[str, Any] | None = None) -> Results:
+    body = request(query, category, num_results=num_results, country=country, text_chars=text_chars, since=since,
+                   summary=summary)
     return parse(caller.call(body), body["query"], category)
+
+
+def _summary(value: Any) -> Any:
+    """Exa returns a structured summary as JSON text; anything unreadable is dropped."""
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except ValueError:
+            return None
+    return value if isinstance(value, dict) else None
 
 
 def parse(raw: dict[str, Any], query: str, category: str) -> Results:
@@ -127,9 +146,19 @@ def parse(raw: dict[str, Any], query: str, category: str) -> Results:
         for entity in item.get("entities") or []:
             props = entity.get("properties") or {}
             if entity.get("type") == "person" or "workHistory" in props:
-                person = {k: props.get(k) for k in ("name", "firstName", "lastName", "location", "workHistory",
-                                                     "educationHistory")}
+                person = {k: props.get(k) for k in PERSON_KEYS}
                 break
         out.found.append(Found(url=url, title=(item.get("title") or "").strip(), text=item.get("text") or "",
-                               person=person, published=item.get("publishedDate")))
+                               person=person, published=item.get("publishedDate"), summary=_summary(item.get("summary"))))
     return out
+
+
+def slim(raw: dict[str, Any]) -> dict[str, Any]:
+    """Only what `parse` reads, for a recording: never a photo's address or anything else Exa sends."""
+    results = []
+    for item in raw.get("results") or []:
+        entities = [{"type": e.get("type"), "properties": {k: v for k, v in (e.get("properties") or {}).items() if k in PERSON_KEYS}}
+                    for e in item.get("entities") or []]
+        results.append({k: item[k] for k in ("url", "title", "text", "publishedDate", "summary") if k in item}
+                       | {"entities": entities})
+    return {"results": results, "costDollars": raw.get("costDollars") or {}}

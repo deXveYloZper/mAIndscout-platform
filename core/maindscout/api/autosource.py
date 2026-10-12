@@ -3,7 +3,8 @@
 - **The plan** of a role (market map, role variants, countries, mode, target, budget) is versioned: every change is a
   new version, so we know which version found whom.
 - **A run** goes cheapest first: the desk's own pool (free), then web discovery through Exa (paid, only queries not
-  run in the last 30 days). It stops when the role has its target of strong suggestions waiting, or at the budget.
+  run in the last 30 days), then the talent-release radar (`radar.py`: news that companies are releasing talent). It
+  stops when the role has its target of strong suggestions waiting, or at the budget.
 - **Gates** on everyone found, on top of the ordinary ones (identity, coverage, client blocks, their own "not for
   me"): off-limits companies (active clients, a client we placed someone at in the last 12 months, the desk's own
   list) and "stop" (they asked not to be contacted). Refused people stay in the pool; they are just not suggested.
@@ -191,6 +192,21 @@ def off_limits(session: Session, org_id: uuid.UUID) -> dict[str, str]:
     return out
 
 
+def never_sourced(session: Session, org_id: uuid.UUID) -> set[uuid.UUID]:
+    """People no search may put on a role: they asked not to be contacted, or they work at an off-limits company now.
+    Used by the desk search ("Find more people"); a run checks each person with `refusal` so it can count why."""
+    out = set(session.scalars(select(Candidate.id).where(Candidate.org_id == org_id, Candidate.do_not_contact_at.is_not(None))))
+    limits = off_limits(session, org_id)
+    if limits:
+        ids = list(limits)
+        for c in session.scalars(select(Claim).where(
+                Claim.org_id == org_id, Claim.claim_type == "CareerStepClaim", Claim.status.in_(LIVE), Claim.valid_to.is_(None),
+                Claim.payload["company"]["company_id"].astext.in_(ids) | Claim.approved_view["company"]["company_id"].astext.in_(ids))):
+            if ((c.approved_view or c.payload).get("company") or {}).get("company_id") in limits:
+                out.add(c.subject_id)
+    return out
+
+
 def current_employers(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID) -> set[str]:
     out = set()
     for c in session.scalars(select(Claim).where(Claim.org_id == org_id, Claim.subject_id == candidate_id,
@@ -272,22 +288,24 @@ def _job(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> Job:
 
 
 def strong_waiting(session: Session, job_id: uuid.UUID) -> int:
-    """Strong suggestions found by sourcing that nobody has contacted yet."""
+    """Strong suggestions found by sourcing that nobody has contacted yet (never someone who said stop)."""
     return session.scalar(select(func.count()).select_from(CandidateJob).join(
-        SourcingHit, (SourcingHit.job_id == CandidateJob.job_id) & (SourcingHit.candidate_id == CandidateJob.candidate_id)).where(
-        CandidateJob.job_id == job_id, CandidateJob.triage_band == "priority", CandidateJob.pair_state.in_(WAITING))) or 0
+        SourcingHit, (SourcingHit.job_id == CandidateJob.job_id) & (SourcingHit.candidate_id == CandidateJob.candidate_id)).join(
+        Candidate, Candidate.id == CandidateJob.candidate_id).where(
+        CandidateJob.job_id == job_id, CandidateJob.triage_band == "priority", CandidateJob.pair_state.in_(WAITING),
+        Candidate.do_not_contact_at.is_(None))) or 0
 
 
 def _key(channel: str, text: str, country: str | None) -> str:
     return hashlib.sha1(f"{channel}|{text.lower()}|{country or ''}".encode("utf-8")).hexdigest()
 
 
-def web_queries(p: SourcingPlan) -> list[dict[str, Any]]:
-    """The searches a plan gives, in order: the role at each target company (pinned first, then by tier), then the
-    role across each country. They name roles, companies and places, never a person."""
-    order = {t: i for i, t in enumerate(("named", "manual", "known", "peer", "adjacent", "release"))}
+def web_queries(p: SourcingPlan, releasing: set[str] | frozenset[str] = frozenset()) -> list[dict[str, Any]]:
+    """The searches a plan gives, in order: the role at each target company (pinned first, then companies releasing
+    talent, then by tier), then the role across each country. They name roles, companies and places, never a person."""
+    order = {t: i for i, t in enumerate(("named", "manual", "release", "known", "peer", "adjacent"))}
     targets = sorted((t for t in p.targets if not t.get("removed")),
-                     key=lambda t: (not t.get("pinned"), order.get(t.get("tier"), 9)))
+                     key=lambda t: (not t.get("pinned"), t.get("company_id") not in releasing, order.get(t.get("tier"), 9)))
     variants = p.role_variants or []
     countries = p.countries or [None]
     out: list[dict[str, Any]] = []
@@ -306,7 +324,7 @@ def web_queries(p: SourcingPlan) -> list[dict[str, Any]]:
 def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID, trigger: str, caller,
         actor: str = "system", task_id=None) -> SourcingRun:
     """One run of the role's plan. `caller` is the Exa client (None: the pool only)."""
-    from maindscout.api import discovery, sourcing
+    from maindscout.api import discovery, radar, sourcing
     from maindscout.api.process import _ensure_pair
     from maindscout.intelligence import exa
 
@@ -374,11 +392,13 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
     made = 0
     seen_people: set[uuid.UUID] = set()  # the same person found by two searches in one run counts once
     seen_pages: set[str] = set()
-    for q in web_queries(p):
+    reason = None
+    for q in web_queries(p, set(radar.live(session, org_id))):
         if strong_waiting(session, job.id) >= p.target:
             return done("done", "target")
         if made >= MAX_WEB_QUERIES_PER_RUN:
-            return done("done", "run_limit")
+            reason = "run_limit"
+            break
         if why := _budget_left(session, org_id, job, p):
             return done("stopped", why)
         key = _key("exa_people", q["text"], q["country"])
@@ -425,7 +445,12 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
             _, strong = put_on(cid, "exa_people", sq, new_to_desk=is_new)
             entry["strong"] += strong
         report["web"]["queries"].append(entry)
-    return done("done", "no_queries" if made == 0 else "searched")
+
+    # 3. The talent-release radar: its own few searches, last (its finds lead the next run).
+    news = radar.sweep(session, org_id, job, p, caller, row, report, task_id)
+    if report["radar"]["stopped"] in ("budget", "desk_budget") and not reason:
+        return done("stopped", report["radar"]["stopped"])
+    return done("done", reason or ("no_queries" if made == 0 and news == 0 else "searched"))
 
 
 # --- the clock -------------------------------------------------------------------------------------------------------
@@ -468,18 +493,23 @@ def _people_facts(session: Session, org_id: uuid.UUID, ids: list[uuid.UUID]) -> 
 
 def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "system") -> dict[str, Any]:
     """Everything the role's sourcing tab shows: the plan, budgets, recent runs, and the suggestions waiting."""
-    from maindscout.api import hiring
+    from maindscout.api import hiring, radar
     from maindscout.api.queries import _gap_rows_many, _gap_summary, names
     from maindscout.settings import env
 
     job = _job(session, org_id, job_id)
     p = plan(session, org_id, job_id, actor)
     limits = off_limits(session, org_id)
-    targets = [{**t, "off_limits": limits.get(t.get("company_id") or "")} for t in p.targets]
+    signals = radar.live(session, org_id)
+    targets = [{**t, "off_limits": limits.get(t.get("company_id") or ""), "release": signals.get(t.get("company_id") or "")}
+               for t in p.targets]
     hits = {h.candidate_id: h for h in session.scalars(select(SourcingHit).where(SourcingHit.job_id == job.id))}
     pairs = [x for x in session.scalars(select(CandidateJob).where(CandidateJob.job_id == job.id,
                                                                    CandidateJob.candidate_id.in_(list(hits) or [None])))]
-    waiting = [x for x in pairs if x.pair_state in WAITING and x.triage_band in ("priority", "review_later")]
+    stopped = set(session.scalars(select(Candidate.id).where(Candidate.id.in_(list(hits) or [None]),
+                                                             Candidate.do_not_contact_at.is_not(None))))
+    waiting = [x for x in pairs if x.pair_state in WAITING and x.triage_band in ("priority", "review_later")
+               and x.candidate_id not in stopped]
     waiting.sort(key=lambda x: (x.triage_band != "priority", -(hits[x.candidate_id].created_at.timestamp())))
     ids = [x.candidate_id for x in waiting[:100]]
     who, facts = names(session, ids), _people_facts(session, org_id, ids)

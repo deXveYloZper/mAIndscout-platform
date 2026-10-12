@@ -1,6 +1,8 @@
 # Next build: the talent-intelligence desk
 
 **Status: Phase 1 APPROVED** 2026-10-12 by the owner ("go"), including a first look at Exa with a few test searches.
+Phase 1 is built (see [STATUS](../build/STATUS.md)) and waits for its first real role; its gate (two weeks on a real
+role) is the owner's to declare.
 Phases 2–6 stay drafts until the owner approves them. Revised the same day with the owner's answers (section 10).
 Written after a survey of what is built ([STATUS](../build/STATUS.md)).
 

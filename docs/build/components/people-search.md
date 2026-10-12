@@ -28,7 +28,7 @@ Plan section 4.7 and phase I6: sourcing as a structured query over profiles and 
 [career-profiles.md](career-profiles.md), [hiring-profiles.md](hiring-profiles.md), [matching.md](matching.md), [companies.md](companies.md), [coverage-gate.md](coverage-gate.md), [sourcing.md](sourcing.md), [erasure.md](erasure.md).
 
 ## Used by
-[cockpit.md](cockpit.md) (Search page; job page "Find more people").
+[cockpit.md](cockpit.md) (Search page; job page "Find more people"), [sourcing-engine.md](sourcing-engine.md) (a run's free pool step searches by hiring profile).
 
 ## Contracts
 - `GET /v1/search?family=&related=&min_years=&level=&employer=&domain=&company=&current=` returns `{filters, people[{candidate_id, name, summary, reading, met[]}]}`.
