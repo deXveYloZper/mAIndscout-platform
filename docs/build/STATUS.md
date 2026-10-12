@@ -43,6 +43,8 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 
 All five Slice 4 steps built; gate declared GREEN 2026-10-05.
 
+**Proposed next build** (draft, waiting for the owner): sourcing engine, client desk, going live, website ([plan](../next/PLAN.md)).
+
 **Next:** run live jobs on the desk. Before it is reachable beyond this machine: hosting and HTTPS (a separate decision; sign-in itself is built). Slice 5 and I7 calibration follow from real use.
 
 Slice 3 (the Brief, closed): built 2026-10-04 ([brief](components/brief.md)).
