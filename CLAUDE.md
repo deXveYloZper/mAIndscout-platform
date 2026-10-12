@@ -1,22 +1,23 @@
-# CLAUDE.md — mAIndScout Slice 0
+# CLAUDE.md — mAIndScout platform
 
-You are implementing Slice 0 of mAIndScout. This file is the session contract. The product vision is in `docs/VISION.md`. The build order is in `docs/ROADMAP.md`. You implement only what `docs/slice-0/HANDOFF.md` and `docs/slice-0/GATES.md` allow.
+You are working on the mAIndScout platform: the recruiting desk's own system of record (Python core, Next.js cockpit).
+This file is the session contract. Product vision: `docs/VISION.md`. Build order and what is locked: `docs/ROADMAP.md`.
+What is actually built: `docs/build/`.
+
+## Where the build is (2026-10-12)
+
+Slices 0–4 are built and their gates green; the intelligence track I1–I6 is built and green; Access (sign-in), Calls
+(transcripts) and the desk design are built. Next is running live jobs on the desk. Slice 5 and I7 calibration wait for
+real use. Details and dates: `docs/build/STATUS.md`.
 
 ## Read first, in this order
 
-1. `docs/INDEX.md`
-2. `docs/slice-0/HANDOFF.md`
-3. `docs/slice-0/GATES.md`
-4. `docs/decisions/2026-09-06-job-first-attention.md`
-5. `slice0/README.md`
+1. `docs/build/README.md` (the docs rules)
+2. `docs/build/STATUS.md` and `docs/build/ARCHITECTURE.md`
+3. The component pages in `docs/build/components/` for what you will touch, and the decisions they link to
+4. `docs/ROADMAP.md` before starting anything new
 
-Do not implement `01`–`05` as a sprint. Open `05` only when a mechanism in the handoff is disputed. Where `05` revises `01`–`04`, `05` wins.
-
-## What Slice 0 is
-
-A recruiter opens a job, drops CVs onto that job, and sees people in three piles: `priority`, `review_later`, `do_not_submit`. Facts are extracted for everyone and tied to a snippet. The Inbox default is priority people on the open job, with three cards only: `revision_diff`, `duplicate_stint`, `contradiction`. Official facts change only through approve, reject, or a human-typed correction. A person can be erased; the verify query fails out loud if anything remains.
-
-A band is not a score. Catalyst-style domain miss is `do_not_submit`. Country mismatch never by itself produces `do_not_submit`.
+Open `00`–`05` (the blueprint) only when a mechanism is disputed. Where `05` revises `01`–`04`, `05` wins.
 
 ## Architecture
 
@@ -26,34 +27,45 @@ cockpit  →  api/  →  database
          intelligence/     (pure: workspace in, staged claims out)
 ```
 
-- `intelligence/` never opens a database session.
-- `api/` is the only writer of claims, observations, evidence, decisions, identity keys, pairs, bands.
-- Identity matching reads live claims in the same transaction as the write. No materialized view. No backfill script.
-- Do not invent fields outside `slice0/schemas`. Unknown flag keys are rejected on write.
+- `api/` is the only writer to the database. `intelligence/` never opens a database session (`tests/test_boundaries.py`).
+- Identity matching reads live claims in the same transaction as the write. No materialized view, no backfill script.
 
-## Build order
+## Rules that hold everywhere
 
-One milestone at a time. Finish tests before the next.
+- **Belief is gated.** The machine proposes facts; only a person approves, rejects or corrects them. An approved view is
+  pinned (one named exception: [approved company sizes](docs/decisions/2026-10-12-approved-size-reparse.md)).
+- **Every fact has its evidence**, checked mechanically (the span check), never by trusting the prompt.
+- **No invented fields.** Payloads match `slice0/schemas`; unknown flag keys are refused on write. A new claim type,
+  flag or table needs its schema, its registry entry and a note in `docs/decisions/`.
+- **A band or tier is never a number.** No composite fit score (`score.value` stays NULL); no dual scoring.
+- **A false merge is the catastrophe.** Records of people merge automatically only on a clean shared contact with
+  agreeing names; anything else becomes a card for a person.
+- **Where someone lives and works now, never where they are from.** Country alone never puts anyone in
+  `do_not_submit`. Never protected characteristics, appearance, personality, culture or fit.
+- **Company research** asks only the fixed list of public facts: never people (names, titles), never tech stack.
+- **The desk never sends mail**: drafts go into the user's own mailbox. Calls need no consent step (the call tools'
+  notetakers already have it).
+- **Model calls cost the owner money.** Tests and e2e use fakes or recordings (`LLM_REPLAY`); keep `RESEARCH_AUTO=false`
+  while testing; run paid checks only when the owner has agreed to them.
+- **Secrets and real data stay out of git**: `core/.env`, `cockpit/.env.local`, real CVs, `core/eval-reports/`,
+  `core/.llm-recordings/`. Never print an API key.
 
-- A — vendor `slice0/` and keep `pytest slice0/domain/test_reconcile.py` green (8 cases)
-- B — unpartitioned persistence (document, artifact, candidate, job, candidate_job + triage_band, claim, observation, evidence, decision)
-- C — upload + text layer. No vision model. `needs_vision` flag only
-- D — extract, typed span check, reconcile, commit, coarse triage if `job_id` supplied
-- E — cockpit: jobs first, three piles, three cards
-- F — single-subject erasure + verify
-- G — golden folder. A run that keys on `domainko@gmail.com` or bands Catalyst as `priority` fails CI
+## Still locked
 
-## Forbidden until a later slice is opened in writing
-
-Brief, mail, ATS, web sourcing, Temporal, LangGraph, critic, embeddings, vision/OCR model, composite fit score, dual official/provisional scoring, new claim types.
+Until opened in writing in `docs/decisions/`: Slice 5 (critic, embeddings, BD two-stage), a vision/OCR model (scans
+stay flagged `needs_vision`), an external sourcing adapter (needs a data-use decision), a workflow engine (Temporal,
+LangGraph), hosting beyond this machine (everything listens on 127.0.0.1).
 
 ## Done
 
-`docs/slice-0/GATES.md` is the checklist. Pretty UI with a failed identity-key or Catalyst-as-priority case is not done. Only a human records the green gate in `docs/decisions/`.
+Tests green (`python -m pytest` in `core/`, `npm run e2e:free` in `cockpit/`). Only the owner declares a gate green, in
+`docs/decisions/`; a coding agent never does.
 
 ## Documentation is part of done
 
-Docs live in `docs/build/` (start at its README). In the same commit as any change: update the component page (what, why, how, depends on, used by), `ARCHITECTURE.md`, `STATUS.md`, any affected `connections/` page, and add one line to `LOG.md`. Non-obvious choices get an ADR in `docs/decisions/`. A change without its docs is not done.
+Docs live in `docs/build/` (start at its README). In the same commit as any change: update the component page (what,
+why, how, depends on, used by), `ARCHITECTURE.md`, `STATUS.md`, any affected `connections/` page, and add one line to
+`LOG.md`. Non-obvious choices get a note in `docs/decisions/`. A change without its docs is not done.
 
 ## Branches
 

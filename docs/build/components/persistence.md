@@ -32,6 +32,6 @@ Tables as defined in `models.py`. Change them only through a new Alembic migrati
 `core/tests/test_writer.py` (constraints: duplicate documents, unique pairs, band is not a number, invalid status). Run `python -m pytest` in `core/` with Postgres up.
 
 ## Known limits
-- No company, suppression, or embedding tables yet (later slices). `job.hiring_company` is plain text.
+- No embedding tables (Slice 5, locked).
 - No partitioning (deliberate, see blueprint RA-06).
 - The blueprint's JSON claim envelope lists claim types without `JobRequirementClaim`, while the registry includes it; the database follows the registry.

@@ -1,6 +1,6 @@
 # Slice 3 — The Brief
 
-**Status: UNLOCKED** 2026-10-04 (Slice 2 gate green, [decision](../decisions/2026-10-04-slice-2-gate.md)). In progress.
+**Status: BUILT, gate green 2026-10-04** ([decision](../decisions/2026-10-04-slice-3-gate.md)). Unlocked 2026-10-04 (Slice 2 gate green, [decision](../decisions/2026-10-04-slice-2-gate.md)).
 
 ---
 

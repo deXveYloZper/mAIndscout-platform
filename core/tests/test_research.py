@@ -107,6 +107,27 @@ def test_recheck_rejects_stored_facts_that_fail_newer_checks(session, company):
     assert status.status == "rejected" and "does not say" in status.rejection_reason["note"]
 
 
+def test_recheck_rereads_an_approved_size_and_keeps_its_hash_in_step(session, company):
+    """Decision 2026-10-12: an approved head count is re-read from its own words; nothing else about it changes."""
+    from maindscout.api import review
+    from maindscout.domain import stints
+
+    data = answer(headcount={"value": "over 8.8 thousand employees", "source_url": "https://uk.linkedin.com/company/procureai",
+                             "quote": "Company size over 8.8 thousand employees", "as_of": "2026-10-02"})
+    research.apply(session, company, engine.ResearchOutcome(True, OWN, engine.check(data, VISITED)[0], [], VISITED, {"usd": 0}))
+    size = session.scalars(select(Claim).where(Claim.subject_id == company.id, Claim.claim_type == "TeamSizeClaim")).one()
+    size.payload = {**size.payload, "min": 8, "max": None}  # as the parser read it before 2026-10-08
+    review.approve_claim(session, PUBLIC_ORG_ID, size.id, "owner@example.com")
+    approved_at, old_hash = size.approved_at, size.approved_view_hash
+
+    changed = research.recheck(session)
+    assert [d["claim_type"] for d in changed] == ["TeamSizeClaim"]
+    assert size.status == "approved" and size.approved_by == "owner@example.com" and size.approved_at == approved_at
+    assert (size.approved_view["min"], size.approved_view["raw"]) == (8800, "over 8.8 thousand employees")
+    assert size.approved_view_hash == stints.reconcile.view_hash(size.approved_view) != old_hash
+    assert research.recheck(session) == [], "a second run changes nothing"
+
+
 def test_an_unidentified_company_writes_nothing():
     out = engine.research_company("Acme", "", FakeSearch(answer(identified=False)))
     assert not out.identified and out.facts == []

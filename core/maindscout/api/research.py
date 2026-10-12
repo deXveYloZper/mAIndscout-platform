@@ -250,8 +250,10 @@ def _as_fact(claim: Claim) -> tuple[str, Any] | None:
 
 def recheck(session: Session) -> list[dict[str, str]]:
     """Apply the current mechanical checks to stored public facts (free: no new research). A proposed fact whose
-    every source now fails is rejected with the reason; approved facts are a person's call and are left alone."""
+    every source now fails is rejected with the reason; approved facts are a person's call and are left alone, except
+    a head count re-read from its own words (decision 2026-10-12-approved-size-reparse)."""
     from maindscout.api import review
+    from maindscout.domain import stints
 
     out = []
     for claim in session.scalars(select(Claim).where(Claim.org_id == PUBLIC_ORG_ID, Claim.claim_type == "TeamSizeClaim",
@@ -263,6 +265,9 @@ def recheck(session: Session) -> list[dict[str, str]]:
             claim.payload = {**claim.payload, "min": lo, "max": hi}
             if claim.approved_view:
                 claim.approved_view = {**claim.approved_view, "min": lo, "max": hi}
+        if claim.approved_view and claim.approved_view_hash != stints.reconcile.view_hash(claim.approved_view):
+            # The stored hash follows the corrected view (sizes corrected on 2026-10-08 kept the old hash).
+            claim.approved_view_hash = stints.reconcile.view_hash(claim.approved_view)
     for claim in session.scalars(select(Claim).where(Claim.org_id == PUBLIC_ORG_ID, Claim.status == "proposed",
                                                      Claim.claim_type.in_(COMPANY_CLAIMS))):
         made = _as_fact(claim)
