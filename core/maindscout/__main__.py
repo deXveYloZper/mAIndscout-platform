@@ -376,7 +376,8 @@ def main() -> None:
             start_threads(factory, int(os.environ.get("WORKERS", "2")))
             _start_mailbox_clock(factory)
 
-        uvicorn.run("maindscout.api.app:app", host="127.0.0.1", port=args.port)
+        # API_HOST=0.0.0.0 only inside a container (docker-compose.yml publishes the port to 127.0.0.1 alone).
+        uvicorn.run("maindscout.api.app:app", host=os.environ.get("API_HOST", "127.0.0.1"), port=args.port)
 
 
 if __name__ == "__main__":
