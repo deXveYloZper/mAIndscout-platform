@@ -47,7 +47,11 @@ def clean_title(title: str) -> str:
 
 
 def _words(values: list[str]) -> set[str]:
-    stop = {"and", "the", "of", "for", "services", "solutions", "industry", "other"}
+    # Words too broad to say two companies share a market ("software" pairs a procurement start-up with a bank's IT
+    # supplier): only the specific words count (seen on a real role, 2026-10-13).
+    stop = {"and", "the", "of", "for", "services", "solutions", "industry", "other", "software", "enterprise", "technology",
+            "technologies", "tech", "platform", "platforms", "saas", "digital", "internet", "information", "data", "systems",
+            "business", "b2b", "b2c", "consulting", "development", "products", "applications", "cloud", "online"}
     return {w for v in values for w in re.findall(r"[a-z]{3,}", v.lower()) if w not in stop}
 
 
