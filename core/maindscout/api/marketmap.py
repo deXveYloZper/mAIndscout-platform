@@ -130,6 +130,7 @@ def web_peers(session: Session, job: Job, plan_targets: list[dict[str, Any]], co
     results = exa.search(caller, query, "company", num_results=10, country=countries[0] if countries else None, text_chars=8000)
     have = {t.get("company_id") for t in plan_targets} | {(t.get("name") or "").lower() for t in plan_targets}
     out = []
+    made: list[Company] = []
     for found in results.found:
         name = re.split(r"\s+[|–—-]\s+", found.title)[0].strip()
         if not name or name.lower() in have:
@@ -152,6 +153,10 @@ def web_peers(session: Session, job: Job, plan_targets: list[dict[str, Any]], co
             company_profiles.apply(session, company, found)  # the result is its profile page: kept, no second call
         target = _target(company, "peer", [f'found by a company search: "{query}"'], "exa_company")
         target["group"] = "B"
+        made.append(company)
         target["website"] = found.url
         out.append(target)
+    from maindscout.api import company_profiles
+
+    company_profiles.read_domains(session, made, job.org_id)
     return out, results.usd, query

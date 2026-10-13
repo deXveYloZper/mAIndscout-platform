@@ -28,13 +28,14 @@ The owner (2026-10-13): "we should be aware that our initial list of companies w
   - **Nobody found here is ever stored:** they work at the client.
 - **Stage 2: tiers** (`build`, under $0.50 in all).
   - **A:** named by the hiring manager, added by hand, and **repeat feeders** (2 or more people, at most 5,000 staff).
-  - **B:** companies like the hiring company, from two descriptive company searches built from its profile ("{main category} companies in {where the team works}", "{main category} startups, {stage}"); micro companies under 10 staff are left out. Also desk companies in the same domain, and snowball finds. (Exa's find-similar was tried and dropped: on procure.ai it returned name look-alikes.)
+  - **B:** companies like the hiring company, from two descriptive company searches built from its profile ("{what it offers} companies in {where the team works}", "{its market} startups, {stage}"); micro companies under 10 staff are left out. Also desk companies in the same domain, and snowball finds. (Exa's find-similar was tried and dropped: on procure.ai it returned name look-alikes.)
   - **C:** feeders over 5,000 staff (a kind of employer, not a list to search), companies the radar finds in market news, and adjacent industries.
   - The plan's titles gain the hiring company's own titles held by 2 or more people (role-like only). Its countries become where the team works (15% or more), unless the owner set them.
   - **Checkpoint 1:** the owner reviews the DNA and the list before choosing how often to search (a new plan is paused).
 - **Stage 3: batches** (`next_searches`, `company_state`).
   - Each run takes the next **5 companies** in the open tiers. The order is pinned first, then companies releasing talent, then tier, then kind.
   - Each company is searched with up to 3 title variants (plus "senior …" when it has more than 1,000 staff). A search is not repeated within 30 days.
+  - **Only that company's people count.** A result counts only when the person's work history shows the company (its Exa ID, one of its names, or its LinkedIn page). Look-alikes are skipped and never stored: on the first real run, 20 results for a 9-person company included none of its people. A suggestion says "works at X now" or "worked at X before".
   - A company is **exhausted** when every variant has been searched and either the last 2 searches found no new relevant person, or 80% of its results were already known. An exhausted company waits 90 days, unless the radar flags it.
   - Per company the plan keeps searches, results, known, relevant and the date of the last search.
   - **Snowball** (after each run): an earlier employer of 2 or more strong people for the role becomes a tier B target. A company that has produced 3 or more strong suggestions gets its own peer search, once.

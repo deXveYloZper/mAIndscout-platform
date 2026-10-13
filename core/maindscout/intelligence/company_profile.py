@@ -61,6 +61,9 @@ class Profile:
     alumni_go_to: list[dict[str, Any]] = field(default_factory=list)
     categories: list[str] = field(default_factory=list)
     job_postings: int | None = None
+    about: str = ""  # its own description: the first paragraph and "About" (companies only, never people)
+    domains: list[str] = field(default_factory=list)  # markets it serves, read by `company_domain` (not by this reader)
+    offering: str | None = None
     quotes: dict[str, str] = field(default_factory=dict)  # field -> the line it was read from
 
     def as_json(self) -> dict[str, Any]:
@@ -107,6 +110,8 @@ def read(text: str) -> Profile:
             continue
         if not section and not first:
             first = line
+        if section == "about" and len(p.about) < 900 and not line.startswith("-"):
+            p.about = (p.about + " " + line).strip()
         item = re.match(r"-\s*([^:]+):\s*(.*)$", line)
         key, value = (item.group(1).strip().lower(), item.group(2).strip()) if item else ("", "")
         if section == "company details" and item:
@@ -155,6 +160,8 @@ def read(text: str) -> Profile:
             p.founded, p.quotes["founded"] = int(m.group(1)), first
         if p.hq is None and (m := re.search(r"Headquartered in ([^.]+?)(?:, with presence|\.)", first)):
             p.hq, p.quotes["hq"] = m.group(1).strip(), first
+    if first:
+        p.about = (first + (" " + p.about if p.about else ""))[:1200]
     if p.industry:
         p.kind = KIND_BY_INDUSTRY.get(p.industry.lower()) or ("product" if "manufacturing" in p.industry.lower() else None)
     if p.hq:
@@ -171,7 +178,8 @@ def _stage(name: str) -> str:
 
 
 def facts(p: Profile, source_url: str) -> list[engine.Fact]:
-    """The profile as research facts, each with the line it was read from (the research writer stores them)."""
+    """The profile as research facts, each with the line it was read from (the research writer stores them). Its
+    domains are not among them: the category tags are not domains; `company_domain` reads those from `about`."""
     out: list[engine.Fact] = []
     if p.founded and str(p.founded) in p.quotes.get("founded", ""):
         out.append(engine.Fact("founded", str(p.founded), source_url, p.quotes["founded"]))
@@ -181,8 +189,6 @@ def facts(p: Profile, source_url: str) -> list[engine.Fact]:
         out.append(engine.Fact("headcount", f"{p.employees} employees", source_url, p.quotes["employees"]))
     if p.kind and p.industry and p.industry in p.quotes.get("industry", ""):
         out.append(engine.Fact("company_type", p.kind, source_url, p.quotes["industry"]))
-    if p.categories:
-        out.append(engine.Fact("domains", p.categories[:6], source_url, p.quotes["categories"]))
     for r in p.rounds[:6]:
         amount = r["amount"]
         if amount and amount.upper().startswith("USD "):

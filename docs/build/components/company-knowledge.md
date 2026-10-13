@@ -39,7 +39,8 @@ The tests that decided it are in [plan section 4b](../../next/PLAN.md):
   - Categories.
 
   `exa.clean` removes executives, emails, phones and reviews **before anything is kept** (recordings included). The tech stack is never read.
-- **Facts:** founded, HQ, headcount, kind (from the industry, for example "IT Services and IT Consulting" is a consultancy), domains (categories) and funding rounds. Each is quoted from its own line through the same writer as Grok's research. Exa is a third-party estimate (web inference): consequential facts count as single-source.
+- **Domains are markets, read from the company's own words** (owner, 2026-10-13: "are they security, are they procurement"). Exa's industry ("Software Development") and its alphabetical category tags ("ai, automation, b2b…") are not domains. One small model call per 20 companies (`intelligence/company_domain.py`, about a tenth of a cent each) reads each description into 1–3 markets it serves and what it offers ("procurement automation platform"). Each comes with an exact quote, checked in code, and technology words are dropped. Without a model, the non-technology tags are shown and the reading is tried again later. Category-tag domain facts written earlier are set aside.
+- **Facts:** founded, HQ, headcount, kind (from the industry, for example "IT Services and IT Consulting" is a consultancy), domains (as above) and funding rounds. Each is quoted from its own line through the same writer as Grok's research. Exa is a third-party estimate (web inference): consequential facts count as single-source.
 - **Fields for the strategy** sit on `company.exa_profile`: where the team works, departments, talent sources, size band. They are fields, never the page.
 - **Cross-check (K3).** A fact with observations from two sources (two hosts):
   - agreement removes `single_source_web`;
@@ -70,7 +71,7 @@ The tests that decided it are in [plan section 4b](../../next/PLAN.md):
 - Ledger purpose `sourcing_company_profile`.
 
 ## Tests
-`core/tests/test_phase1b.py`:
+`core/tests/test_phase1b.py` (also: a company's domain is its market, read with a quote and never a technology; without a model, the non-technology tags are shown):
 - a company is found by its keys before its name;
 - a profile is read without people and checked against research;
 - an agreement to be acquired is not an acquisition;

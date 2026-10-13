@@ -336,7 +336,7 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
     from maindscout.api.process import not_wanted_by
 
     limits, not_wanted = off_limits(session, org_id), not_wanted_by(session, org_id, job)
-    report: dict[str, Any] = {"pool": {"looked": 0, "added": 0, "strong": 0}, "web": {"queries": [], "people": 0},
+    report: dict[str, Any] = {"pool": {"looked": 0, "added": 0, "strong": 0}, "web": {"queries": [], "people": 0, "off_target": 0},
                               "refused": {}, "plan_version": p.version}
 
     def refuse(why: str) -> None:
@@ -428,11 +428,18 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
         sq.cost_usd = float(sq.cost_usd or 0) + results.usd
         sq.last_run_at = _now()
         row.cost_usd = float(row.cost_usd or 0) + results.usd
-        entry = {"text": q["text"], "target": q["target"], "results": len(results.found), "new": 0, "strong": 0}
+        entry = {"text": q["text"], "target": q["target"], "results": len(results.found), "new": 0, "strong": 0, "off_target": 0}
+        target_company = session.get(Company, uuid.UUID(q["company_id"])) if q.get("company_id") else None
         for found in results.found:
             if found.url in seen_pages:
                 continue
             seen_pages.add(found.url)
+            if target_company is not None and found.person and not discovery.worked_at(session, found, target_company):
+                # A search aimed at a company counts only people who work or worked there; the rest are look-alikes,
+                # never stored.
+                entry["off_target"] += 1
+                report["web"]["off_target"] += 1
+                continue
             cid, outcome = discovery.add(session, blobs, org_id, found, skills)
             if cid is None:
                 refuse(outcome)
@@ -523,6 +530,7 @@ def _people_facts(session: Session, org_id: uuid.UUID, ids: list[uuid.UUID]) -> 
 
 def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "system") -> dict[str, Any]:
     """Everything the role's sourcing tab shows: the plan, budgets, recent runs, and the suggestions waiting."""
+    from maindscout.api import companies as companies_mod
     from maindscout.api import company_profiles, hiring, radar, strategy
     from maindscout.api.queries import _gap_rows_many, _gap_summary, names
     from maindscout.settings import env
@@ -555,10 +563,18 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
     for x in waiting[:100]:
         h = hits[x.candidate_id]
         q = queries.get(h.query_id) if h.query_id else None
+        at = None
+        if q is not None and q.company_id is not None:
+            ids = set(companies_mod._ids_for(session, session.get(Company, q.company_id)))
+            for step in session.scalars(select(Claim).where(Claim.subject_id == x.candidate_id, Claim.claim_type == "CareerStepClaim",
+                                                            Claim.status.in_(LIVE))):
+                if ((step.approved_view or step.payload).get("company") or {}).get("company_id") in ids:
+                    at = "now" if step.valid_to is None else (at or "before")
         suggestions.append({"candidate_id": str(x.candidate_id), "name": who.get(x.candidate_id), "band": x.triage_band,
                             "reason": x.triage_reason, "match_tier": x.match_tier, "state": x.pair_state,
                             **facts[x.candidate_id], **_gap_summary(rows.get(x.candidate_id, [])),
                             "found_by": {"channel": h.channel, "target": h.target, "tier": h.tier, "query": q.text if q else None,
+                                         "at_target": at,
                                          "at": h.created_at.isoformat() if h.created_at else None, "new_to_desk": h.new_to_desk}})
     runs = list(session.scalars(select(SourcingRun).where(SourcingRun.job_id == job.id).order_by(SourcingRun.started_at.desc()).limit(10)))
     return {

@@ -239,3 +239,66 @@ def test_strategy_and_widen_routes(client, session, job):
     assert "market" in page_["plan"]["open_tiers"]
     bad = client.post(f"/v1/jobs/{job.id}/sourcing/widen", json={"option": "everything"})
     assert bad.status_code == 422
+
+
+# --- domains and searches aimed at a company (owner, 2026-10-13) --------------------------------------------------------
+
+
+class Reader:
+    """A model that reads domains the way the prompt asks (and once tries to sneak in a technology word)."""
+
+    model = "fake-domains"
+
+    def __init__(self):
+        self.calls = 0
+
+    def complete_json(self, system, user, schema, name):
+        from maindscout.intelligence.llm import LLMResult
+
+        self.calls += 1
+        keys = [line.split("key: ", 1)[1] for line in user.split("\n") if line.startswith("### key: ")]
+        return LLMResult({"companies": [{"key": k, "offering": "satellite radar analytics", "offering_quote": "earth observation",
+                                         "domains": [{"domain": "AI", "quote": "earth observation"},
+                                                     {"domain": "earth observation", "quote": "earth observation"},
+                                                     {"domain": "insurance", "quote": "a quote that is not in the text"}]}
+                                        for k in keys]}, self.model, 10, 5, 0.0004)
+
+
+def test_a_company_domain_is_its_market_read_with_a_quote_never_a_technology(session):
+    company, _ = companies.resolve(session, "Orbital Testworks", "test", keys={"domain": "orbital.example"})
+    found = exa.parse({"results": [page("orb", "Orbital Testworks", "orbital.example", industry="Software Development")]}, "",
+                      "contents").found[0]
+    company_profiles.apply(session, company, found)
+    assert company.exa_profile["about"].startswith("Orbital Testworks is a Software Development company"), "its own description"
+    reader = Reader()
+    assert company_profiles.read_domains(session, [company], None, reader=reader) == 1
+    assert company.exa_profile["domains"] == ["earth observation"], "a technology word and an unquoted market are dropped"
+    assert company.exa_profile["offering"] == "satellite radar analytics"
+    claim = session.scalar(select(Claim).where(Claim.subject_id == company.id, Claim.claim_type == "CompanyDomainClaim",
+                                               Claim.status == "proposed"))
+    assert claim.payload == {"domains": ["earth observation"]}
+    assert company_profiles.read_domains(session, [company], None, reader=reader) == 0 and reader.calls == 1, "read once"
+    assert company_profiles.summary(company)["domains"] == ["earth observation"]
+    assert strategy.peer_queries(company)[0] == "satellite radar analytics companies in Germany and Canada"
+
+
+def test_without_a_model_the_domain_falls_back_to_non_technology_tags(session):
+    company, _ = companies.resolve(session, "Radar Testworks", "test", keys={"domain": "radar.example"})
+    found = exa.parse({"results": [page("rad", "Radar Testworks", "radar.example",
+                                        categories="ai, artificial intelligence (ai), automation, insurance claims, b2b")]}, "",
+                      "contents").found[0]
+    company_profiles.apply(session, company, found)
+    company_profiles.read_domains(session, [company], None)  # the test guard refuses the model
+    assert company.exa_profile["domains"] == ["insurance claims"]
+    assert "domain_reader" not in company.exa_profile, "tried again when a model is available"
+
+
+def test_a_search_aimed_at_a_company_keeps_only_its_people(session, job, blobs):
+    autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", mode="weekly", role_variants=["InSAR engineer"])
+    autosource.add_target(session, job.org_id, job.id, "Orbital Testworks", "owner@desk.test")
+    row = autosource.run(session, blobs, job.org_id, job.id, "manual", FakeExa())  # Ada and Ben work there; Cara, Dev do not
+    entry = row.report["web"]["queries"][0]
+    assert entry["text"] == "InSAR engineer at Orbital Testworks" and entry["off_target"] == 2
+    assert person_named(session, "Dev Testperson") is None, "a look-alike from a search aimed at a company is never stored"
+    ada = next(s for s in autosource.page(session, job.org_id, job.id)["suggestions"] if s["name"] == "Ada Testperson")
+    assert ada["found_by"]["at_target"] == "now" and ada["found_by"]["target"] == "Orbital Testworks"

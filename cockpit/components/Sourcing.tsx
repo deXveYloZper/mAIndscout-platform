@@ -33,11 +33,23 @@ const TIER_NAME: Record<string, string> = {
 const KIND: Record<string, string> = { product: "product company", consultancy: "consultancy", outsourcing: "outsourcing",
   agency: "agency", public_sector: "public sector", non_profit: "non-profit", other: "other", unknown: "kind unknown" };
 
-/** A company in facts: what it is, how big, where, its stage. */
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** A company in facts: its markets (never "Software Development"), what kind, how big, where, its stage. */
 function facts(p: CompanyProfile | null | undefined): string {
   if (!p) return "";
-  return [p.industry ? `${p.industry}${p.kind && p.kind !== "product" ? ` (${KIND[p.kind] ?? p.kind})` : ""}` : null,
+  const what = p.domains?.length ? cap(p.domains.join(", ")) : p.industry;
+  return [what ? `${what}${p.kind && p.kind !== "product" ? ` (${KIND[p.kind] ?? p.kind})` : ""}` : null,
     p.employees ? `${p.employees.toLocaleString()} staff` : null, p.hq, p.latest_round].filter(Boolean).join(" · ");
+}
+
+function foundBy(f: Suggestion["found_by"]): string {
+  if (f.channel === "pool") return "already on the desk (our own pool)";
+  if (f.target) {
+    const where = f.at_target === "now" ? `works at ${f.target} now` : f.at_target === "before" ? `worked at ${f.target} before` : `searched at ${f.target}`;
+    return `${where} · found by "${f.query}"`;
+  }
+  return f.query ? `found by a country-wide search ("${f.query}")` : CHANNEL[f.channel] ?? f.channel;
 }
 
 const usd = (n: number) => `$${n < 1 ? n.toFixed(3) : n.toFixed(2)}`;
@@ -56,8 +68,7 @@ function SuggestionCard({ jobId, s }: { jobId: string; s: Suggestion }) {
         </div>
         <p className="reason">{[s.current, s.location].filter(Boolean).join(" · ") || "role and place not on the profile"}</p>
         {s.employer && <p className="hint">Works at: {facts(s.employer)}</p>}
-        <p className="hint">{reasonWords(s.reason)} · found by {CHANNEL[s.found_by.channel] ?? s.found_by.channel}
-          {s.found_by.target ? ` at ${s.found_by.target}` : ""}{s.found_by.query ? ` ("${s.found_by.query}")` : ""}</p>
+        <p className="hint">{reasonWords(s.reason)} · {foundBy(s.found_by)}</p>
       </div>
       <div className="pc-side">
         {s.profile && <a className="btn small ghost" href={link(s.profile)} target="_blank" rel="noreferrer"><ExternalLink aria-hidden="true" />Profile</a>}
@@ -306,7 +317,10 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
                   <details>
                     <summary className="sub">{r.report.web!.queries.length} web searches</summary>
                     <ul className="hint">
-                      {r.report.web!.queries.map((q, i) => <li key={i}>&ldquo;{q.text}&rdquo;: {q.results} results, {q.new} new, {q.strong} strong</li>)}
+                      {r.report.web!.queries.map((q, i) => (
+                        <li key={i}>&ldquo;{q.text}&rdquo;: {q.results} results, {q.new} new, {q.strong} strong
+                          {q.off_target ? `, ${q.off_target} not from ${q.target} (skipped)` : ""}</li>
+                      ))}
                     </ul>
                   </details>
                 )}

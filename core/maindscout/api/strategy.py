@@ -137,11 +137,11 @@ def talent_dna(session: Session, org_id: uuid.UUID, job: Job, p: SourcingPlan, c
         if c is None or not s or not s.get("employees"):
             continue  # no profile with staff: a community, an award, a one-person page
         rows.append({"company_id": str(c.id), "name": c.name, "n": n, "employees": s["employees"], "kind": s.get("kind"),
-                     "industry": s.get("industry"), "hq": s.get("hq"), "categories": s.get("categories")})
+                     "industry": s.get("industry"), "hq": s.get("hq"), "domains": s.get("domains")})
         kinds[s.get("kind") or "unknown"] += n
         bands[size_band(s["employees"])] += n
-        for cat in s.get("categories") or []:
-            categories[cat] += n
+        for domain in s.get("domains") or []:
+            categories[domain] += n
     return {
         "at": _now().isoformat(), "company": {"id": str(company.id), "name": company.name, "employees": profile.get("employees"),
                                               "team_countries": (company_profiles.summary(company) or {}).get("team_countries")},
@@ -164,22 +164,25 @@ def peer_queries(company: Company) -> list[str]:
     """Descriptive company searches from a company's own profile: what it does, where its team works, its stage.
     (Exa's find-similar on a website matched on names in the 2026-10-13 test, so it is not used.)"""
     p = company.exa_profile or {}
-    what = (p.get("categories") or [p.get("industry")] or [None])[0]
+    what = p.get("offering") or (p.get("domains") or [None])[0]
     if not what:
         return []
+    market = (p.get("domains") or [what])[0]
     where = [c["country"] for c in p.get("countries") or [] if (c.get("pct") or 0) >= 10][:2]
     out = [f"{what} companies in {' and '.join(where)}" if where else f"{what} companies"]
     stage = ((p.get("rounds") or [{}])[0].get("stage") or "").lower()
     if stage in STAGE_WORDS:
-        out.append(f"{what} startups, {STAGE_WORDS[stage]}")
+        out.append(f"{market} startups, {STAGE_WORDS[stage]}")
     return out
 
 
 def _peers(session: Session, org_id: uuid.UUID, job: Job, of: Company, caller, have: set[str], why: str, limit: int,
            task_id=None) -> list[dict[str, Any]]:
     """Companies like `of`, from descriptive company searches; each result is its own Exa profile (kept, no second
-    call). The hiring company, companies already listed and micro companies are left out."""
-    out = []
+    call). The hiring company, companies already listed and micro companies are left out. Their domains are read in
+    one call at the end."""
+    out: list[dict[str, Any]] = []
+    made: list[Company] = []
     for query in peer_queries(of):
         results = exa.search(caller, query, "company", num_results=10, text_chars=8000)
         costs.record(session, org_id, company_profiles.PURPOSE, {"model": "exa", "usd": results.usd, "sources": len(results.found)},
@@ -195,9 +198,13 @@ def _peers(session: Session, org_id: uuid.UUID, job: Job, of: Company, caller, h
                 continue
             company_profiles.apply(session, company, found, org_id)
             have.add(str(company.id))
+            made.append(company)
             out.append(_target(company, "peer", [why, f'company search: "{query}"'], "exa_company"))
             if len(out) >= limit:
-                return out
+                break
+        if len(out) >= limit:
+            break
+    company_profiles.read_domains(session, made, org_id, task_id=task_id)
     return out
 
 

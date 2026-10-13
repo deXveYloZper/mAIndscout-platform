@@ -75,6 +75,30 @@ def employers(found: Found) -> list[dict[str, str | None]]:
     return out
 
 
+def worked_at(session: Session, found: Found, company) -> str | None:
+    """Does this profile's work history show the company? "now", "before" or None. By its Exa company id, any of its
+    names (aliases, and companies merged into it), or its LinkedIn page. A search aimed at a company returns
+    look-alike profiles when the company is small (2026-10-13: 20 for a 9-person company, none of them from it)."""
+    from maindscout.api import companies
+    from maindscout.db.models import CompanyAlias
+    from maindscout.domain import companies as names
+
+    ids = [uuid.UUID(i) for i in companies._ids_for(session, company)]
+    aliases = set(session.scalars(select(CompanyAlias.normalized).where(CompanyAlias.company_id.in_(ids))))
+    links = {e["name"].lower(): e["linkedin"] for e in employers(found)}
+    best = None
+    for job in (found.person or {}).get("workHistory") or []:
+        c = job.get("company") or {}
+        name = (c.get("name") or "").strip()
+        hit = ((company.exa_id and c.get("id") == company.exa_id) or (name and names.normalize(name).normalized in aliases)
+               or (company.linkedin and links.get(name.lower()) == company.linkedin))
+        if hit:
+            if not (job.get("dates") or {}).get("to"):
+                return "now"
+            best = "before"
+    return best
+
+
 def register_employers(session: Session, found: Found) -> list[str]:
     """Each employer under its keys, before the profile is read (so its career steps link to the exact company).
     Returns the Exa ids of the employers, to profile."""

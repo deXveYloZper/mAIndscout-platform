@@ -345,7 +345,8 @@ export type SourcingMode = "daily" | "weekly" | "continuous" | "paused";
 
 export type ReleaseSignal = { kind: string; label: string; quote: string; url: string; source: string; published: string | null };
 
-export type CompanyProfile = { industry: string | null; kind: string | null; employees: number | null; hq: string | null;
+export type CompanyProfile = { domains: string[]; offering: string | null; industry: string | null; kind: string | null;
+  employees: number | null; hq: string | null;
   founded: number | null; latest_round: string | null; team_countries: { country: string; n: number | null; pct: number | null }[];
   categories: string[] };
 
@@ -368,14 +369,16 @@ export type Widening = { why: string; empty?: boolean; options: { option: string
 export type SourcingRunView = { id: string; trigger: string; status: string; stop_reason: string | null; found: number; new: number;
   known: number; refused: number; strong: number; cost_usd: number; error: string | null; started_at: string | null; ended_at: string | null;
   report: { pool?: { looked: number; added: number; strong: number }; refused?: Record<string, number>; plan_version?: number;
-    web?: { people: number; queries: { text: string; target: string | null; results: number; new: number; strong: number }[] };
+    web?: { people: number; off_target?: number;
+      queries: { text: string; target: string | null; results: number; new: number; strong: number; off_target?: number }[] };
     radar?: { queries: { text: string; results: number; signals: number; companies: string[] }[]; flagged: string[]; added: string[];
       stopped: string | null }; profiles?: { companies: number; people: number }; snowball?: string[] } };
 
 export type Suggestion = { candidate_id: string; name: string | null; band: Band; reason: string | null; match_tier: string | null;
   state: string; current: string | null; location: string | null; profile: string | null; employer: CompanyProfile | null;
   gaps?: PersonOnJob["gaps"]; coverage?: PersonOnJob["coverage"];
-  found_by: { channel: string; target: string | null; tier: string | null; query: string | null; at: string | null; new_to_desk: boolean } };
+  found_by: { channel: string; target: string | null; tier: string | null; query: string | null; at: string | null; new_to_desk: boolean;
+    at_target?: "now" | "before" | null } };
 
 export type SourcingPage = {
   job_id: string; title: string; state: string;
