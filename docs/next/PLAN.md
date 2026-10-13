@@ -3,6 +3,8 @@
 **Status: Phase 1 APPROVED** 2026-10-12 by the owner ("go"), including a first look at Exa with a few test searches.
 Phase 1 is built (see [STATUS](../build/STATUS.md)) and waits for its first real role; its gate (two weeks on a real
 role) is the owner's to declare.
+**Phase 1b DRAFT** 2026-10-13 (section 4b): company knowledge by identity keys (Exa for breadth, Grok for depth) and a
+staged search (talent DNA, tiered target list, batches, exhaustion, widening with the owner's say). Waits for approval.
 Phases 2–6 stay drafts until the owner approves them. Revised the same day with the owner's answers (section 10).
 Written after a survey of what is built ([STATUS](../build/STATUS.md)).
 
@@ -126,6 +128,144 @@ Changed (owner, 2026-10-12):
   the person put on the role, the channel recorded in S5. LinkedIn's direct ATS connection is for partners only;
   forwarding is the practical route. Reading those emails needs a wider mailbox permission than today's (decision 9).
 
+## 4b. Phase 1b (DRAFT, 2026-10-13): know the companies, and search like a recruiter
+
+Written after the owner's questions of 2026-10-13 and five small Exa tests ($0.13 in all). Waits for the owner's
+approval; nothing in it is built yet.
+
+**Why.** Phase 1 finds people, but two things are weak.
+- **People found by Exa get no company work.** Their fit rests on titles and skills alone, while every client rates
+  a candidate by where they worked: the domain, the kind of company, its size and stage.
+- **The search is a fixed list.** The market map is built once. Each target company gets "{title} at {company}"
+  searches, and then the role is searched country-wide, which is the blind part. When every search has been made, a
+  run just says "no new searches" and waits. Nothing measures when a list is exhausted, the list never grows by
+  itself, and nobody is prompted to widen.
+
+A master recruiter works differently:
+1. learn where the hiring company's people came from;
+2. build a list of similar companies and keep growing it;
+3. search it in manageable batches;
+4. when it is exhausted, widen the net, and only then loosen the profile.
+
+### What the tests showed (2026-10-13)
+
+| Test | Result |
+|---|---|
+| Grok company research, from the ledger | $0.094 a company (55 companies, about 10 pages read each); quoted facts with sources, including events (an acquisition agreement) and registry dates |
+| Exa company search by name, on 10 companies Grok had researched ($0.07) | Right company 6–7 of 10; wrong but similar-named for small or regional firms (semantika.pl for semantika.si); founded year 5/6 agree, headcount 5/6 close, HQ 4/6 (CGI placed in the US); no status; no industries field, but a clear description |
+| Exa company IDs ($0.015) | The company ID in a person's work history is the same ID company search returns (CATALYST `q923d4ct2dw` in both); about 7 of 10 employers carry one, the rest a LinkedIn company link or a name |
+| A company profile by its ID (`/contents`, $0.001) | Size, HQ, founded, funding and an industry line ("…is a Software Development company"), as quotable text, plus its LinkedIn page |
+| Talent DNA of Procure Ai ($0.041) | 4 "role at Procure Ai" searches found 13 of its people by its company ID. Titles: software and full-stack engineers, ML engineers. Before joining: senior full-stack and ML/LLM engineers, from big tech and consulting (IBM ×2, McKinsey ×2) and a small supply-chain startup (×2). The rest were single mentions, plus noise (hackathons, a community group, an award list) |
+
+**Conclusions.**
+- Exa is the cheap, exact way to know the employers of people Exa found: by ID, a tenth of a cent each.
+- Exa's search by company name is risky: it should be accepted only when a key confirms it.
+- Grok stays for depth, where accuracy matters most.
+- For a small hiring company, the talent DNA is a pattern (kinds of company, domains, career paths), not a list of
+  names.
+
+### K. Company knowledge: one record, researched once, identified by keys
+
+**K1. Identity keys.** Each company keeps its website domain, its Exa company ID and its LinkedIn company page. Every
+route that brings in a company looks it up by these keys first: a CV, an applicant, an email, an Exa profile, the
+market map or the news radar.
+- A new name that shares a key with a known company is that company: it becomes an alias, because a key is not a
+  guess.
+- Two existing records that share a key raise one "Same company?" card. They are never merged silently.
+- This is what stops paying twice for the same company: "CATALYST" and "PCI Geomatics", "Procure Ai" and "ProcureAi
+  Ltd".
+
+**K2. Three levels of knowledge, used in this order.**
+1. **Known (free):** the company is on file and fresh enough, so nothing is spent.
+2. **Profile (Exa):** by ID, $0.001; by name, $0.007, accepted only when a key confirms it. It gives size, HQ,
+   founded, latest funding and the industry line, each quoted from the profile text. The source is a third-party
+   estimate. One small model call (about $0.003) reads the industry and the kind of company (product, consultancy,
+   agency…) from the profile's own lines, with the quote. Refreshed after 6 months.
+3. **Depth (Grok, $0.094), only where it pays:**
+   - hiring companies (clients);
+   - companies on a live role's target list;
+   - employers of a candidate about to be submitted.
+
+   It gives the quoted facts as today: industries, kind, status and events, and funding history with investors.
+
+**K3. Cross-check.** Where both sources give the founded year, HQ, headcount or latest round:
+- if they agree, the fact counts as confirmed by two sources (no longer single-source);
+- if they disagree, one card shows both, with their sources.
+
+The status rule is fixed: "agreed to be acquired" is pending, not acquired.
+
+**K4. Who gets what.**
+- **CV, applicant or email:** employers arrive as names. Match by key or known alias first. Then try an Exa search
+  confirmed by a key, and otherwise use Grok research as today.
+- **Sourced (Exa):** employers arrive with their Exa ID or LinkedIn page. Look them up, and profile the new ones by
+  ID. Then build the same career reading a CV person gets (kinds of employer, industries, level, years) and match them
+  to the role. This is done only for people who pass the gates (stop, off-limits, countries). Each strong suggestion
+  then says where they worked in facts ("a 90-person earth-observation software company"), not just titles.
+- **The knowledge compounds:** every company profiled is kept and shared by every route. As the desk grows, most
+  employers of new people are already known, so web lookups shrink.
+
+### S7. A staged search that grows, measures and widens
+
+**Stage 1. Talent DNA of the hiring company.**
+- A few "{role} at {hiring company}" people searches, kept only for people whose history shows the hiring company
+  under its exact company ID.
+- From those people:
+  - their titles there, which become the role's title variants;
+  - the job just before they joined;
+  - their earlier employers, profiled by ID and grouped by kind, size and domain.
+- Noise is dropped: hackathons, communities, awards, volunteering and education. Only employers with a company profile
+  that has staff and an industry count.
+- For a small hiring company the result is a **pattern** ("big tech and consulting into an AI startup; small
+  supply-chain startups; senior full-stack and ML engineers"). For a large one, the **repeat feeders** themselves (2
+  or more people) become targets.
+- Cost: about $0.05.
+
+**Stage 2. Target list in tiers, each company with its why.**
+- **Tier A:** companies the hiring manager named, then repeat feeders.
+- **Tier B:** direct peers. They come from Exa's find-similar on the hiring company's website and from company
+  searches by domain and stage, filtered by the DNA pattern. Desk companies in the same domain join too.
+- **Tier C:** adjacent domains, other stages, companies the news radar flags as releasing talent, and the kinds of
+  employer the DNA shows (for example, big tech engineering groups).
+- Every company is profiled (K2), so "similar" is shown in facts: size, stage, HQ, domain.
+- **Checkpoint 1 (the owner):** the DNA summary and the starting list, before anything wide runs. The owner pins,
+  removes or adds.
+
+**Stage 3. Search in batches; exhaust each company; let the list grow.**
+- Each run takes the next batch of companies (default 5, in tier order). Each company is searched with the title
+  variants, and with seniority words when it is large.
+- A company is **exhausted** when every title variant has been searched and the last two searches brought no new
+  relevant person, or when 80% or more of its results were already known. An exhausted company is searched again only
+  after 90 days, or when the radar flags it.
+- **Snowball:** when two or more strong suggestions share an earlier employer, it is proposed as a new target, with
+  that reason. A company that keeps producing gets its own find-similar.
+- Per company and per tier, the platform keeps the searches made, people found, relevant, contacted and interviewed.
+  These feed results and spend (S5) as strategies: tier, DNA feeders, snowball.
+
+**Stage 4. Checkpoints, and who decides to widen.** The platform measures, proposes and shows numbers; the owner
+decides. A widening proposal appears when all of these hold:
+- the current tier is exhausted;
+- the role is still short of its target of strong suggestions;
+- the recent yield is low: fewer than 1 relevant person per 5 searches over the last batches.
+
+The thresholds are editable per role. The proposal offers options with numbers, which is the plan's hard-to-fill mode:
+- open the next tier ("Tier C: 18 companies");
+- widen the titles;
+- add a country;
+- loosen a must-have ("dropping 'Rust' finds about 40 more on the desk");
+- last of all, country-wide searches.
+
+**Checkpoint 2:** the owner picks one. It becomes a new plan version, so results before and after compare.
+**Checkpoint 3:** weekly results and spend per strategy.
+
+Country-wide searches by title stop being part of every run. They are the last widening option.
+
+**Costs.**
+- Setting up a role: under $0.50 (DNA about $0.05; about 40 company profiles at $0.001–0.007; one or two
+  find-similar searches).
+- Each batch: a few cents.
+- Employer profiles for sourced people: about 1 cent a person, falling as the knowledge base grows.
+- Grok depth only on the hiring company, the live targets, and employers of candidates about to be submitted.
+
 ## 5. Track C: the client desk
 
 **One truth, live.** The client desk is a window onto the same pipeline, never a copy. When the owner submits a
@@ -224,6 +364,7 @@ instead: **a monthly plan (e.g. $300) with a number of searches included, and cr
 | Phase | What | Gate (the owner declares) |
 |---|---|---|
 | **1. Find them, and know what works** | S1 market map; S2 the pool + Exa; S3 runs with modes and reports; S4 LinkedIn messages and permission; **S5 results and spend** | On a real role, over two weeks: suggestions the owner would contact, each with a why; no off-limits, blocked or "stop" person ever suggested; the results-and-spend page answers "what did $X buy?" per strategy |
+| **1b. Know the companies, search like a recruiter** (draft) | K1–K4 company knowledge; S7 staged search | On a real role: the owner agrees with the talent DNA and the starting list; sourced suggestions show their employers in facts; no company is researched twice; a widening proposal with numbers when a tier is exhausted |
 | **2. Submit beautifully** | C1 coversheet (salary confirmed, permission checked); PDF export | The owner sends real coversheets and they need little editing |
 | **3. Go live** | F1–F4; W1 | Security matrix green; a backup restored; a CV from the live site arrives in the platform |
 | **4. The client desk** | C2–C5 | A real client uses it for one role end to end |
@@ -250,7 +391,8 @@ Website polish (W2, W3) fits between phases; it touches only the website.
 
 Taken by the owner, 2026-10-12:
 1. **People found on the web:** public data only, as a guide to contact them; their CV, contact details and permission
-   come from them. No extra GDPR machinery (one privacy line with a link in the first message, as any recruiter's has).
+   come from them. No extra GDPR machinery. (2026-10-13: no privacy line in messages either; the desk holds only public
+   profile information.)
 2. **Contacting them:** LinkedIn messages drafted by the desk, sent by the owner.
 3. **Off-limits:** never source from active clients; a placed person's new employer off-limits for 12 months.
 4. **Budget:** adjustable per role and for the desk, with results-and-spend statistics to judge every strategy.
@@ -258,6 +400,12 @@ Taken by the owner, 2026-10-12:
 6. **Client desk:** one hiring manager per role, who may add interviewers from the same company only; live updates.
 7. **Salary:** clients see the candidate's salary expectation once the owner has confirmed it.
 8. **The paid plan** (Track M) is the ultimate goal, after an owner-only period.
+
+Taken by the owner, 2026-10-13:
+9. **Company research by price, value and accuracy:** Exa where it is cheaper and accurate enough (company profiles,
+   by ID or confirmed by a key), Grok where accuracy matters most (section 4b). A company is never researched twice.
+10. **Search like a recruiter:** talent DNA first, a growing target list searched in batches, widening only when the
+    list is exhausted, and the owner decides each widening (section 4b, draft for approval).
 
 Still open (needed by phases 2–4, not by phase 1):
 - **System mail:** a transactional service for invitations, password resets and "new candidate" notices (recommended;
