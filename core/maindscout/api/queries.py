@@ -83,6 +83,17 @@ def list_jobs(session: Session, org_id: uuid.UUID) -> list[dict[str, Any]]:
             archived[job_id] += n
         elif band in BANDS:
             counts[job_id][band] += n
+    from maindscout.api import outreach
+
+    # Suggestions nobody has decided on yet are on each role's Sourcing tab, not in its bands (phase 1c).
+    suggested = outreach.undecided_pairs(session, org_id)
+    if suggested:
+        for job_id, cid, band in session.execute(select(CandidateJob.job_id, CandidateJob.candidate_id, CandidateJob.triage_band).join(
+                Candidate, Candidate.id == CandidateJob.candidate_id).where(
+                CandidateJob.org_id == org_id, CandidateJob.candidate_id.in_({c for _, c in suggested}),
+                Candidate.archived_at.is_(None))):  # an archived one is counted as archived, not in a band
+            if (job_id, cid) in suggested and band in BANDS:
+                counts[job_id][band] -= 1
     jobs = list(session.scalars(select(Job).where(Job.org_id == org_id).order_by(Job.created_at.desc())))
     # "To review" per job = the job's priority inbox. Built once for the desk and counted per job, not once per job.
     priority: dict[uuid.UUID, set[str]] = defaultdict(set)
@@ -90,10 +101,12 @@ def list_jobs(session: Session, org_id: uuid.UUID) -> list[dict[str, Any]]:
                                        .join(Candidate, Candidate.id == CandidateJob.candidate_id)
                                        .where(CandidateJob.org_id == org_id, CandidateJob.triage_band == "priority",
                                               Candidate.archived_at.is_(None))):
-        priority[job_id].add(str(cid))
+        if (job_id, cid) not in suggested:
+            priority[job_id].add(str(cid))
     items = inbox(session, org_id, None, "all") if priority else []
     return [{"id": str(j.id), "title": j.title, "hiring_company": j.hiring_company, "state": j.state,
              "created_at": _iso(j.created_at), "bands": counts[j.id], "archived": archived[j.id],
+             "suggestions": sum(1 for job_id, _ in suggested if job_id == j.id),
              "to_review": sum(1 for i in items if (i.get("subject") or {}).get("id") in priority[j.id])} for j in jobs]
 
 
@@ -122,6 +135,11 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
     stopped = set(session.scalars(select(Candidate.id).where(
         Candidate.id.in_([p.candidate_id for p in pairs] or [None]), Candidate.do_not_contact_at.is_not(None))))
     archived = []
+    from maindscout.api import outreach
+
+    # Phase 1c: people found by sourcing stay on the Sourcing tab until the owner decides; only a count shows here.
+    suggested = outreach.undecided(session, org_id, job.id)
+    pairs = [p for p in pairs if p.candidate_id not in suggested]
     gap_rows = _gap_rows_many(session, org_id, job, [p.candidate_id for p in pairs if p.candidate_id not in gone])
     for p in pairs:
         if p.candidate_id in gone:
@@ -142,6 +160,7 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
         "process_stale": any(c.flags.get("job_process_stale") for c in reqs),
         "rematching": _rematching(session, job.id),
         "people": people,
+        "suggestions_waiting": len(suggested),
         "archived": archived,
         "stages": pipeline.stage_counts(session, job.id),
         "coverage": coverage.summary(session, job),

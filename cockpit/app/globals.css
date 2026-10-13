@@ -729,6 +729,12 @@ a.pc-name { font-weight: 600; font-size: 15px; color: var(--cream); text-decorat
 a.pc-name:hover { color: var(--amber-text); }
 .personcard .reason { margin: 0; color: var(--cream-dim); font-size: 13px; }
 .pc-side { display: flex; gap: 6px; align-items: flex-start; flex: none; }
+/* Phase 1c: the owner's one-click workflow on a suggestion card */
+.triage { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.triage .row { flex-wrap: wrap; gap: 6px; align-items: center; }
+.triage .warn { margin: 0; }
+.triage button.chip { cursor: pointer; }
+.people li.personcard.due { border-left: 3px solid var(--amber); }
 .gapbar { display: flex; align-items: center; gap: 10px; }
 .gapbar .track { display: flex; width: 120px; height: 6px; border-radius: 3px; overflow: hidden; background: var(--bg-raise-3); flex: none; }
 .gapbar .ev { background: var(--green); }

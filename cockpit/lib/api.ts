@@ -126,6 +126,7 @@ export type JobPage = JobSummary & {
   process_stale: boolean;
   rematching?: boolean;
   people: Record<Band, PersonOnJob[]>;
+  suggestions_waiting: number;
   archived: { candidate_id: string; name: string | null; reason: string | null }[];
   coverage: { desk: string[]; from_ad: string[]; opened: string[]; names: Record<string, string> };
   stages: Record<string, number>;
@@ -375,7 +376,19 @@ export type SourcingRunView = { id: string; trigger: string; status: string; sto
     radar?: { queries: { text: string; results: number; signals: number; companies: string[] }[]; flagged: string[]; added: string[];
       stopped: string | null }; profiles?: { companies: number; people: number }; snowball?: string[] } };
 
+/** Where a person is in the owner's workflow on a role (phase 1c, api/outreach.py stage()). */
+export type OutreachStage = "to_review" | "to_contact" | "later" | "contacted" | "replied" | "call_booked" | "passed";
+export type ContactChannel = "linkedin_invite" | "linkedin_message" | "inmail" | "email";
+export type ReplyOutcome = "interested" | "not_now" | "not_interested" | "stop";
+export type ContactTrack = {
+  stage?: string; viewed_at?: string; decided_at?: string; passed_for?: string; channel?: ContactChannel; contacted_at?: string;
+  follow_up_due?: string | null; accepted_at?: string; call_at?: string | null;
+  reply?: { outcome: ReplyOutcome | null; at: string; note?: string | null; text?: string | null; check_back?: string | null; source?: string };
+  unclear?: { kind: "accepted" | "message"; at: string; subject: string; snippet: string; others: number };
+};
+
 export type Suggestion = { candidate_id: string; name: string | null; band: Band; reason: string | null; match_tier: string | null;
+  stage: OutreachStage; hint: "looks strong" | "possible"; reach: string | null; contact: ContactTrack | null; follow_up_due: boolean;
   state: string; current: string | null; location: string | null; profile: string | null; employer: CompanyProfile | null;
   gaps?: PersonOnJob["gaps"]; coverage?: PersonOnJob["coverage"];
   found_by: { channel: string; target: string | null; tier: string | null; query: string | null; at: string | null; new_to_desk: boolean;
@@ -390,6 +403,7 @@ export type SourcingPage = {
   budget: { role_spent_usd: number; role_budget_usd: number; desk_spent_usd: number; desk_budget_usd: number };
   strong_waiting: number; web_ready: boolean; running: boolean; building: boolean; widening: Widening | null;
   runs: SourcingRunView[]; suggestions: Suggestion[]; suggestions_total: number;
+  lists: Record<Exclude<OutreachStage, "to_review">, Suggestion[]>; counts: Record<OutreachStage, number>; follow_ups_due: number;
 };
 
 export type FunnelCounts = { found: number; new_to_desk: number; relevant: number; possible: number; contacted: number; replied: number;

@@ -357,10 +357,18 @@ def sync(session: Session, org_id, now: datetime | None = None) -> dict[str, int
             if replies:
                 mark_replied(session, org_id, m.id, replies[0])
                 replied += 1
+    linkedin = {"accepted": 0, "replied": 0, "unclear": 0}
+    if provider is not None:
+        from maindscout.api import outreach
+
+        try:
+            linkedin = outreach.read_linkedin(session, org_id, provider, now)
+        except mailbox.MailboxError:
+            pass  # e.g. connected before the read permission was asked for: connect again to read LinkedIn's emails
         box.last_sync_at = datetime.now(timezone.utc)
     follow = due_follow_ups(session, org_id, None, now)
     session.flush()
-    return {"sent": sent, "replied": replied, "follow_ups_drafted": len(follow)}
+    return {"sent": sent, "replied": replied, "follow_ups_drafted": len(follow), "linkedin": linkedin}
 
 
 def as_dict(m: Message) -> dict[str, Any]:

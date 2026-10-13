@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { ExternalLink, Pin, PinOff, Radar, Undo2, X } from "lucide-react";
+import { Pin, PinOff, Radar, Undo2, X } from "lucide-react";
 import { addSourcingTarget, buildStrategy, changeSourcingTarget, draftLinkedIn, findPeerCompanies, runSourcingNow, setSourcingMode, setSourcingPlan,
   widenSourcing } from "@/app/actions";
 import { Refresh } from "@/components/CallsClient";
+import { ProfileLink, Triage } from "@/components/Outreach";
 import { AddTarget, OneClick, PlanSettings, PlanWords } from "@/components/SourcingForms";
 import type { CompanyProfile, SourcingMode, SourcingPage, SourcingStats, SourcingTarget, Suggestion, TalentDna, Widening } from "@/lib/api";
 import { MODE_LABEL, reasonWords, TIER_WORDS } from "@/lib/format";
@@ -55,33 +56,124 @@ function foundBy(f: Suggestion["found_by"]): string {
 
 const usd = (n: number) => `$${n < 1 ? n.toFixed(3) : n.toFixed(2)}`;
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
-const link = (profile: string) => (profile.startsWith("http") ? profile : `https://${profile}`);
+
+const day = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "");
+const CHANNEL_WORDS: Record<string, string> = { linkedin_invite: "LinkedIn request", linkedin_message: "LinkedIn message",
+  inmail: "InMail / Recruiter", email: "email" };
+const OUTCOME_WORDS: Record<string, string> = { interested: "interested", not_now: "not now", not_interested: "not interested", stop: "asked to stop" };
+const PASS_WORDS: Record<string, string> = { level: "level", skills: "skills", location: "location", domain: "field", other: "other" };
+const LIST_TITLE = { to_contact: "To contact", contacted: "Contacted, waiting for a reply", replied: "Replied", call_booked: "Call booked" };
+
+/** Where the contact stands, in one line: how and when, the acceptance, the reply, the call, the follow-up. */
+function trackLine(s: Suggestion): string | null {
+  const t = s.contact;
+  if (!t) return null;
+  const bits: string[] = [];
+  if (t.contacted_at) bits.push(`Contacted ${day(t.contacted_at)} by ${CHANNEL_WORDS[t.channel ?? ""] ?? t.channel}`);
+  if (t.accepted_at) bits.push(`accepted ${day(t.accepted_at)}`);
+  if (s.stage === "contacted" && t.follow_up_due) bits.push(s.follow_up_due ? "follow-up due now" : `follow up ${day(t.follow_up_due)} if no reply`);
+  if (t.reply) {
+    const said = t.reply.outcome ? `: ${OUTCOME_WORDS[t.reply.outcome]}` : t.reply.source === "linkedin_email" ? " on LinkedIn (say how below)" : "";
+    bits.push(`replied ${day(t.reply.at)}${said}${t.reply.check_back ? `, check back from ${day(t.reply.check_back)}` : ""}`);
+  }
+  if (t.stage === "call_booked") bits.push(t.call_at ? `call ${when(t.call_at)}` : "call booked");
+  if (s.stage === "passed" && t.passed_for) bits.push(`not for this role: ${PASS_WORDS[t.passed_for] ?? t.passed_for}`);
+  return bits.length ? bits.join(" · ") : null;
+}
 
 function SuggestionCard({ jobId, s, since }: { jobId: string; s: Suggestion; since?: string | null }) {
   const fresh = Boolean(since && s.found_by.at && s.found_by.at >= since);
+  const track = trackLine(s);
+  const deciding = s.stage === "to_review" || s.stage === "later";
   return (
-    <li className="personcard">
+    <li className={`personcard${s.follow_up_due ? " due" : ""}`}>
       <div className="pc-main">
         <div className="pc-head">
           <Link href={`/jobs/${jobId}/people/${s.candidate_id}`} className="pc-name">{s.name ?? "name not read"}</Link>
-          <span className={`tiertag ${s.band === "priority" ? "strong" : "possible"}`}>{s.band === "priority" ? "strong" : "possible"}</span>
+          {deciding && <span className={`tiertag ${s.hint === "looks strong" ? "strong" : "possible"}`}
+            title="The desk's reading of a public profile: a hint, not a band">{s.hint}</span>}
+          {s.reach && <span className="blocktag" title={s.reach}>a reach</span>}
           {s.match_tier && s.match_tier !== "unclear" && <span className={`tiertag ${s.match_tier}`}>{TIER_WORDS[s.match_tier]}</span>}
           {fresh && <span className="pill accent">just found</span>}
-          {s.found_by.new_to_desk ? <span className="pill">new</span> : <span className="chip small">already on the desk</span>}
+          {s.stage === "to_review" && (s.found_by.new_to_desk ? <span className="pill">new</span> : <span className="chip small">already on the desk</span>)}
+          {s.follow_up_due && <span className="pill accent">follow up</span>}
         </div>
         <p className="reason">{[s.current, s.location].filter(Boolean).join(" · ") || "role and place not on the profile"}</p>
+        {s.reach && <p className="hint">Possible, a reach: {s.reach}</p>}
+        {track && <p className="reason">{track}</p>}
+        {s.contact?.reply?.text && <p className="hint">&ldquo;{s.contact.reply.text}&rdquo;</p>}
         {s.employer && <p className="hint">Works at: {facts(s.employer)}</p>}
-        <p className="hint">{reasonWords(s.reason)} · {foundBy(s.found_by)}</p>
+        {s.stage === "to_review" && <p className="hint">{reasonWords(s.reason)} · {foundBy(s.found_by)}</p>}
+        <Triage jobId={jobId} s={s} />
       </div>
       <div className="pc-side">
-        {s.profile && <a className="btn small ghost" href={link(s.profile)} target="_blank" rel="noreferrer"><ExternalLink aria-hidden="true" />Profile</a>}
-        {s.profile && (
+        <ProfileLink jobId={jobId} s={s} />
+        {s.profile && (s.stage === "to_contact" || (s.stage === "contacted" && s.follow_up_due)) && (
           <form action={draftLinkedIn.bind(null, jobId, s.candidate_id)}>
-            <button className="btn small primary">Draft LinkedIn message</button>
+            <button className="btn small">{s.stage === "contacted" ? "Follow-up draft" : "Draft LinkedIn message"}</button>
           </form>
         )}
       </div>
     </li>
+  );
+}
+
+function Cards({ jobId, rows, since }: { jobId: string; rows: Suggestion[]; since?: string | null }) {
+  return <ul className="people personcards">{rows.map((x) => <SuggestionCard key={x.candidate_id} jobId={jobId} s={x} since={since} />)}</ul>;
+}
+
+/** The workflow on one panel: to review, to contact, contacted, replied, call booked; maybe later and passed folded away. */
+function Workflow({ jobId, s, since }: { jobId: string; s: SourcingPage; since: string | null }) {
+  const c = s.counts;
+  const strong = s.suggestions.filter((x) => x.hint === "looks strong");
+  const weaker = s.suggestions.filter((x) => x.hint !== "looks strong");
+  const steps: [string, number][] = [["to review", c.to_review], ["to contact", c.to_contact], ["contacted", c.contacted],
+    ["replied", c.replied], ["call booked", c.call_booked], ["maybe later", c.later]];
+  return (
+    <section className="panel">
+      <h3>Suggestions</h3>
+      <p className="funnel" aria-label="Where everyone is">
+        {steps.map(([label, n], i) => <span key={label}>{i ? " · " : ""}<strong>{n}</strong> {label}</span>)}
+        {s.follow_ups_due > 0 && <span> · <strong>{s.follow_ups_due}</strong> follow-ups due</span>}
+      </p>
+
+      <h4>To review {c.to_review > 0 && <span className="pill">{c.to_review}</span>}</h4>
+      {s.suggestions.length === 0 ? <p className="empty">Nothing to review. Choose how often to search, or search now.</p> : (
+        <>
+          {strong.length > 0 && <Cards jobId={jobId} rows={strong} since={since} />}
+          {weaker.length > 0 && (
+            <details open={strong.length === 0}>
+              <summary className="sub">{weaker.length} possible matches (weaker: they miss some of what the role asks for)</summary>
+              <Cards jobId={jobId} rows={weaker} since={since} />
+            </details>
+          )}
+        </>
+      )}
+      <p className="hint">Open the profile, come back, decide: reach out (they become Priority, your choice), maybe later, or not for this
+        role (the reason teaches the desk your taste). Nobody found on the web is in the role&apos;s Priority until you choose them.</p>
+
+      {(["to_contact", "contacted", "replied", "call_booked"] as const).map((k) => s.lists[k].length > 0 && (
+        <div key={k}>
+          <h4>{LIST_TITLE[k]} <span className="pill">{c[k]}</span></h4>
+          <Cards jobId={jobId} rows={s.lists[k]} />
+        </div>
+      ))}
+      {s.lists.later.length > 0 && (
+        <details>
+          <summary className="sub">Maybe later ({c.later})</summary>
+          <Cards jobId={jobId} rows={s.lists.later} />
+        </details>
+      )}
+      {s.lists.passed.length > 0 && (
+        <details>
+          <summary className="sub">Not for this role ({c.passed})</summary>
+          <Cards jobId={jobId} rows={s.lists.passed} />
+        </details>
+      )}
+      <p className="hint">Public data only: a guide to who to contact. Their CV, contact details and permission come from them. A follow-up
+        is due 4 days after contact without a reply. Once your mailbox is connected, LinkedIn&apos;s emails about people you contacted
+        there (an accepted invitation, a message) move them on by themselves.</p>
+    </section>
   );
 }
 
@@ -220,7 +312,7 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
           </div>
         </div>
         <p className="sub">
-          {s.strong_waiting} of {p.target} strong suggestions waiting to be contacted ·
+          {s.strong_waiting} of {p.target} strong suggestions waiting (to review or to contact) ·
           this month {usd(s.budget.role_spent_usd)} of {usd(s.budget.role_budget_usd)} for this role
           (desk {usd(s.budget.desk_spent_usd)} of {usd(s.budget.desk_budget_usd)})
           {p.mode === "paused" ? " · paused: choose how often it searches" : ""}
@@ -250,26 +342,7 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
 
       {s.widening && <WideningPanel jobId={jobId} w={s.widening} />}
 
-      <section className="panel">
-        <h3>Suggestions to contact {s.suggestions_total > 0 && <span className="pill">{s.suggestions_total}</span>}</h3>
-        {s.suggestions.length === 0 ? <p className="empty">No suggestions waiting. Choose how often to search, or search now.</p> : (
-          <>
-            <ul className="people personcards stagger">
-              {s.suggestions.filter((x) => x.band === "priority").map((x) => <SuggestionCard key={x.candidate_id} jobId={jobId} s={x} since={since} />)}
-            </ul>
-            {s.suggestions.some((x) => x.band !== "priority") && (
-              <details>
-                <summary className="sub">{s.suggestions.filter((x) => x.band !== "priority").length} possible matches (weaker: they miss
-                  some of what the role asks for)</summary>
-                <ul className="people personcards">
-                  {s.suggestions.filter((x) => x.band !== "priority").map((x) => <SuggestionCard key={x.candidate_id} jobId={jobId} s={x} since={since} />)}
-                </ul>
-              </details>
-            )}
-          </>
-        )}
-        <p className="hint">Public data only: a guide to who to contact. Their CV, contact details and permission come from them.</p>
-      </section>
+      <Workflow jobId={jobId} s={s} since={since} />
 
       <Dna jobId={jobId} dna={p.dna} building={s.building} ready={s.web_ready} />
 

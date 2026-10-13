@@ -782,6 +782,18 @@ export async function widenSourcing(jobId: string, option: string, value: string
   revalidatePath(`/jobs/${jobId}`);
 }
 
+/** One step of the owner's workflow on a role's suggestion (phase 1c): viewed, decide, undo, contacted, replied,
+ *  call-booked, or settling which person a LinkedIn email is about. */
+export async function outreachStep(jobId: string, candidateId: string, step: string, body: Record<string, unknown>): Promise<FormState> {
+  try {
+    await apiJson(`/v1/jobs/${jobId}/people/${candidateId}/${step}`, body);
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return {};
+}
+
 export async function draftLinkedIn(jobId: string, candidateId: string): Promise<void> {
   await apiJson("/v1/messages", { kind: "candidate_outreach", candidate_id: candidateId, job_id: jobId, channel: "linkedin" });
   redirect(`/people/${candidateId}?tab=messages`);

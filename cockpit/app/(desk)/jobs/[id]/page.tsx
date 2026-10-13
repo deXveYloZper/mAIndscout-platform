@@ -153,6 +153,7 @@ export default async function Job({ params, searchParams }: {
         {TABS.map(([k, label]) => (
           <Link key={k} href={href({ tab: k })} aria-current={tab === k ? "page" : undefined}>
             {label}{k === "find" && thin ? <span className="pill">thin</span> : null}
+            {k === "find" && job.suggestions_waiting > 0 ? <span className="pill accent" title="Suggestions to review">{job.suggestions_waiting}</span> : null}
           </Link>
         ))}
       </nav>
@@ -180,7 +181,13 @@ export default async function Job({ params, searchParams }: {
               )}
             </>
           ) : (
-            <People jobId={job.id} people={job.people[band]} />
+            <>
+              {job.suggestions_waiting > 0 && (
+                <p className="hint">{job.suggestions_waiting} {job.suggestions_waiting === 1 ? "person" : "people"} found by sourcing wait on
+                  the <Link href={href({ tab: "find" })}>Sourcing tab</Link>: they join these lists when you choose them.</p>
+              )}
+              <People jobId={job.id} people={job.people[band]} />
+            </>
           )}
         </>
       )}

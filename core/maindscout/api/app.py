@@ -9,6 +9,7 @@ from __future__ import annotations
 import threading
 import urllib.parse
 import uuid
+from datetime import date, datetime
 from functools import lru_cache
 from typing import Any, Iterator
 
@@ -355,6 +356,117 @@ def override_band(job_id: uuid.UUID, candidate_id: uuid.UUID, body: BandBody, or
     pair = review.override_band(session, org_id, job_id, candidate_id, body.band, actor, body.reason)
     session.commit()
     return {"band": pair.triage_band, "reason": pair.triage_reason, "overridden_by": pair.band_overridden_by}
+
+
+# --- phase 1c: the owner's workflow on a role's suggestions, and the contact track (api/outreach.py) ---
+
+
+def _pair_view(pair) -> dict:
+    from maindscout.api import outreach
+
+    return {"stage": outreach.stage(pair), "state": pair.pair_state, "band": pair.triage_band,
+            "contact": {k: v for k, v in (pair.contact or {}).items() if k not in ("mail_ids", "machine")} or None}
+
+
+@app.post("/v1/jobs/{job_id}/people/{candidate_id}/viewed")
+def outreach_viewed(job_id: uuid.UUID, candidate_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org),
+                    session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """The owner opened their profile."""
+    from maindscout.api import outreach
+
+    pair = outreach.viewed(session, org_id, job_id, candidate_id, actor)
+    session.commit()
+    return _pair_view(pair)
+
+
+class DecideBody(BaseModel):
+    choice: str  # reach_out | later | pass
+    reason: str | None = None  # for pass: level | skills | location | domain | other
+    note: str | None = None
+
+
+@app.post("/v1/jobs/{job_id}/people/{candidate_id}/decide")
+def outreach_decide(job_id: uuid.UUID, candidate_id: uuid.UUID, body: DecideBody, org_id: uuid.UUID = Depends(get_org),
+                    session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Reach out (Priority, by the owner), maybe later, or not for this role (with a reason)."""
+    from maindscout.api import outreach
+
+    pair = outreach.decide(session, org_id, job_id, candidate_id, body.choice, actor, body.reason, body.note)
+    session.commit()
+    return _pair_view(pair)
+
+
+@app.post("/v1/jobs/{job_id}/people/{candidate_id}/undo")
+def outreach_undo(job_id: uuid.UUID, candidate_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org),
+                  session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Back to the suggestions (before anyone was contacted)."""
+    from maindscout.api import outreach
+
+    pair = outreach.undo(session, org_id, job_id, candidate_id, actor)
+    session.commit()
+    return _pair_view(pair)
+
+
+class ContactedBody(BaseModel):
+    channel: str  # linkedin_invite | linkedin_message | inmail | email
+    note: str | None = None
+
+
+@app.post("/v1/jobs/{job_id}/people/{candidate_id}/contacted")
+def outreach_contacted(job_id: uuid.UUID, candidate_id: uuid.UUID, body: ContactedBody, org_id: uuid.UUID = Depends(get_org),
+                       session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Contacted outside the desk: the follow-up reminder starts (4 days)."""
+    from maindscout.api import outreach
+
+    outreach.contacted(session, org_id, job_id, candidate_id, body.channel, actor, body.note)
+    session.commit()
+    return _pair_view(outreach._pair(session, org_id, job_id, candidate_id))
+
+
+class RepliedBody(BaseModel):
+    outcome: str  # interested | not_now | not_interested | stop
+    note: str | None = None
+    check_back: date | None = None
+    text: str | None = None
+
+
+@app.post("/v1/jobs/{job_id}/people/{candidate_id}/replied")
+def outreach_replied(job_id: uuid.UUID, candidate_id: uuid.UUID, body: RepliedBody, org_id: uuid.UUID = Depends(get_org),
+                     session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    from maindscout.api import outreach
+
+    pair = outreach.replied(session, org_id, job_id, candidate_id, body.outcome, actor, body.note, body.check_back, body.text)
+    session.commit()
+    return _pair_view(pair)
+
+
+class CallBody(BaseModel):
+    when: datetime | None = None
+
+
+@app.post("/v1/jobs/{job_id}/people/{candidate_id}/call-booked")
+def outreach_call(job_id: uuid.UUID, candidate_id: uuid.UUID, body: CallBody, org_id: uuid.UUID = Depends(get_org),
+                  session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    from maindscout.api import outreach
+
+    pair = outreach.call_booked(session, org_id, job_id, candidate_id, actor, body.when)
+    session.commit()
+    return _pair_view(pair)
+
+
+class SettleBody(BaseModel):
+    mine: bool
+
+
+@app.post("/v1/jobs/{job_id}/people/{candidate_id}/linkedin-email")
+def outreach_settle(job_id: uuid.UUID, candidate_id: uuid.UUID, body: SettleBody, org_id: uuid.UUID = Depends(get_org),
+                    session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Two people contacted on LinkedIn share a name: is LinkedIn's email about this one?"""
+    from maindscout.api import outreach
+
+    pair = outreach.settle(session, org_id, job_id, candidate_id, body.mine, actor)
+    session.commit()
+    return _pair_view(pair)
 
 
 @app.get("/v1/candidates")

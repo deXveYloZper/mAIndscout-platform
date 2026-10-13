@@ -274,6 +274,8 @@ class CandidateJob(Base):
     triage_reason: Mapped[str | None] = mapped_column(String)
     band_overridden_by: Mapped[str | None] = mapped_column(String)
     pair_state: Mapped[str] = mapped_column(String, nullable=False, default="new")  # the recruiter's progress; see PAIR_STATES
+    # Phase 1c: the contact track (how and when they were contacted, their reply, the call), shown on the Sourcing tab.
+    contact: Mapped[dict | None] = mapped_column(JSONB)
     outcome: Mapped[dict | None] = mapped_column(JSONB)  # why it ended: {party, reason, note} for we_passed / submitted
     # Matching v2 (I5): the tier and every verdict and rule behind it. Never a number.
     match_tier: Mapped[str | None] = mapped_column(String)  # strong | possible | unlikely | unclear

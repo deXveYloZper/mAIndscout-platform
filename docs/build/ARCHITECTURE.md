@@ -26,6 +26,7 @@ Local setup: [core/README.md](../../core/README.md).
 
 | Component | Status | Page |
 |---|---|---|
+| Outreach workflow: suggestions until the owner decides, one-click triage with undo, the contact track (contacted, follow-up, reply, call), reaches, LinkedIn's emails read for contacted people only (next build, phase 1c) | built; the email reading waits for the owner's mailbox | [outreach.md](components/outreach.md) |
 | Sourcing strategy: talent DNA, tiered target list, batches until exhausted, snowball, widening the owner decides (next build, phase 1b) | built | [sourcing-strategy.md](components/sourcing-strategy.md) |
 | Company knowledge: identity keys, Exa profiles for breadth, Grok research for depth, cross-check (next build, phase 1b) | built | [company-knowledge.md](components/company-knowledge.md) |
 | Sourcing results and spend: funnel per strategy, cost per relevant / interview / placement, flags (next build, phase 1) | built | [sourcing-results.md](components/sourcing-results.md) |

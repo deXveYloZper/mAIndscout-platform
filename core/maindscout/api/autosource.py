@@ -314,12 +314,19 @@ def _job(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> Job:
 
 def strong_waiting(session: Session, job_id: uuid.UUID) -> int:
     """Strong suggestions found by sourcing that nobody has contacted yet: never someone who said stop, nor someone
-    living outside the role's countries (they are not shown, so they never hold the search back)."""
-    rows = session.execute(select(CandidateJob.candidate_id, CandidateJob.org_id).join(
+    living outside the role's countries (they are not shown, so they never hold the search back), nor a reach the
+    owner has not chosen (a head of engineering for a developer role, phase 1c)."""
+    from maindscout.api import outreach
+
+    rows = session.execute(select(CandidateJob.candidate_id, CandidateJob.org_id, CandidateJob.band_overridden_by).join(
         SourcingHit, (SourcingHit.job_id == CandidateJob.job_id) & (SourcingHit.candidate_id == CandidateJob.candidate_id)).join(
         Candidate, Candidate.id == CandidateJob.candidate_id).where(
         CandidateJob.job_id == job_id, CandidateJob.triage_band == "priority", CandidateJob.pair_state.in_(WAITING),
         Candidate.do_not_contact_at.is_(None))).all()
+    if not rows:
+        return 0
+    job = session.get(Job, job_id)
+    rows = [(cid, org_id) for cid, org_id, chosen in rows if chosen or not outreach.reach(session, org_id, cid, job)]
     p = current_plan(session, job_id)
     countries = set(p.countries or []) if p is not None else set()
     if not countries:
@@ -545,10 +552,14 @@ def _people_facts(session: Session, org_id: uuid.UUID, ids: list[uuid.UUID]) -> 
     return out
 
 
+# The Sourcing tab's lists, in the order of the workflow (outreach.stage).
+LISTS = ("to_review", "to_contact", "later", "contacted", "replied", "call_booked", "passed")
+
+
 def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "system") -> dict[str, Any]:
     """Everything the role's sourcing tab shows: the plan, budgets, recent runs, and the suggestions waiting."""
     from maindscout.api import companies as companies_mod
-    from maindscout.api import company_profiles, hiring, radar, strategy
+    from maindscout.api import company_profiles, hiring, outreach, radar, strategy
     from maindscout.api.queries import _gap_rows_many, _gap_summary, names
     from maindscout.settings import env
 
@@ -571,31 +582,55 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
     stopped = set(session.scalars(select(Candidate.id).where(Candidate.id.in_(list(hits) or [None]),
                                                              Candidate.do_not_contact_at.is_not(None))))
     countries = set(p.countries or [])
-    waiting = [x for x in pairs if x.pair_state in WAITING and x.triage_band in ("priority", "review_later")
-               and x.candidate_id not in stopped
-               and not strategy.outside_countries(session, org_id, x.candidate_id, countries)]
+    # Phase 1c: the owner's workflow. Suggestions to review (nobody decided yet), then the people the owner chose to
+    # reach out to, maybe later, contacted, replied, call booked. The machine's band is only a hint until then.
+    by_stage: dict[str, list[CandidateJob]] = {}
+    for x in pairs:
+        if x.candidate_id in stopped:
+            continue
+        st = outreach.stage(x)
+        if st == "to_review" and (x.pair_state not in WAITING or x.triage_band not in ("priority", "review_later")
+                                  or strategy.outside_countries(session, org_id, x.candidate_id, countries)):
+            continue
+        by_stage.setdefault(st, []).append(x)
+    waiting = by_stage.get("to_review", [])
     waiting.sort(key=lambda x: (x.triage_band != "priority", -(hits[x.candidate_id].created_at.timestamp())))
-    ids = [x.candidate_id for x in waiting[:100]]
+    for st, rows_ in by_stage.items():
+        if st == "passed":  # the latest first, so a pass made by mistake is easy to undo
+            rows_.sort(key=lambda x: (x.contact or {}).get("decided_at") or "", reverse=True)
+        elif st != "to_review":
+            rows_.sort(key=lambda x: (x.contact or {}).get("follow_up_due") or (x.contact or {}).get("decided_at") or "")
+    shown = [x for st in LISTS for x in by_stage.get(st, [])[:100]]
+    ids = [x.candidate_id for x in shown]
     who, facts = names(session, ids), _people_facts(session, org_id, ids)
     rows = _gap_rows_many(session, org_id, job, ids) if ids else {}
     queries = {q.id: q for q in session.scalars(select(SourcingQuery).where(SourcingQuery.job_id == job.id))}
-    suggestions = []
-    for x in waiting[:100]:
+    now = datetime.now(timezone.utc).isoformat()
+    lists: dict[str, list[dict[str, Any]]] = {st: [] for st in LISTS}
+    for x in shown:
         h = hits[x.candidate_id]
         q = queries.get(h.query_id) if h.query_id else None
         at = None
         if q is not None and q.company_id is not None:
-            ids = set(companies_mod._ids_for(session, session.get(Company, q.company_id)))
+            ids_ = set(companies_mod._ids_for(session, session.get(Company, q.company_id)))
             for step in session.scalars(select(Claim).where(Claim.subject_id == x.candidate_id, Claim.claim_type == "CareerStepClaim",
                                                             Claim.status.in_(LIVE))):
-                if ((step.approved_view or step.payload).get("company") or {}).get("company_id") in ids:
+                if ((step.approved_view or step.payload).get("company") or {}).get("company_id") in ids_:
                     at = "now" if step.valid_to is None else (at or "before")
-        suggestions.append({"candidate_id": str(x.candidate_id), "name": who.get(x.candidate_id), "band": x.triage_band,
-                            "reason": x.triage_reason, "match_tier": x.match_tier, "state": x.pair_state,
-                            **facts[x.candidate_id], **_gap_summary(rows.get(x.candidate_id, [])),
-                            "found_by": {"channel": h.channel, "target": h.target, "tier": h.tier, "query": q.text if q else None,
-                                         "at_target": at,
-                                         "at": h.created_at.isoformat() if h.created_at else None, "new_to_desk": h.new_to_desk}})
+        track = {k: v for k, v in (x.contact or {}).items() if k not in ("mail_ids", "machine")}
+        machine = ((x.contact or {}).get("machine") or {}).get("band") or x.triage_band
+        st = outreach.stage(x)
+        lists[st].append({"candidate_id": str(x.candidate_id), "name": who.get(x.candidate_id), "band": x.triage_band,
+                          "reason": x.triage_reason, "match_tier": x.match_tier, "state": x.pair_state, "stage": st,
+                          "hint": "looks strong" if machine == "priority" else "possible",
+                          "reach": outreach.reach(session, org_id, x.candidate_id, job),
+                          "contact": track or None,
+                          "follow_up_due": bool(st == "contacted" and track.get("follow_up_due") and track["follow_up_due"] <= now),
+                          **facts[x.candidate_id], **_gap_summary(rows.get(x.candidate_id, [])),
+                          "found_by": {"channel": h.channel, "target": h.target, "tier": h.tier, "query": q.text if q else None,
+                                       "at_target": at,
+                                       "at": h.created_at.isoformat() if h.created_at else None, "new_to_desk": h.new_to_desk}})
+    suggestions = lists["to_review"]
     runs = list(session.scalars(select(SourcingRun).where(SourcingRun.job_id == job.id).order_by(SourcingRun.started_at.desc()).limit(10)))
     return {
         "job_id": str(job.id), "title": job.title, "state": job.state,
@@ -621,4 +656,7 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
                   "ended_at": r.ended_at.isoformat() if r.ended_at else None} for r in runs],
         "suggestions": suggestions,
         "suggestions_total": len(waiting),
+        "lists": {st: v for st, v in lists.items() if st != "to_review"},
+        "counts": {st: len(by_stage.get(st, [])) for st in LISTS},
+        "follow_ups_due": sum(1 for x in lists["contacted"] if x["follow_up_due"]),
     }
