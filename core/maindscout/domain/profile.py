@@ -38,7 +38,7 @@ DOMAINS = [
     "automotive / mobility", "logistics / supply chain", "procurement", "construction / property", "public sector",
     "education", "travel / hospitality", "marketing / advertising", "it services / consulting", "enterprise software",
     "cybersecurity", "ai / data", "agriculture / food", "manufacturing / industrial", "hr / recruiting", "legal",
-    "research / academia", "non-profit", "other",
+    "research / academia", "non-profit", "luxury / fashion / beauty", "other",
 ]
 # Kinds of work that build on each other count together as relevant experience (a GIS data scientist who becomes a
 # data scientist, an engineer who becomes a team lead). A restaurant job never counts towards software.

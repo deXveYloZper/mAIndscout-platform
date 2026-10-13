@@ -201,15 +201,22 @@ function Funnel({ stats }: { stats: SourcingStats }) {
   );
 }
 
-function Dna({ jobId, dna, building, ready }: { jobId: string; dna: TalentDna | null; building: boolean; ready: boolean }) {
+function Note({ note }: { note: SourcingPage["strategy_note"] }) {
+  if (!note) return null;
+  return <p className={note.level === "error" ? "warn" : "hint"} role="status">{note.text}{note.at ? ` (${when(note.at)})` : ""}</p>;
+}
+
+function Dna({ jobId, dna, building, ready, note, built }: { jobId: string; dna: TalentDna | null; building: boolean; ready: boolean;
+  note: SourcingPage["strategy_note"]; built: boolean }) {
   if (!dna) {
     return (
       <section className="panel">
         <h3>Strategy</h3>
+        {!building && <Note note={note} />}
         <p className="sub">First learn where the hiring company&apos;s own people came from, then build the list of companies to search,
           in tiers, each with its reason. About $0.30, once; you review the list before any wide search.</p>
         {building ? <p className="sub" role="status">Building the strategy…</p>
-          : ready ? <OneClick action={buildStrategy.bind(null, jobId)} label="Build the strategy" busy="Starting…" primary />
+          : ready ? <OneClick action={buildStrategy.bind(null, jobId)} label={built ? "Build again" : "Build the strategy"} busy="Starting…" primary={!built} />
             : <p className="hint">Needs web search (Exa).</p>}
       </section>
     );
@@ -222,6 +229,7 @@ function Dna({ jobId, dna, building, ready }: { jobId: string; dna: TalentDna | 
         {building ? <span className="sub" role="status">Rebuilding…</span>
           : <OneClick action={buildStrategy.bind(null, jobId)} label="Rebuild" busy="Starting…" />}
       </div>
+      {!building && <Note note={note} />}
       <p className="sub">{dna.people} of their people found ({dna.company.employees ? `${dna.company.employees} staff in all` : "size unknown"})
         {dna.company.team_countries?.length ? ` · the team works in ${dna.company.team_countries.map((c) => `${c.country} ${c.pct}%`).join(", ")}` : ""}
         {` · built ${dna.at.slice(0, 10)} for $${dna.cost_usd.toFixed(3)}`}</p>
@@ -344,7 +352,7 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
 
       <Workflow jobId={jobId} s={s} since={since} />
 
-      <Dna jobId={jobId} dna={p.dna} building={s.building} ready={s.web_ready} />
+      <Dna jobId={jobId} dna={p.dna} building={s.building} ready={s.web_ready} note={s.strategy_note} built={live.length > 0} />
 
       <section className="panel">
         <h3>Market map</h3>

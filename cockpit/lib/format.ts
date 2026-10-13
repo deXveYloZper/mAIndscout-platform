@@ -151,7 +151,7 @@ export const DOMAINS = [
   "automotive / mobility", "logistics / supply chain", "procurement", "construction / property", "public sector",
   "education", "travel / hospitality", "marketing / advertising", "it services / consulting", "enterprise software",
   "cybersecurity", "ai / data", "agriculture / food", "manufacturing / industrial", "hr / recruiting", "legal",
-  "research / academia", "non-profit", "other",
+  "research / academia", "non-profit", "luxury / fashion / beauty", "other",
 ];
 
 // Matching v2 (I5)

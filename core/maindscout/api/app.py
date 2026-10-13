@@ -1007,6 +1007,21 @@ class IntakeBody(BaseModel):
     text: str
 
 
+class HiringCompanyBody(BaseModel):
+    name: str
+
+
+@app.put("/v1/jobs/{job_id}/hiring-company")
+def put_hiring_company(job_id: uuid.UUID, body: HiringCompanyBody, org_id: uuid.UUID = Depends(get_org),
+                       session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Who is hiring, typed by a person (an anonymised ad names nobody)."""
+    from maindscout.api import hiring
+
+    company = hiring.set_hiring_company(session, org_id, job_id, body.name, actor)
+    session.commit()
+    return {"hiring_company": body.name, "company_id": str(company.id)}
+
+
 @app.post("/v1/jobs/{job_id}/intake")
 def add_intake(job_id: uuid.UUID, body: IntakeBody, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
                actor: str = Depends(get_actor), llm: LLMClient = Depends(get_llm)):

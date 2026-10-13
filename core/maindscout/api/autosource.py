@@ -552,6 +552,23 @@ def _people_facts(session: Session, org_id: uuid.UUID, ids: list[uuid.UUID]) -> 
     return out
 
 
+def _strategy_note(session: Session, job_id: uuid.UUID) -> dict[str, Any] | None:
+    """What the last "Build the strategy" did, when it did not do everything: why it stopped, or what it left out."""
+    t = session.scalar(select(Task).where(Task.kind == "sourcing_strategy", Task.dedupe_key == f"strategy:{job_id}",
+                                          Task.status.in_(("done", "failed"))).order_by(Task.created_at.desc()).limit(1))
+    if t is None:
+        return None
+    r = t.result or {}
+    at = (t.finished_at or t.created_at).isoformat() if (t.finished_at or t.created_at) else None
+    if t.status == "failed":
+        return {"level": "error", "text": f"The strategy failed: {(t.error or 'see the logs')[:300]}", "at": at}
+    if r.get("status") == "skipped":
+        return {"level": "error", "text": f"The strategy was not built: {r.get('reason')}", "at": at}
+    if r.get("note"):
+        return {"level": "info", "text": r["note"], "at": at}
+    return None
+
+
 # The Sourcing tab's lists, in the order of the workflow (outreach.stage).
 LISTS = ("to_review", "to_contact", "later", "contacted", "replied", "call_booked", "passed")
 
@@ -647,6 +664,7 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
         "building": session.scalar(select(func.count()).select_from(Task).where(
             Task.kind == "sourcing_strategy", Task.dedupe_key == f"strategy:{job.id}", Task.status.in_(("queued", "running")))) > 0,
         "web_ready": bool(env("EXA_API_KEY")),
+        "strategy_note": _strategy_note(session, job.id),
         # Queued counts too: right after "Search now" the task waits for a worker, and the page should wait with it.
         "running": any(r.status == "running" for r in runs) or session.scalar(select(func.count()).select_from(Task).where(
             Task.kind == "sourcing_run", Task.dedupe_key == f"sourcing:{job.id}", Task.status.in_(("queued", "running")))) > 0,

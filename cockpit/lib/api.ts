@@ -402,6 +402,7 @@ export type SourcingPage = {
   hiring: { name: string; stage?: string | null; domains?: string[]; kind?: string | null; team?: string; hq?: string } | null;
   budget: { role_spent_usd: number; role_budget_usd: number; desk_spent_usd: number; desk_budget_usd: number };
   strong_waiting: number; web_ready: boolean; running: boolean; building: boolean; widening: Widening | null;
+  strategy_note: { level: "error" | "info"; text: string; at: string | null } | null;
   runs: SourcingRunView[]; suggestions: Suggestion[]; suggestions_total: number;
   lists: Record<Exclude<OutreachStage, "to_review">, Suggestion[]>; counts: Record<OutreachStage, number>; follow_ups_due: number;
 };

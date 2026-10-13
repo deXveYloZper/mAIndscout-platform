@@ -187,14 +187,40 @@ def peer_queries(company: Company, countries: list[str] | None = None, skills: l
     return out
 
 
-def _peers(session: Session, org_id: uuid.UUID, job: Job, of: Company, caller, have: set[str], why: str, limit: int,
-           task_id=None, countries: list[str] | None = None, skills: list[str] | None = None) -> list[dict[str, Any]]:
+def profile_queries(session: Session, job: Job, countries: list[str] | None = None) -> list[str]:
+    """Company searches from the hiring profile itself, for a role whose company is unknown or not confirmed (an
+    anonymised ad): its industries ("luxury / fashion / beauty" -> "luxury, fashion and beauty companies in Italy") and
+    the short backgrounds a person typed or the intake gave ("luxury")."""
+    where = " and ".join(geo.name_of(c) for c in (countries or [])[:2])
+    place = f" in {where}" if where else ""
+    phrases: list[str] = []
+    for c in session.scalars(select(Claim).where(Claim.subject_id == job.id, Claim.claim_type == "JobRequirementClaim",
+                                                 Claim.status.in_(LIVE)).order_by(Claim.created_at)):
+        p = c.approved_view or c.payload
+        if p.get("strength") == "anti":
+            continue
+        if p.get("category") == "domain":
+            for d in p.get("domains") or []:
+                if d != "other":
+                    bits = [b.strip() for b in d.split("/")]
+                    phrases.append(", ".join(bits[:-1]) + f" and {bits[-1]}" if len(bits) > 1 else bits[0])
+        elif p.get("category") in ("employer", "other") and p.get("source") in ("recruiter", "intake"):
+            text = " ".join((p.get("text_raw") or "").split())
+            if 0 < len(text.split()) <= 4 and not p.get("employer_kinds"):
+                phrases.append(text)
+    out = list(dict.fromkeys(f"{x.lower()} companies{place}" for x in phrases))
+    return out[:3]
+
+
+def _peers(session: Session, org_id: uuid.UUID, job: Job, of: Company | None, caller, have: set[str], why: str, limit: int,
+           task_id=None, countries: list[str] | None = None, skills: list[str] | None = None,
+           queries: list[str] | None = None) -> list[dict[str, Any]]:
     """Companies like `of`, from descriptive company searches; each result is its own Exa profile (kept, no second
     call). The hiring company, companies already listed and micro companies are left out. Their domains are read in
     one call at the end."""
     out: list[dict[str, Any]] = []
     made: list[Company] = []
-    for query in peer_queries(of, countries, skills):
+    for query in queries if queries is not None else peer_queries(of, countries, skills):
         results = exa.search(caller, query, "company", num_results=10, text_chars=8000)
         costs.record(session, org_id, company_profiles.PURPOSE, {"model": "exa", "usd": results.usd, "sources": len(results.found)},
                      subject_type="job", subject_id=job.id, task_id=task_id)
@@ -205,7 +231,7 @@ def _peers(session: Session, org_id: uuid.UUID, job: Job, of: Company, caller, h
                 continue
             company, _ = companies.resolve(session, name, "exa", keys={"exa_id": found.entity_id, "domain": p.homepage or found.url})
             company = companies.canonical(session, company)
-            if company is None or str(company.id) in have or company.id == job.hiring_company_id or company.id == of.id:
+            if company is None or str(company.id) in have or company.id == job.hiring_company_id or (of is not None and company.id == of.id):
                 continue
             company_profiles.apply(session, company, found, org_id)
             have.add(str(company.id))
@@ -224,13 +250,26 @@ def build(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, caller, actor:
     job = autosource._job(session, org_id, job_id)
     p = autosource.plan(session, org_id, job_id, actor)
     autosource._check_budgets(session, org_id, job, p)
-    dna = talent_dna(session, org_id, job, p, caller, task_id)
+    from maindscout.api import marketmap
+
     company = hiring_company(session, job)
+    countries = list(p.countries)
+    skipped = None
+    try:
+        dna = talent_dna(session, org_id, job, p, caller, task_id)
+    except autosource.SourcingEngineError as error:
+        # No hiring company, or Exa cannot confirm it (an anonymised or small company): no talent DNA, but the list is
+        # still built, from the hiring profile's industries and backgrounds (seen on a real role, 2026-10-13).
+        dna, skipped = None, str(error)
+        if not profile_queries(session, job, countries) and not p.targets:
+            raise autosource.SourcingEngineError(
+                f"{error}. Without it, the strategy needs an industry or background in the hiring profile (e.g. luxury), "
+                "or target companies added by hand") from error
     limits = autosource.off_limits(session, org_id)
     targets = [dict(t, group=group_of(t)) for t in p.targets]
-    have = {t.get("company_id") for t in targets} | {str(company.id)}
+    have = {t.get("company_id") for t in targets} | ({str(company.id)} if company is not None else set())
 
-    for row in dna["feeders"]:
+    for row in (dna or {}).get("feeders", []):
         if row["n"] < 2 or row["company_id"] in have:
             continue
         large = (row.get("employees") or 0) > LARGE
@@ -238,31 +277,46 @@ def build(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, caller, actor:
         why = [f"{row['n']} of {company.name}'s people came from here"]  # its facts show on their own line
         targets.append(_target(c, "feeder_large" if large else "feeder", why, "talent_dna"))
         have.add(row["company_id"])
-    countries = list(p.countries)
-    derived = not countries or countries == ([company.hq_country] if company.hq_country else [])
-    team = [geo.country_in(c["country"]) for c in (dna["company"].get("team_countries") or []) if (c.get("pct") or 0) >= 15]
-    from maindscout.api import coverage
-
-    if derived and not role_countries(session, job) and [c for c in team if c]:  # the ad's own place always wins
-        countries = list(dict.fromkeys(c for c in team if c))[:3]
+    if dna is not None:
+        derived = not countries or countries == ([company.hq_country] if company.hq_country else [])
+        team = [geo.country_in(c["country"]) for c in (dna["company"].get("team_countries") or []) if (c.get("pct") or 0) >= 15]
+        if derived and not role_countries(session, job) and [c for c in team if c]:  # the ad's own place always wins
+            countries = list(dict.fromkeys(c for c in team if c))[:3]
     from maindscout.api.sourcing import query_tokens
 
-    targets += _peers(session, org_id, job, company, caller, have, f"like {company.name}", 15, task_id, countries,
-                      query_tokens(session, job))
+    if dna is not None:
+        targets += _peers(session, org_id, job, company, caller, have, f"like {company.name}", 15, task_id, countries,
+                          query_tokens(session, job))
+    from_profile = profile_queries(session, job, countries)
+    if from_profile:  # the hiring profile's own industries and backgrounds, always (they say what the client wants)
+        targets += _peers(session, org_id, job, company, caller, have, "fits the hiring profile's industry or background",
+                          15, task_id, countries, queries=from_profile)
     for t in targets:  # profile the rest we can confirm by a key, so every company shows its facts
         c = session.get(Company, uuid.UUID(t["company_id"])) if t.get("company_id") else None
         if c is not None and not company_profiles.fresh(c) and (c.exa_id or c.domain or c.linkedin) and not limits.get(str(c.id)):
             if company_profiles.by_name(session, c, caller, org_id, job.id, task_id):
                 t["employees"] = (company_profiles.summary(c) or {}).get("employees")
 
-    variants = list(p.role_variants)
+    # Titles: the ad's title cleaned of its places ("Marketing Manager Italy and Europe" -> "Marketing Manager") and the
+    # usual titles for the kind of work, before any the owner added.
+    fresh = marketmap.initial(session, job)["role_variants"]
+    raw = " ".join((job.title or "").split()).lower()
+    variants = list(dict.fromkeys([*fresh[:1], *[v for v in p.role_variants if v.lower() != raw], *fresh[1:]]))
     words = {w for v in variants for w in re.findall(r"[a-z]+", v.lower())}
-    for title, n in dna["titles"]:
-        if (n >= 2 and title.lower() not in {v.lower() for v in variants} and not NOT_THE_ROLE.search(title)
+    for title, n in (dna or {}).get("titles", []):
+        other_work = [w for w in NOT_THE_ROLE.findall(title.lower()) if w not in words]  # "marketing" is fine for a marketer
+        if (n >= 2 and title.lower() not in {v.lower() for v in variants} and not other_work
                 and words & set(re.findall(r"[a-z]+", title.lower()))):
             variants.append(title)
-    new = autosource.update_plan(session, org_id, job_id, actor, dna=dna, targets=targets, role_variants=variants[:5],
-                                 countries=countries)
+    changes: dict[str, Any] = {"targets": targets, "role_variants": variants[:5], "countries": countries}
+    if dna is not None:
+        changes["dna"] = dna
+    new = autosource.update_plan(session, org_id, job_id, actor, **changes)
+    if dna is None:
+        return {"version": new.version, "people": 0, "feeders": 0, "note": f"No talent DNA: {skipped}. The list was built from the "
+                "hiring profile instead.",
+                "targets": {g: sum(1 for t in new.targets if group_of(t) == g and not t.get("removed")) for g in GROUPS},
+                "countries": new.countries, "role_variants": new.role_variants}
     return {"version": new.version, "people": dna["people"], "feeders": len(dna["feeders"]),
             "targets": {g: sum(1 for t in new.targets if group_of(t) == g and not t.get("removed")) for g in GROUPS},
             "countries": new.countries, "role_variants": new.role_variants}

@@ -237,6 +237,7 @@
           "legal",
           "research / academia",
           "non-profit",
+          "luxury / fashion / beauty",
           "other"
         ]
       },
@@ -300,6 +301,17 @@
         "null"
       ],
       "description": "e.g. 'can substitute for start-up experience'."
+    },
+    "cities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "location from the intake notes: the cities named (e.g. Milan)."
+    },
+    "relocation": {
+      "type": "boolean",
+      "description": "location from the intake notes: true when moving there is fine ('or willing to move to Milan')."
     }
   }
 }

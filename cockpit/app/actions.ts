@@ -272,14 +272,28 @@ export async function correctStep(candidateId: string, path: string, careerClaim
 export async function addIntake(jobId: string, _: FormState, form: FormData): Promise<FormState> {
   const text = String(form.get("text") ?? "").trim();
   try {
-    const r = await apiJson<{ written: number; replaced: number; seen: number; rejected: { item: string; reason: string }[] }>(
-      `/v1/jobs/${jobId}/intake`, { text });
+    const r = await apiJson<{ written: number; replaced: number; seen: number; hiring_company: string | null;
+      rejected: { item: string; reason: string }[] }>(`/v1/jobs/${jobId}/intake`, { text });
     revalidatePath(`/jobs/${jobId}`);
     const left = r.rejected.length ? ` Left out ${r.rejected.length}: ${r.rejected.map((x) => `${x.item} (${x.reason})`).join("; ")}.` : "";
-    return { message: `Read ${r.written} requirement${r.written === 1 ? "" : "s"} (${r.replaced} replacing what the ad said, ${r.seen} already there).${left}` };
+    const who = r.hiring_company ? ` Hiring company: ${r.hiring_company}.` : "";
+    return { message: `Read ${r.written} requirement${r.written === 1 ? "" : "s"} (${r.replaced} replacing what the ad said, ${r.seen} already there).${who}${left}` };
   } catch (e) {
     return fail(e);
   }
+}
+
+/** Who is hiring, typed by a person (an anonymised ad names nobody). */
+export async function setHiringCompany(jobId: string, _: FormState, form: FormData): Promise<FormState> {
+  const name = String(form.get("name") ?? "").trim();
+  if (!name) return { error: "Type the hiring company's name." };
+  try {
+    await apiSend(`/v1/jobs/${jobId}/hiring-company`, "PUT", { name });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return { message: `${name} is the hiring company. Build the strategy on the Sourcing tab to use it.` };
 }
 
 /** A requirement the recruiter types: saved as approved. */

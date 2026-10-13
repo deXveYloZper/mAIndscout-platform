@@ -36,14 +36,32 @@ FAMILY_TITLES: dict[str, list[str]] = {
     "engineering_management": ["engineering manager", "head of engineering"],
     "gis_remote_sensing": ["remote sensing engineer", "SAR engineer", "GIS engineer"],
     "product_management": ["technical product manager", "product manager"],
+    "marketing": ["marketing manager", "brand manager", "senior marketing manager"],
+    "sales": ["account executive", "sales manager", "business development manager"],
+    "customer_success": ["customer success manager", "account manager"],
+    "design": ["product designer", "UX designer"],
+    "finance": ["finance manager", "financial controller"],
+    "hr_recruiting": ["HR manager", "talent acquisition partner"],
+    "operations": ["operations manager"],
 }
+# The ad's places and regions after a title ("Marketing Manager Italy and Europe", "Sales Lead - DACH") are not
+# part of the title: a search with them finds titles, not people (seen on a real role, 2026-10-13).
+_REGIONS = r"europe|emea|dach|nordics?|benelux|apac|americas|latam|global|international|worldwide|remote|hybrid"
 
 _GENDER_TAG = re.compile(r"\s*[\(\[](?:m|w|f|d|x|all genders?|gn)(?:\s*/\s*(?:m|w|f|d|x|div))*[\)\]]\s*", re.I)
 
 
 def clean_title(title: str) -> str:
-    """'Senior Flight Software Engineer (m/w/d)' -> 'Senior Flight Software Engineer'."""
-    return " ".join(_GENDER_TAG.sub(" ", title or "").split())
+    """'Senior Flight Software Engineer (m/w/d)' -> 'Senior Flight Software Engineer';
+    'Marketing Manager Italy and Europe' -> 'Marketing Manager'; 'Sales Lead - DACH' -> 'Sales Lead'."""
+    from maindscout.domain.geo import NAMES
+
+    text = " ".join(_GENDER_TAG.sub(" ", title or "").split())
+    text = re.split(r"\s+[-–|]\s+|,\s*|\s+\(", text)[0].strip() or text
+    places = "|".join(sorted({re.escape(n) for names in NAMES.values() for n in names} | {_REGIONS}, key=len, reverse=True))
+    tail = re.compile(rf"(?:\s+(?:in|for|and|&|/)?\s*(?:{places}))+\s*$", re.I)
+    short = tail.sub("", text).strip()
+    return short or text
 
 
 def _words(values: list[str]) -> set[str]:

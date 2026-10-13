@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { addIntake, addRequirement, approveClaim, rejectClaim, setStrength } from "@/app/actions";
+import { addIntake, addRequirement, approveClaim, rejectClaim, setHiringCompany, setStrength } from "@/app/actions";
 import { AddRequirement } from "@/components/AddRequirement";
 import { Snippet } from "@/components/Claim";
+import { HiringCompanyForm } from "@/components/HiringCompanyForm";
 import { IntakeForm } from "@/components/IntakeForm";
 import type { ClaimView, JobPage } from "@/lib/api";
 import { EMPLOYER_KIND_LABEL, FAMILY_LABEL, KIND_LABEL, STRENGTH_GROUPS, STRENGTHS } from "@/lib/format";
@@ -41,15 +42,26 @@ export function HiringProfile({ job, requirements }: { job: JobPage; requirement
   return (
     <section className="hiring">
       <h2>Hiring profile</h2>
-      {company && (
-        <p className="sub company-line">
-          <Link href={`/companies/${company.id}`}>{company.name}</Link>
-          {[company.kind, company.stage, company.team, company.founded && `founded ${company.founded}`, company.hq]
-            .filter(Boolean).map((x, i) => <span key={i}> · {x}</span>)}
-          {company.domains?.length ? <span> · {company.domains.join(", ")}</span> : null}
-          {!company.kind && !company.team && <span> · not researched yet</span>}
-        </p>
+      {company ? (
+        <div className="row spread">
+          <p className="sub company-line">
+            <Link href={`/companies/${company.id}`}>{company.name}</Link>
+            {[company.kind, company.stage, company.team, company.founded && `founded ${company.founded}`, company.hq]
+              .filter(Boolean).map((x, i) => <span key={i}> · {x}</span>)}
+            {company.domains?.length ? <span> · {company.domains.join(", ")}</span> : null}
+            {!company.kind && !company.team && <span> · not researched yet</span>}
+          </p>
+          <details><summary className="sub">Change</summary><HiringCompanyForm action={setHiringCompany.bind(null, job.id)} current={company.name} /></details>
+        </div>
+      ) : (
+        <div className="panel">
+          <p className="warn">No hiring company: the ad does not name one. Say who is hiring (or put it in the intake notes), so the
+            strategy can learn where their people came from and which companies are like them.</p>
+          <HiringCompanyForm action={setHiringCompany.bind(null, job.id)} />
+        </div>
       )}
+      <p className="hint"><strong>Approve</strong> keeps a requirement exactly as the desk read it. Changing how much it matters and
+        pressing <strong>Save</strong> keeps it with your strength (and approves it too).</p>
       {STRENGTH_GROUPS.map(([title, strengths]) => {
         const items = requirements.filter((r) => strengths.includes(r.payload.strength));
         if (!items.length) return null;
@@ -72,11 +84,11 @@ export function HiringProfile({ job, requirements }: { job: JobPage; requirement
                         {STRENGTHS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                         {!STRENGTHS.some(([v]) => v === r.payload.strength) && <option value={r.payload.strength}>{r.payload.strength}</option>}
                       </select>
-                      <button className="btn small">Set</button>
+                      <button className="btn small" title="Save how much it matters (this approves it too)">Save</button>
                     </form>
                     {r.status === "proposed" && (
                       <>
-                        <form action={approveClaim.bind(null, r.id, path)}><button className="btn small">Approve</button></form>
+                        <form action={approveClaim.bind(null, r.id, path)}><button className="btn small" title="Keep it as the desk read it">Approve</button></form>
                         <form action={rejectClaim.bind(null, r.id, path, "wrong")}><button className="btn small ghost">Reject</button></form>
                       </>
                     )}
