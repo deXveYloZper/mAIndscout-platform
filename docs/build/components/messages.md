@@ -14,7 +14,7 @@
 - **Sent and replied are noticed.** Every 5 minutes (or with "Look now"), the desk checks each draft it placed. A draft that has gone to Sent is marked sent and logged as an email out on the timeline, which counts as contact for [freshness](freshness.md). A reply in the thread is marked replied and logged as an email in.
 - **Follow-ups that a reply stops.** 4 days after a first contact or a client introduction goes unanswered, a short follow-up is drafted and placed in the mailbox drafts, never sent. Any reply in the thread cancels open follow-ups and deletes their drafts from the mailbox.
 - A client introduction is refused while the client has said no to that person ([pipeline](pipeline.md) block).
-- **LinkedIn first messages** (next build, phase 1). These are for people found by sourcing: a profile link, no email. The desk drafts the message and the owner sends it on LinkedIn ("Open their LinkedIn", then "I sent it myself"). It is short and ends with one privacy line, "How I handle your details: …" (`PRIVACY_URL`, default `maindscout.com/legal`). Marking it sent moves the person to "contacted" on the role. A LinkedIn follow-up stays a draft on the desk; it never goes to a mailbox.
+- **LinkedIn first messages** (next build, phase 1). These are for people found by sourcing: a profile link, no email. The desk drafts the message and the owner sends it on LinkedIn ("Open their LinkedIn", then "I sent it myself"). It is short, with no privacy line: the desk holds only what their public profile shows (owner, 2026-10-13). Marking it sent moves the person to "contacted" on the role. A LinkedIn follow-up stays a draft on the desk; it never goes to a mailbox.
 - **"Stop" wins** ([permission and stop](permission-and-stop.md)). Nothing is drafted to someone who asked not to be contacted, and they are never introduced to a client. Saying stop cancels their open drafts and follow-ups.
 
 ## Why
@@ -72,7 +72,7 @@ Settings (all in `core/.env`):
 - connecting needs the provider's app set up;
 - erasure removes messages.
 
-`test_sourcing.py` checks that no route or connector can send. `test_autosource.py` checks the LinkedIn first message (public facts only, the privacy line, "contacted" when sent, no mailbox) and that "stop" refuses drafts and introductions.
+`test_sourcing.py` checks that no route or connector can send. `test_autosource.py` checks the LinkedIn first message (public facts only, no privacy line, "contacted" when sent, no mailbox) and that "stop" refuses drafts and introductions.
 
 e2e: draft a first contact, edit, mark it sent; the timeline shows the email.
 

@@ -314,7 +314,7 @@ def test_linkedin_message_permission_and_results_and_spend(session, job, blobs):
                        channel="linkedin")
     assert m.to_address == "linkedin.com/in/ada-testperson-demo" and m.provider == "linkedin"
     assert "InSAR Engineer at Orbital Testworks" in m.body, "a first message may use what their public profile says"
-    assert m.body.rstrip().endswith("maindscout.com/legal"), "one privacy line"
+    assert "maindscout.com/legal" not in m.body, "no privacy line: public profiles need none (owner, 2026-10-13)"
     with pytest.raises(messages.MessageError):
         messages.to_mailbox(session, job.org_id, m.id)
     messages.mark_sent(session, job.org_id, m.id)

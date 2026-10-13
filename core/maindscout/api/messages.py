@@ -190,8 +190,6 @@ def draft(session: Session, org_id, kind: str, actor: str, client, *, candidate_
     if out.cost:
         costs.record(session, org_id, "draft_message", out.cost)
     body = out.body
-    if channel == "linkedin" and kind == "candidate_outreach":
-        body = f"{body}\n\n{privacy_line()}"  # the one privacy line a first message carries
     m = Message(org_id=org_id, kind=kind, to_address=to, subject=out.subject, body=body, status="draft", created_by=actor,
                 provider="linkedin" if channel == "linkedin" else None,
                 candidate_id=None if kind == "client_submission" else candidate_id,
@@ -279,10 +277,6 @@ def _contacted(session: Session, org_id, job_id, candidate_id) -> None:
     pair = session.scalar(select(CandidateJob).where(CandidateJob.job_id == job_id, CandidateJob.candidate_id == candidate_id))
     if pair is not None and pair.pair_state in ("new", "seen"):
         review.set_state(session, org_id, job_id, candidate_id, "contacted", "system")
-
-
-def privacy_line() -> str:
-    return f"How I handle your details: {env('PRIVACY_URL', 'maindscout.com/legal')}"
 
 
 def mark_replied(session: Session, org_id, message_id: uuid.UUID, when: datetime | None = None) -> Message:
