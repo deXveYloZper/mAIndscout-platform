@@ -764,7 +764,7 @@ export async function runSourcingNow(jobId: string, _: FormState): Promise<FormS
     return fail(e);
   }
   revalidatePath(`/jobs/${jobId}`);
-  return { message: "Searching in the background: the pool first, then the web within the budgets. Reload in a minute." };
+  return { message: "Searching: your own desk first, then the web within the budgets. This page updates by itself." };
 }
 
 export async function buildStrategy(jobId: string, _: FormState): Promise<FormState> {
@@ -774,7 +774,7 @@ export async function buildStrategy(jobId: string, _: FormState): Promise<FormSt
     return fail(e);
   }
   revalidatePath(`/jobs/${jobId}`);
-  return { message: "Building in the background: the hiring company's people, where they came from, and similar companies. Reload in a minute." };
+  return { message: "Building: the hiring company's people, where they came from, and similar companies. This page updates by itself." };
 }
 
 export async function widenSourcing(jobId: string, option: string, value: string | string[] | null): Promise<void> {

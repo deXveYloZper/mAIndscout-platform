@@ -394,6 +394,11 @@ tr.rowlink { cursor: pointer; }
 .tierhead { margin: var(--space-2, 8px) 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
 .dna { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; }
 .widening { border-color: var(--amber-line); }
+.pill.accent { background: var(--amber-soft); border-color: var(--amber-line); color: var(--amber-text); }
+.live { display: inline-flex; align-items: center; gap: 8px; }
+.live .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--amber, #c4852a); animation: live-pulse 1.2s ease-in-out infinite; }
+@keyframes live-pulse { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .live .dot { animation: none; } }
 .blocktag { background: var(--amber-soft); border-style: solid; }
 .verdict.gap, .verdict.against { color: var(--cream-faint); text-decoration: line-through; }
 .chip { height: 24px; padding: 0 10px; font-size: 12px; margin: 2px 4px 2px 0; }

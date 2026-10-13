@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ExternalLink, Pin, PinOff, Radar, Undo2, X } from "lucide-react";
 import { addSourcingTarget, buildStrategy, changeSourcingTarget, draftLinkedIn, findPeerCompanies, runSourcingNow, setSourcingMode, setSourcingPlan,
   widenSourcing } from "@/app/actions";
+import { Refresh } from "@/components/CallsClient";
 import { AddTarget, OneClick, PlanSettings, PlanWords } from "@/components/SourcingForms";
 import type { CompanyProfile, SourcingMode, SourcingPage, SourcingStats, SourcingTarget, Suggestion, TalentDna, Widening } from "@/lib/api";
 import { MODE_LABEL, reasonWords, TIER_WORDS } from "@/lib/format";
@@ -56,7 +57,8 @@ const usd = (n: number) => `$${n < 1 ? n.toFixed(3) : n.toFixed(2)}`;
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
 const link = (profile: string) => (profile.startsWith("http") ? profile : `https://${profile}`);
 
-function SuggestionCard({ jobId, s }: { jobId: string; s: Suggestion }) {
+function SuggestionCard({ jobId, s, since }: { jobId: string; s: Suggestion; since?: string | null }) {
+  const fresh = Boolean(since && s.found_by.at && s.found_by.at >= since);
   return (
     <li className="personcard">
       <div className="pc-main">
@@ -64,6 +66,7 @@ function SuggestionCard({ jobId, s }: { jobId: string; s: Suggestion }) {
           <Link href={`/jobs/${jobId}/people/${s.candidate_id}`} className="pc-name">{s.name ?? "name not read"}</Link>
           <span className={`tiertag ${s.band === "priority" ? "strong" : "possible"}`}>{s.band === "priority" ? "strong" : "possible"}</span>
           {s.match_tier && s.match_tier !== "unclear" && <span className={`tiertag ${s.match_tier}`}>{TIER_WORDS[s.match_tier]}</span>}
+          {fresh && <span className="pill accent">just found</span>}
           {s.found_by.new_to_desk ? <span className="pill">new</span> : <span className="chip small">already on the desk</span>}
         </div>
         <p className="reason">{[s.current, s.location].filter(Boolean).join(" · ") || "role and place not on the profile"}</p>
@@ -203,8 +206,10 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
   const live = p.targets.filter((t) => !t.removed);
   const removed = p.targets.filter((t) => t.removed);
   const lastRun = s.runs[0];
+  const since = lastRun?.status !== "running" ? lastRun?.started_at ?? null : null;
   return (
     <>
+      {(s.running || s.building) && <Refresh every={3000} upTo={300000} />}
       <section className="panel">
         <div className="row spread">
           <h3><Radar aria-hidden="true" className="h-icon" />Sourcing: {MODE_LABEL[p.mode]}</h3>
@@ -222,7 +227,8 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
         </p>
         {!s.web_ready && <p className="warn">Web search is not set up (no Exa key in core/.env): runs search the desk&apos;s own pool only.</p>}
         <div className="row">
-          {s.running ? <span className="sub" role="status">Searching now…</span>
+          {s.running ? <span className="sub live" role="status"><span className="dot" aria-hidden="true" />Searching… new people appear here as soon
+            as the search ends (usually under a minute)</span>
             : <OneClick action={runSourcingNow.bind(null, jobId)} label="Search now" busy="Starting…" primary />}
           {lastRun && <span className="hint">Last run {when(lastRun.started_at)}: {lastRun.stop_reason === "target" && lastRun.found === 0
             ? "did not search, the target was already reached" : STOP[lastRun.stop_reason ?? ""] ?? lastRun.status}</span>}
@@ -249,14 +255,14 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
         {s.suggestions.length === 0 ? <p className="empty">No suggestions waiting. Choose how often to search, or search now.</p> : (
           <>
             <ul className="people personcards stagger">
-              {s.suggestions.filter((x) => x.band === "priority").map((x) => <SuggestionCard key={x.candidate_id} jobId={jobId} s={x} />)}
+              {s.suggestions.filter((x) => x.band === "priority").map((x) => <SuggestionCard key={x.candidate_id} jobId={jobId} s={x} since={since} />)}
             </ul>
             {s.suggestions.some((x) => x.band !== "priority") && (
               <details>
                 <summary className="sub">{s.suggestions.filter((x) => x.band !== "priority").length} possible matches (weaker: they miss
                   some of what the role asks for)</summary>
                 <ul className="people personcards">
-                  {s.suggestions.filter((x) => x.band !== "priority").map((x) => <SuggestionCard key={x.candidate_id} jobId={jobId} s={x} />)}
+                  {s.suggestions.filter((x) => x.band !== "priority").map((x) => <SuggestionCard key={x.candidate_id} jobId={jobId} s={x} since={since} />)}
                 </ul>
               </details>
             )}

@@ -611,7 +611,9 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
         "building": session.scalar(select(func.count()).select_from(Task).where(
             Task.kind == "sourcing_strategy", Task.dedupe_key == f"strategy:{job.id}", Task.status.in_(("queued", "running")))) > 0,
         "web_ready": bool(env("EXA_API_KEY")),
-        "running": any(r.status == "running" for r in runs),
+        # Queued counts too: right after "Search now" the task waits for a worker, and the page should wait with it.
+        "running": any(r.status == "running" for r in runs) or session.scalar(select(func.count()).select_from(Task).where(
+            Task.kind == "sourcing_run", Task.dedupe_key == f"sourcing:{job.id}", Task.status.in_(("queued", "running")))) > 0,
         "runs": [{"id": str(r.id), "trigger": r.trigger, "status": r.status, "stop_reason": r.stop_reason, "found": r.found,
                   "new": r.new, "known": r.known, "refused": r.refused, "strong": r.strong, "cost_usd": float(r.cost_usd or 0),
                   "report": r.report, "error": r.error, "started_at": r.started_at.isoformat() if r.started_at else None,

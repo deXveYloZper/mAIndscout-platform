@@ -390,6 +390,7 @@ def test_sourcing_routes(client, session, job, blobs):
     assert page["plan"]["targets"][0]["removed"] is True
     r = client.post(f"/v1/jobs/{job.id}/sourcing/run")
     assert r.status_code == 202 and session.get(Task, uuid.UUID(r.json()["task_id"])).kind == "sourcing_run"
+    assert client.get(f"/v1/jobs/{job.id}/sourcing").json()["running"] is True, "queued counts as running: the page waits for it"
     assert client.get("/v1/sourcing/stats", params={"job_id": str(job.id), "group": "tier"}).json()["totals"]["found"] == 0
     assert client.get("/v1/sourcing/stats", params={"group": "nonsense"}).status_code == 422
     assert client.put("/v1/sourcing/settings", json={"sourcing_budget_usd": 80}).json()["sourcing_budget_usd"] == 80

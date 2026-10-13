@@ -49,7 +49,7 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
     - a widening proposal with its options, when it is time;
     - the market map in tiers A, B and C (open or closed), each company with its facts, why, progress (searches, found, known, relevant, exhausted) and pin, drop, add, find peers; "releasing talent" with the news sentence and its source ([talent-release-radar.md](talent-release-radar.md));
     - the role titles and countries;
-    - "Run now";
+    - "Search now", after which the tab follows the search live ("Searching…", refreshing itself until the run ends; the latest finds tagged "just found");
     - the suggestions waiting, each with who found them and why, and where they work in facts ([company-knowledge.md](company-knowledge.md));
     - the funnel, and recent runs (with their web and news searches).
 
