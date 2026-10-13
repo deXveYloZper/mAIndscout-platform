@@ -40,10 +40,10 @@ The owner (2026-10-13): "we should be aware that our initial list of companies w
   - Per company the plan keeps searches, results, known, relevant and the date of the last search.
   - **Snowball** (after each run): an earlier employer of 2 or more strong people for the role becomes a tier B target. A company that has produced 3 or more strong suggestions gets its own peer search, once.
   - **Country-wide searches by title run only when the owner opens them.**
-- **Stage 4: widening** (`widening`, `widen`). A proposal appears when all of these hold:
+- **Stage 4: widening** (`widening`, `widen`). A proposal appears when every company in the open tiers is exhausted and the role is short of its target (the recent yield is shown in it, to help the choice). In detail:
   - every company in the open tiers is exhausted;
   - the role is short of its target;
-  - fewer than 1 relevant person per 5 searches over the last 15 searches.
+  - (the recent yield, relevant people per search over the last 15, is shown; it no longer blocks the proposal).
 
   It also appears when the open tiers have no companies at all. Its options carry numbers:
   - open the next tier (with its company count);

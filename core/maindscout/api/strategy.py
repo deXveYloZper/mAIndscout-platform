@@ -549,8 +549,9 @@ def widening(session: Session, org_id: uuid.UUID, job: Job, p: SourcingPlan) -> 
     recent = list(session.scalars(select(SourcingQuery).where(SourcingQuery.job_id == job.id, SourcingQuery.channel == "exa_people",
                                                               SourcingQuery.last_run_at.is_not(None))
                                   .order_by(SourcingQuery.last_run_at.desc()).limit(r["yield_window"])))
-    if len(recent) >= 5 and sum(q.relevant or 0 for q in recent) / len(recent) >= r["low_yield"]:
-        return None
+    # Everything open is exhausted and the role is short: there is nothing left to search, so the owner is always asked,
+    # whatever the recent yield (it is shown, to help the choice).
+    rate = sum(q.relevant or 0 for q in recent) / len(recent) if recent else 0.0
     options = []
     closed = [g for g in GROUPS if g not in open_groups]
     if closed:
@@ -577,8 +578,8 @@ def widening(session: Session, org_id: uuid.UUID, job: Job, p: SourcingPlan) -> 
     searched = sum(s["searches"] for s in state.values())
     relevant = sum(s["relevant"] for s in state.values())
     return {"why": f"Tiers {', '.join(sorted(g for g in open_groups if g in GROUPS))} are exhausted: {len(live)} companies, "
-                   f"{searched} searches, {relevant} relevant found; {autosource.strong_waiting(session, job.id)} of {p.target} strong "
-                   "suggestions waiting.", "options": options}
+                   f"{searched} searches, {relevant} relevant found ({rate:.1f} per search lately); "
+                   f"{autosource.strong_waiting(session, job.id)} of {p.target} strong suggestions waiting.", "options": options}
 
 
 def widen(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str, option: str, value: Any = None) -> SourcingPlan:
