@@ -35,6 +35,7 @@ The owner (2026-10-13): "we should be aware that our initial list of companies w
 - **Stage 3: batches** (`next_searches`, `company_state`).
   - Each run takes the next **5 companies** in the open tiers. The order is pinned first, then companies releasing talent, then tier, then kind.
   - Each company is searched with up to 3 title variants (plus "senior …" when it has more than 1,000 staff). A search is not repeated within 30 days.
+  - **Deeper searches** (owner, 2026-10-13: replies take time, so each search should give a longer list). A search at a company asks for about a quarter of its staff, from 10 to 50 (`max_results`), or 25 when its size is unknown; a country-wide search asks for 25. Exa charges $0.007 for 10 and $0.001 for each one beyond, so 50 cost about $0.047. In a test, all 25 results of "software engineer at Omnea" (219 staff) really worked there. The budget check uses each search's own price.
   - **Only that company's people count.** A result counts only when the person's work history shows the company (its Exa ID, one of its names, or its LinkedIn page). Look-alikes are skipped and never stored: on the first real run, 20 results for a 9-person company included none of its people. A suggestion says "works at X now" or "worked at X before".
   - A company is **exhausted** when every variant has been searched and either the last 2 searches found no new relevant person, or 80% of its results were already known. An exhausted company waits 90 days, unless the radar flags it.
   - Per company the plan keeps searches, results, known, relevant and the date of the last search.
@@ -59,7 +60,7 @@ The owner (2026-10-13): "we should be aware that our initial list of companies w
 - **Peers also by the role's specialist skill:** "{skill} companies in {the role's countries}" ("insar companies in Canada" found 3vGeomatics), next to the searches built from the hiring company's own offering and market, always in the role's countries.
 - **Only the role's countries.** When the role has countries, someone living elsewhere is not suggested, from the web or from the desk's own pool (refused as "outside the role's countries"). Where they live decides; where they work counts only when where they live is unknown; unknown altogether is not refused. They don't count towards the target either, so they never hold the search back. (Before this, the pool step put a Bucharest and a Heemstede person on a Germany-and-UK role, because the desk's coverage covers the EU.)
 - **Strong first.** "Possible" matches are folded below the strong ones. "Search now" says when it did not search because the target of waiting suggestions is reached.
-- **Rules** (`plan.rules`, editable through the plan route): `batch` 5, `exhausted_after` 2, `known_share` 0.8, `low_yield` 0.2, `recheck_days` 90, `yield_window` 15.
+- **Rules** (`plan.rules`, editable through the plan route): `batch` 5, `exhausted_after` 2, `known_share` 0.8, `low_yield` 0.2, `recheck_days` 90, `yield_window` 15, `max_results` 50.
 
 ## Depends on
 - [company-knowledge.md](company-knowledge.md)

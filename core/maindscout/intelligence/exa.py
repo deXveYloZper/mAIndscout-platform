@@ -30,7 +30,7 @@ MAX_FETCH = 100  # Exa reads at most 100 pages per /contents call
 COMPANY_KEYS = ("name", "foundedYear", "description", "workforce", "headquarters", "financials")  # never `research`
 # (it lists researchers by name)
 CATEGORIES = ("people", "company", "news", "publication", "personal site")
-MAX_RESULTS = 25  # Exa allows 100; a run never needs more than this from one query
+MAX_RESULTS = 100  # Exa's own limit; a search's size is chosen by its caller (strategy.results_for)
 PERSON_KEYS = ("name", "firstName", "lastName", "location", "workHistory", "educationHistory")  # all we keep of a profile
 
 

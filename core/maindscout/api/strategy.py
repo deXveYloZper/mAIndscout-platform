@@ -38,7 +38,9 @@ LARGE = 5000  # a feeder this big is a kind of employer (tier C), not a list of 
 GROUP_OF_TIER = {"named": "A", "manual": "A", "feeder": "A", "known": "B", "peer": "B", "snowball": "B",
                  "adjacent": "C", "release": "C", "feeder_large": "C"}
 GROUPS = ("A", "B", "C")
-RULES = {"batch": 5, "exhausted_after": 2, "known_share": 0.8, "low_yield": 0.2, "recheck_days": 90, "yield_window": 15}
+RULES = {"batch": 5, "exhausted_after": 2, "known_share": 0.8, "low_yield": 0.2, "recheck_days": 90, "yield_window": 15,
+         "max_results": 50}
+MARKET_RESULTS = 25
 NOT_THE_ROLE = re.compile(r"\b(sales|account|ceo|cfo|coo|founder|co-founder|recruit|talent|hr|people|marketing|finance|"
                           r"legal|office|operations|intern|student)\b", re.I)
 
@@ -362,6 +364,20 @@ def outside_countries(session: Session, org_id: uuid.UUID, candidate_id: uuid.UU
 # --- stage 3: progress per company, exhaustion, snowball ---------------------------------------------------------------
 
 
+def results_for(company: Company | None, rules_: dict[str, Any]) -> int:
+    """How many profiles one search at a company asks for: about a quarter of its staff, 10 to `max_results` (50).
+    Replies take time, so a deeper list per search helps; a small company is never padded with look-alikes (a test
+    on 2026-10-13: all 25 results of "software engineer at Omnea", 219 staff, really worked there)."""
+    employees = ((company.exa_profile or {}).get("employees") if company is not None else None) or 0
+    top = int(rules_.get("max_results", RULES["max_results"]))
+    return 25 if not employees else max(10, min(top, employees // 4))
+
+
+def search_cost(results: int) -> float:
+    """Exa's price for one search: $0.007 with up to 10 results, $0.001 for each one beyond."""
+    return 0.007 + 0.001 * max(0, results - 10)
+
+
 def variants_for(p: SourcingPlan, company: Company | None) -> list[str]:
     out = list(p.role_variants or [])[:3]
     employees = ((company.exa_profile or {}).get("employees") if company is not None else None) or 0
@@ -445,12 +461,13 @@ def next_searches(session: Session, job: Job, p: SourcingPlan, releasing: set[st
             break
         for text in pending:
             out.append({"text": text, "target": t["name"], "company_id": t["company_id"], "tier": t.get("tier"),
-                        "group": group_of(t), "country": t.get("country") or (p.countries[0] if p.countries else None)})
+                        "group": group_of(t), "country": t.get("country") or (p.countries[0] if p.countries else None),
+                        "results": results_for(company, r)})
     if "market" in open_groups:
         for v in (p.role_variants or [])[:3]:
             for c in (p.countries or [None])[:3]:
                 out.append({"text": f"{v} in {geo.name_of(c)}" if c else v, "target": None, "company_id": None,
-                            "tier": "market", "group": "market", "country": c})
+                            "tier": "market", "group": "market", "country": c, "results": MARKET_RESULTS})
     return out
 
 

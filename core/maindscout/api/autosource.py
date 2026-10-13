@@ -50,8 +50,8 @@ DEFAULT_BUDGET_USD = 5.0
 DEFAULT_DESK_BUDGET_USD = 50.0
 QUERY_COOLDOWN = timedelta(days=30)
 MAX_WEB_QUERIES_PER_RUN = 8
-RESULTS_PER_QUERY = 10
-SEARCH_COST_ESTIMATE = 0.01  # a search is about $0.007; the budget check keeps a margin
+RESULTS_PER_QUERY = 10  # the default size of a search; a company search is sized by strategy.results_for
+SEARCH_COST_ESTIMATE = 0.01  # a 10-result search is about $0.007; the budget check keeps a margin
 POOL_LOOK = 40  # most desk people one run looks at
 PLACEMENT_OFF_LIMITS_DAYS = 365
 LIVE = ("proposed", "approved")
@@ -293,11 +293,11 @@ def _check_budgets(session: Session, org_id: uuid.UUID, job: Job, p: SourcingPla
         raise SourcingEngineError(f"The desk's sourcing budget is used up this month (${desk_budget(session, org_id):.2f})")
 
 
-def _budget_left(session: Session, org_id: uuid.UUID, job: Job, p: SourcingPlan) -> str | None:
-    """None if one more search fits both budgets, else which one is used up."""
-    if costs.sourcing_spent(session, org_id, job.id) + SEARCH_COST_ESTIMATE > float(p.monthly_budget_usd):
+def _budget_left(session: Session, org_id: uuid.UUID, job: Job, p: SourcingPlan, cost: float = SEARCH_COST_ESTIMATE) -> str | None:
+    """None if one more search (of about `cost`) fits both budgets, else which one is used up."""
+    if costs.sourcing_spent(session, org_id, job.id) + cost > float(p.monthly_budget_usd):
         return "budget"
-    if costs.sourcing_spent(session, org_id) + SEARCH_COST_ESTIMATE > desk_budget(session, org_id):
+    if costs.sourcing_spent(session, org_id) + cost > desk_budget(session, org_id):
         return "desk_budget"
     return None
 
@@ -419,7 +419,8 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
         if made >= MAX_WEB_QUERIES_PER_RUN:
             reason = "run_limit"
             break
-        if why := _budget_left(session, org_id, job, p):
+        size = q.get("results") or RESULTS_PER_QUERY
+        if why := _budget_left(session, org_id, job, p, strategy.search_cost(size) + 0.003):
             return done("stopped", why)
         key = _key("exa_people", q["text"], q["country"])
         sq = session.scalar(select(SourcingQuery).where(SourcingQuery.job_id == job.id, SourcingQuery.key == key))
@@ -432,7 +433,7 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
             session.add(sq)
             session.flush()
         try:
-            results = exa.search(caller, q["text"], "people", num_results=RESULTS_PER_QUERY, country=q["country"])
+            results = exa.search(caller, q["text"], "people", num_results=size, country=q["country"])
         except exa.ExaError as error:
             row.error = str(error)[:500]
             return done("failed" if made == 0 else "stopped", "error")

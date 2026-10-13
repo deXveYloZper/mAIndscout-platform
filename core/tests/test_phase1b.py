@@ -365,3 +365,12 @@ def test_a_programming_tool_is_never_a_peer_search(session):
     company.exa_profile = {**company.exa_profile, "domains": ["procurement"], "offering": "procurement platform"}
     assert not any("node.js" in q for q in strategy.peer_queries(company, ["DE"], ["node.js"]))
     assert strategy.peer_queries(company, ["DE"], ["node.js", "insar"])[-1] == "insar companies in Germany"
+
+
+def test_a_search_asks_for_as_many_people_as_the_company_can_give():
+    def sized(employees):
+        return Company(name="x", normalized="x", exa_profile={"employees": employees} if employees else None)
+
+    assert [strategy.results_for(sized(n), strategy.RULES) for n in (9, 163, 219, 5000, None)] == [10, 40, 50, 50, 25]
+    assert strategy.results_for(sized(5000), {**strategy.RULES, "max_results": 30}) == 30, "the owner can cap it per role"
+    assert strategy.search_cost(10) == pytest.approx(0.007) and strategy.search_cost(50) == pytest.approx(0.047)

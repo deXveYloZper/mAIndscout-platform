@@ -2,6 +2,7 @@
 
 Newest first. One line per merge to `development`: date, what, link to the component page.
 
+- 2026-10-13 — Deeper searches: a search at a company asks for about a quarter of its staff (10 to 50; 25 when unknown), a country-wide one for 25; the budget check uses each search's own price. Tested on Omnea: all 25 results really worked there, at $0.022 — [sourcing strategy](components/sourcing-strategy.md)
 - 2026-10-13 — Widening is always proposed once every company in the open tiers is exhausted and the role is short of its target (a good recent yield used to hide it, leaving nothing to search) — [sourcing strategy](components/sourcing-strategy.md)
 - 2026-10-13 — From a dry run of every request for two real roles: a programming tool is never a peer search ("node.js companies" came from Procure Ai's must-haves), and the radar no longer searches news about companies that are not searched for the role (shut down, or no team in its countries) — [sourcing strategy](components/sourcing-strategy.md)
 - 2026-10-13 — The Sourcing tab follows a search live: after "Search now" (or "Build the strategy") it shows "Searching…" and refreshes itself every few seconds until the run ends (a queued search counts as running); people from the latest run are tagged "just found" — [cockpit](components/cockpit.md)
