@@ -189,8 +189,15 @@ def peer_queries(company: Company, countries: list[str] | None = None, skills: l
 
 def profile_queries(session: Session, job: Job, countries: list[str] | None = None) -> list[str]:
     """Company searches from the hiring profile itself, for a role whose company is unknown or not confirmed (an
-    anonymised ad): its industries ("luxury / fashion / beauty" -> "luxury, fashion and beauty companies in Italy") and
-    the short backgrounds a person typed or the intake gave ("luxury")."""
+    anonymised ad): its industries ("luxury / fashion / beauty" -> "luxury, fashion and beauty companies in Italy"),
+    industries named in its background sentences ("Experience in luxury, premium fashion…"), and the short backgrounds
+    a person typed or the intake gave ("luxury")."""
+    from maindscout.domain.profile import domains_in
+
+    def as_words(d: str) -> str:
+        bits = [b.strip() for b in d.split("/")]
+        return ", ".join(bits[:-1]) + f" and {bits[-1]}" if len(bits) > 1 else bits[0]
+
     where = " and ".join(geo.name_of(c) for c in (countries or [])[:2])
     place = f" in {where}" if where else ""
     phrases: list[str] = []
@@ -200,16 +207,19 @@ def profile_queries(session: Session, job: Job, countries: list[str] | None = No
         if p.get("strength") == "anti":
             continue
         if p.get("category") == "domain":
-            for d in p.get("domains") or []:
-                if d != "other":
-                    bits = [b.strip() for b in d.split("/")]
-                    phrases.append(", ".join(bits[:-1]) + f" and {bits[-1]}" if len(bits) > 1 else bits[0])
+            phrases += [as_words(d) for d in p.get("domains") or [] if d != "other"]
+        elif p.get("category") in ("skill", "other") and (p.get("distinctive") or BACKGROUND.search(p.get("text_raw") or "")):
+            phrases += [as_words(d) for d in domains_in(p.get("text_raw") or "")[:1]]
         elif p.get("category") in ("employer", "other") and p.get("source") in ("recruiter", "intake"):
             text = " ".join((p.get("text_raw") or "").split())
             if 0 < len(text.split()) <= 4 and not p.get("employer_kinds"):
                 phrases.append(text)
     out = list(dict.fromkeys(f"{x.lower()} companies{place}" for x in phrases))
     return out[:3]
+
+
+# A requirement that speaks about where a person comes from, not what they can do ("Experience in luxury, …").
+BACKGROUND = re.compile(r"\b(experience (in|with|at|from)|background in|industry|sector|brands?)\b", re.I)
 
 
 def _peers(session: Session, org_id: uuid.UUID, job: Job, of: Company | None, caller, have: set[str], why: str, limit: int,
@@ -263,8 +273,8 @@ def build(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, caller, actor:
         dna, skipped = None, str(error)
         if not profile_queries(session, job, countries) and not p.targets:
             raise autosource.SourcingEngineError(
-                f"{error}. Without it, the strategy needs an industry or background in the hiring profile (e.g. luxury), "
-                "or target companies added by hand") from error
+                f"{error}. Or give the hiring profile an industry (Add a requirement → Industry, e.g. luxury / fashion / "
+                "beauty), or add target companies by hand") from error
     limits = autosource.off_limits(session, org_id)
     targets = [dict(t, group=group_of(t)) for t in p.targets]
     have = {t.get("company_id") for t in targets} | ({str(company.id)} if company is not None else set())
@@ -363,7 +373,7 @@ def role_countries(session: Session, job: Job) -> set[str]:
         p = c.approved_view or c.payload
         if p.get("category") != "location" or not (p.get("text_raw") or "").strip():
             continue
-        if re.search(r"remote", p["text_raw"], re.I):
+        if re.search(r"bremoteb", p["text_raw"], re.I):
             continue
         code = geo.country_in(p["text_raw"])
         if code is None:

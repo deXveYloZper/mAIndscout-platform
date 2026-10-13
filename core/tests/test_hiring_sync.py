@@ -92,7 +92,7 @@ def test_without_a_confirmed_company_the_strategy_is_built_from_the_hiring_profi
         strategy.build(session, job.org_id, job.id, with_nothing, "owner@desk.test")
         raise AssertionError("no company and no industry: nothing to build from")
     except autosource.SourcingEngineError as error:
-        assert "industry or background" in str(error)
+        assert "give the hiring profile an industry" in str(error)
     client.post(f"/v1/jobs/{job_id}/requirements", json={"category": "domain", "strength": "strong_plus", "text_raw": "luxury",
                                                          "domains": ["luxury / fashion / beauty"]})
     autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", countries=["IT"])
@@ -114,3 +114,32 @@ def test_a_strategy_that_could_not_run_says_why_on_the_page(client, session):
     session.flush()
     note = autosource.page(session, job.org_id, job.id)["strategy_note"]
     assert note["level"] == "error" and "no hiring company" in note["text"]
+
+
+AD_BACKGROUND = "Experience in luxury, premium fashion, accessories, beauty, hospitality or another design-led consumer brand"
+
+
+def test_an_industry_named_in_the_ad_is_read_even_when_the_model_leaves_it_empty():
+    from maindscout.domain.profile import domains_in
+    from maindscout.intelligence import hiring as engine
+
+    assert domains_in(AD_BACKGROUND) == ["luxury / fashion / beauty", "travel / hospitality"]
+    assert domains_in("strong in digital software platforms") == [], "broad words name no industry"
+
+    class Blank:
+        model = "fake"
+
+        def complete_json(self, system, user, schema, name):
+            return LLMResult({"items": [item("domain", "nice", "luxury background", AD_BACKGROUND, domains=[])]}, "fake", 1, 1, 0.0)
+
+    out = engine.read(f"About you\n{AD_BACKGROUND}.", Blank(), "ad")
+    assert [i.fields["domains"] for i in out.items] == [["luxury / fashion / beauty", "travel / hospitality"]] and not out.rejected
+
+
+def test_the_strategy_reads_industries_from_the_ads_background_sentences(client, session):
+    job_id = make_job(client)
+    job = session.get(Job, uuid.UUID(job_id))
+    client.post(f"/v1/jobs/{job_id}/requirements", json={"category": "skill", "strength": "nice", "text_raw": AD_BACKGROUND})
+    client.post(f"/v1/jobs/{job_id}/requirements", json={"category": "skill", "strength": "must", "text_raw": "retail marketing"})
+    assert strategy.profile_queries(session, job, ["IT"]) == ["luxury, fashion and beauty companies in Italy"], \
+        "the background sentence names the industry; a skill like retail marketing does not"

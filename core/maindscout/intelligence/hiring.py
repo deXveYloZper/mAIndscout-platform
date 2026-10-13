@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from maindscout.domain.profile import DOMAINS, LEVELS, ROLE_FAMILIES
+from maindscout.domain.profile import DOMAINS, LEVELS, ROLE_FAMILIES, domains_in
 from maindscout.intelligence.llm import LLMClient
 
 HIRING_PROMPT_VERSION = "2026-10-13.1"
@@ -153,7 +153,7 @@ def read(text: str, client: LLMClient, source: str) -> HiringOutcome:
                 kinds = [k for k, rx in EMPLOYER_WORDS.items() if rx.search(quote)]
             fields = {"employer_kinds": kinds}
         elif kind == "domain":
-            fields = {"domains": [d for d in raw.get("domains") or [] if d in DOMAINS]}
+            fields = {"domains": [d for d in raw.get("domains") or [] if d in DOMAINS] or domains_in(quote)}
         elif kind == "target_company":
             names = [n.strip() for n in raw.get("companies") or [] if n.strip() and n.strip().lower() in quote.lower()]
             fields = {"companies": names}
