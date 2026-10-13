@@ -762,6 +762,21 @@ export async function runSourcingNow(jobId: string, _: FormState): Promise<FormS
   return { message: "Searching in the background: the pool first, then the web within the budgets. Reload in a minute." };
 }
 
+export async function buildStrategy(jobId: string, _: FormState): Promise<FormState> {
+  try {
+    await apiJson(`/v1/jobs/${jobId}/sourcing/strategy`, {});
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return { message: "Building in the background: the hiring company's people, where they came from, and similar companies. Reload in a minute." };
+}
+
+export async function widenSourcing(jobId: string, option: string, value: string | string[] | null): Promise<void> {
+  await idempotent(() => apiSend(`/v1/jobs/${jobId}/sourcing/widen`, "POST", { option, value }));
+  revalidatePath(`/jobs/${jobId}`);
+}
+
 export async function draftLinkedIn(jobId: string, candidateId: string): Promise<void> {
   await apiJson("/v1/messages", { kind: "candidate_outreach", candidate_id: candidateId, job_id: jobId, channel: "linkedin" });
   redirect(`/people/${candidateId}?tab=messages`);

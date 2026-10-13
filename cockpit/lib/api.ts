@@ -345,29 +345,46 @@ export type SourcingMode = "daily" | "weekly" | "continuous" | "paused";
 
 export type ReleaseSignal = { kind: string; label: string; quote: string; url: string; source: string; published: string | null };
 
+export type CompanyProfile = { industry: string | null; kind: string | null; employees: number | null; hq: string | null;
+  founded: number | null; latest_round: string | null; team_countries: { country: string; n: number | null; pct: number | null }[];
+  categories: string[] };
+
+export type TargetProgress = { searches: number; results: number; known: number; relevant: number; exhausted: boolean;
+  last_run_at: string | null };
+
 export type SourcingTarget = { name: string; company_id: string; tier: string; why: string[]; source: string;
   people_on_desk: number; pinned: boolean; removed: boolean; country: string | null; website?: string; off_limits?: string | null;
-  release?: ReleaseSignal | null };
+  release?: ReleaseSignal | null; group: "A" | "B" | "C"; progress?: TargetProgress | null; profile?: CompanyProfile | null };
+
+export type TalentDna = { at: string; people: number; cost_usd: number;
+  company: { id: string; name: string; employees: number | null; team_countries: { country: string; pct: number | null }[] | null };
+  searches: { text: string; results: number; theirs: number }[]; titles: [string, number][]; before: [string, number][];
+  feeders: { company_id: string; name: string; n: number; employees: number; kind: string | null; industry: string | null; hq: string | null }[];
+  pattern: { kinds: [string, number][]; sizes: [string, number][]; domains: [string, number][] };
+  talent_sources: { name: string; n: number | null }[]; departments: { department: string; n: number | null; pct: number | null }[] };
+
+export type Widening = { why: string; empty?: boolean; options: { option: string; value: string | string[] | null; text: string }[] };
 
 export type SourcingRunView = { id: string; trigger: string; status: string; stop_reason: string | null; found: number; new: number;
   known: number; refused: number; strong: number; cost_usd: number; error: string | null; started_at: string | null; ended_at: string | null;
   report: { pool?: { looked: number; added: number; strong: number }; refused?: Record<string, number>; plan_version?: number;
     web?: { people: number; queries: { text: string; target: string | null; results: number; new: number; strong: number }[] };
     radar?: { queries: { text: string; results: number; signals: number; companies: string[] }[]; flagged: string[]; added: string[];
-      stopped: string | null } } };
+      stopped: string | null }; profiles?: { companies: number; people: number }; snowball?: string[] } };
 
 export type Suggestion = { candidate_id: string; name: string | null; band: Band; reason: string | null; match_tier: string | null;
-  state: string; current: string | null; location: string | null; profile: string | null;
+  state: string; current: string | null; location: string | null; profile: string | null; employer: CompanyProfile | null;
   gaps?: PersonOnJob["gaps"]; coverage?: PersonOnJob["coverage"];
   found_by: { channel: string; target: string | null; tier: string | null; query: string | null; at: string | null; new_to_desk: boolean } };
 
 export type SourcingPage = {
   job_id: string; title: string; state: string;
   plan: { version: number; mode: SourcingMode; target: number; monthly_budget_usd: number; role_variants: string[]; countries: string[];
-    targets: SourcingTarget[]; changed_by: string; changed_at: string | null };
+    targets: SourcingTarget[]; changed_by: string; changed_at: string | null; dna: TalentDna | null;
+    rules: Record<string, number>; open_tiers: string[] };
   hiring: { name: string; stage?: string | null; domains?: string[]; kind?: string | null; team?: string; hq?: string } | null;
   budget: { role_spent_usd: number; role_budget_usd: number; desk_spent_usd: number; desk_budget_usd: number };
-  strong_waiting: number; web_ready: boolean; running: boolean;
+  strong_waiting: number; web_ready: boolean; running: boolean; building: boolean; widening: Widening | null;
   runs: SourcingRunView[]; suggestions: Suggestion[]; suggestions_total: number;
 };
 

@@ -73,13 +73,21 @@ NOT_A_PERSON = {"url": "https://orbital-testworks.example", "title": "Orbital Te
 class FakeExa:
     model = "exa"
 
-    def __init__(self, people=None, companies=None, cost=0.007, news=None):
+    def __init__(self, people=None, companies=None, cost=0.007, news=None, pages=None, by_query=None):
         self.people = people if people is not None else [ADA, BEN, CARA, DEV, NOT_A_PERSON]
         self.companies, self.news = companies or [], news or []
-        self.cost, self.calls = cost, []
+        self.pages, self.by_query = pages or {}, by_query or {}
+        self.cost, self.calls, self.fetched = cost, [], []
+
+    def contents(self, body):
+        self.fetched.append(body)
+        found = [self.pages[u] for u in body["urls"] if u in self.pages]
+        return {"results": found, "costDollars": {"total": 0.001 * len(found)}}
 
     def call(self, body):
         self.calls.append(body)
+        if body["query"] in self.by_query:
+            return {"results": self.by_query[body["query"]], "costDollars": {"total": self.cost}}
         results = {"company": self.companies, "news": self.news}.get(body["category"], self.people)
         return {"results": results[: body.get("numResults", 10)], "costDollars": {"total": self.cost}}
 
@@ -100,7 +108,8 @@ def person_named(session, name):
 
 
 def go(session, job, fake_exa=None, blobs=None):
-    p = autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", mode="weekly")
+    """A run with country-wide searches opened (these tests have no target companies; phase 1b opens them last)."""
+    p = autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", mode="weekly", open_tiers=["A", "B", "market"])
     return autosource.run(session, blobs, job.org_id, job.id, "manual", fake_exa or FakeExa()), p
 
 
@@ -214,7 +223,7 @@ def test_a_run_finds_people_on_the_web_and_refuses_off_limits_and_outside_countr
 
 
 def test_someone_found_by_several_searches_in_one_run_counts_once(session, job, blobs):
-    autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", mode="weekly",
+    autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", mode="weekly", open_tiers=["A", "B", "market"],
                            role_variants=["Radar Interferometry Specialist", "InSAR engineer", "SAR engineer"])
     fake_exa = FakeExa()
     row = autosource.run(session, blobs, job.org_id, job.id, "manual", fake_exa)
@@ -234,7 +243,8 @@ def test_a_search_is_not_repeated_within_30_days_and_the_target_stops_a_run(sess
 
 
 def test_budgets_stop_web_search_but_not_the_free_pool(session, job, blobs):
-    autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", mode="weekly", monthly_budget_usd=0)
+    autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", mode="weekly", monthly_budget_usd=0,
+                           open_tiers=["A", "B", "market"])
     fake_exa = FakeExa()
     row = autosource.run(session, blobs, job.org_id, job.id, "manual", fake_exa)
     assert (row.status, row.stop_reason, fake_exa.calls) == ("stopped", "budget", [])
@@ -389,6 +399,8 @@ def test_sourcing_routes(client, session, job, blobs):
     assert {c["name"] for c in listed} >= {"Rival Testcorp", "Catalyst Geo"}
     assert client.delete(f"/v1/off-limits/{off.json()['id']}").json() == {"removed": True}
 
+    page = client.patch(f"/v1/jobs/{job.id}/sourcing/plan", json={"open_tiers": ["A", "B", "market"]}).json()
+    assert page["plan"]["open_tiers"] == ["A", "B", "market"]
     row = autosource.run(session, blobs, job.org_id, job.id, "manual", FakeExa())
     ada = person_named(session, "Ada Testperson")
     assert row.strong == 1

@@ -8,8 +8,8 @@ from datetime import date, timedelta
 import pytest
 from sqlalchemy import func, select
 
-from maindscout.api import autosource, costs, hiring, radar, sourcing_stats
-from maindscout.db.models import Company, CompanySignal, CostEntry, SourcingPlan
+from maindscout.api import autosource, costs, hiring, radar, sourcing_stats, strategy
+from maindscout.db.models import Company, CompanySignal, CostEntry, SourcingPlan, SourcingQuery
 from maindscout.intelligence import release
 from tests.test_api import client, fake, make_job  # noqa: F401 (fixtures)
 from tests.test_autosource import FakeExa, blobs, job  # noqa: F401 (fixtures)
@@ -58,7 +58,7 @@ def test_news_about_a_target_company_moves_it_up_and_shows_on_the_map(session, j
         p = autosource.add_target(session, job.org_id, job.id, name, "owner@desk.test")
         autosource.set_target(session, job.org_id, job.id, p.targets[0]["company_id"], "owner@desk.test", pinned=False)
     ids = {t["name"]: t["company_id"] for t in autosource.current_plan(session, job.id).targets}
-    before = autosource.web_queries(autosource.current_plan(session, job.id))
+    before = strategy.next_searches(session, job, autosource.current_plan(session, job.id), set(), {})
     assert before[0]["target"] == "Orbital Testworks", "the last added comes first while nothing else differs"
 
     news = [article("radar-closes", "Radar Testworks to close its Toulouse office",
@@ -76,10 +76,12 @@ def test_news_about_a_target_company_moves_it_up_and_shows_on_the_map(session, j
     page = autosource.page(session, job.org_id, job.id)
     by_name = {t["name"]: t for t in page["plan"]["targets"]}
     assert by_name["Radar Testworks"]["release"]["label"] == "a site closing" and by_name["Orbital Testworks"]["release"] is None
-    after = autosource.web_queries(autosource.current_plan(session, job.id), set(radar.live(session, job.org_id)))
+    for q in session.scalars(select(SourcingQuery).where(SourcingQuery.job_id == job.id, SourcingQuery.channel == "exa_people")):
+        q.last_run_at -= timedelta(days=100)  # past the 90-day wait for exhausted companies
+    after = strategy.next_searches(session, job, autosource.current_plan(session, job.id), set(radar.live(session, job.org_id)), {})
     assert after[0]["target"] == "Radar Testworks"
     autosource.set_target(session, job.org_id, job.id, ids["Orbital Testworks"], "owner@desk.test", pinned=True)
-    after = autosource.web_queries(autosource.current_plan(session, job.id), set(radar.live(session, job.org_id)))
+    after = strategy.next_searches(session, job, autosource.current_plan(session, job.id), set(radar.live(session, job.org_id)), {})
     assert after[0]["target"] == "Orbital Testworks", "pinned still comes first"
 
     n = session.scalar(select(func.count()).select_from(CostEntry).where(CostEntry.purpose == "sourcing_exa_news"))
@@ -123,14 +125,16 @@ def test_market_news_adds_a_company_releasing_talent_but_never_a_person_or_an_of
     assert "catalyst geo" not in {t["name"].lower() for t in plan.targets}, "the hiring company, an active client, is never added"
     assert session.scalar(select(func.count()).select_from(SourcingPlan).where(SourcingPlan.job_id == job.id)) == 3
 
-    queries = autosource.web_queries(plan, set(radar.live(session, job.org_id)))
+    assert strategy.group_of(next(t for t in plan.targets if t["name"] == "Radar Testworks")) == "C", "news finds wait in tier C"
+    plan = autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", open_tiers=["A", "B", "C"])
+    queries = strategy.next_searches(session, job, plan, set(radar.live(session, job.org_id)), {})
     assert queries[0]["target"] == "Radar Testworks" and queries[0]["tier"] == "release"
 
 
 def test_the_radar_stays_inside_the_budget(session, job, blobs, monkeypatch):
     monkeypatch.setattr(hiring, "company_summary", lambda session, company: {"name": "Catalyst Geo", "domains": ["earth observation"]})
     autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", mode="weekly", countries=["DE", "AT"],
-                           role_variants=["InSAR engineer"], monthly_budget_usd=0.02)
+                           role_variants=["InSAR engineer"], monthly_budget_usd=0.02, open_tiers=["A", "B", "market"])
     fake_exa = FakeExa(people=[], news=[], cost=0.007)
     row = autosource.run(session, blobs, job.org_id, job.id, "manual", fake_exa)
     assert row.status == "stopped" and row.stop_reason == "budget"

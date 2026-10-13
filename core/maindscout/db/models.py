@@ -203,6 +203,13 @@ class Company(Base):
     research_status: Mapped[str | None] = mapped_column(String)  # identified | not_identified | failed
     research_depth: Mapped[str] = mapped_column(String, nullable=False, default="full", server_default="full")  # full | basic
     researched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Identity keys (phase 1b): a company is found by these before its name. Website host, Exa's company id, LinkedIn
+    # company page (the slug). A profile is Exa's company page read into fields (`exa_profile`), never people's names.
+    domain: Mapped[str | None] = mapped_column(String, index=True)
+    exa_id: Mapped[str | None] = mapped_column(String, unique=True)
+    linkedin: Mapped[str | None] = mapped_column(String, unique=True)
+    exa_profile: Mapped[dict | None] = mapped_column(JSONB)
+    profiled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created()
 
 
@@ -961,6 +968,9 @@ class SourcingPlan(Base):
     targets: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)  # [{name, company_id, tier, why[], pinned, removed, source}]
     role_variants: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     countries: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    dna: Mapped[dict | None] = mapped_column(JSONB)  # the hiring company's talent DNA (phase 1b, stage 1)
+    rules: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)  # batch, exhaustion and widening thresholds
+    open_tiers: Mapped[list] = mapped_column(JSONB, nullable=False, default=lambda: ["A", "B"])  # A | B | C | market
     created_by: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = _created()
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -1003,11 +1013,14 @@ class SourcingQuery(Base):
     channel: Mapped[str] = mapped_column(String, nullable=False)  # exa_people | pool
     text: Mapped[str] = mapped_column(String, nullable=False)
     target: Mapped[str | None] = mapped_column(String)  # the target company it aimed at
+    company_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=False)
     tier: Mapped[str | None] = mapped_column(String)
     country: Mapped[str | None] = mapped_column(String(2))
     runs: Mapped[int] = mapped_column(nullable=False, default=0)
     results: Mapped[int] = mapped_column(nullable=False, default=0)
     new: Mapped[int] = mapped_column(nullable=False, default=0)
+    relevant: Mapped[int] = mapped_column(nullable=False, default=0)  # strong suggestions it found first
+    known: Mapped[int] = mapped_column(nullable=False, default=0)  # results already on the desk or on the role
     cost_usd: Mapped[float] = mapped_column(Numeric(10, 4), nullable=False, default=0)
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created()

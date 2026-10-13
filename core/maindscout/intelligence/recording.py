@@ -136,28 +136,36 @@ class RecordingSearchClient:
 
 
 class RecordingExaClient:
-    """The same for Exa searches (`call`): keyed by the exact request body. Only what the reader uses is kept
-    (`exa.slim`), and recorded or replayed, the answer is the same."""
+    """The same for Exa (search and contents): keyed by the endpoint and the exact request body. Only what
+    the reader uses is kept (`exa.slim`: never a photo, never the people parts of a company page), and recorded or
+    replayed, the answer is the same."""
 
     def __init__(self, make_real: Callable[[], Any], how: str, root: Path | None = None):
         self.make_real, self.how, self.root, self.model = make_real, how, root or folder(), "exa"
         self._real = None
 
     def call(self, body: dict[str, Any]) -> dict[str, Any]:
-        key = request_key("exa", "exa", "", json.dumps(body, sort_keys=True, ensure_ascii=False), {}, "exa_search")
-        store = _Store(self.root, "exa", "search")
+        return self._answer("search", body)
+
+    def contents(self, body: dict[str, Any]) -> dict[str, Any]:
+        return self._answer("contents", body)
+
+    def _answer(self, endpoint: str, body: dict[str, Any]) -> dict[str, Any]:
+        name = "exa_search" if endpoint == "search" else f"exa_{endpoint}"
+        key = request_key("exa", "exa", "", json.dumps(body, sort_keys=True, ensure_ascii=False), {}, name)
+        store = _Store(self.root, "exa", endpoint)
         if self.how in ("replay", "auto"):
             saved = store.load(key)
             if saved is not None:
                 return saved["raw"]
             if self.how == "replay":
-                raise NotRecorded(f"No recorded Exa answer for this search ({key[:12]}). Record it once with "
+                raise NotRecorded(f"No recorded Exa answer for this {endpoint} request ({key[:12]}). Record it once with "
                                   "LLM_REPLAY=auto (or record).")
         from maindscout.intelligence.exa import slim
 
         if self._real is None:
             self._real = self.make_real()
-        raw = slim(self._real.call(body))
+        raw = slim(getattr(self._real, {"search": "call", "contents": "contents"}[endpoint])(body))
         store.save(key, {"raw": raw, "recorded_at": datetime.now(timezone.utc).isoformat()})
         return raw
 

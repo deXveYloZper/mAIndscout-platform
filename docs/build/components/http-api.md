@@ -51,6 +51,7 @@ The cockpit must never touch the database. Every action goes through one guarded
 | `…/activities` · `…/tags` · `GET /v1/tags` · `…/contacts` | Relationship memory ([relationship-memory.md](relationship-memory.md)) |
 | `GET /v1/search` | Search the desk by career profile ([people-search.md](people-search.md)) |
 | `GET /v1/jobs/{id}/sourcing` · `PATCH …/sourcing/plan` · `POST …/sourcing/targets` · `PATCH …/sourcing/targets/{company_id}` · `POST …/sourcing/peers` · `POST …/sourcing/run` | A role's sourcing plan, suggestions and runs; change the plan; add, pin or drop a company; find peer companies; run now (202) ([sourcing-engine.md](sourcing-engine.md)) |
+| `POST /v1/jobs/{id}/sourcing/strategy` · `POST …/sourcing/widen` | Build the role's strategy in the background (talent DNA, tiered companies; 202); the owner's widening choice ([sourcing-strategy.md](sourcing-strategy.md)) |
 | `GET /v1/sourcing/stats` · `GET/PUT /v1/sourcing/settings` | Results and spend per strategy; the desk's sourcing budget (owner only to change) ([sourcing-results.md](sourcing-results.md)) |
 | `GET/POST /v1/off-limits` · `DELETE /v1/off-limits/{id}` | Companies never sourced from ([sourcing-engine.md](sourcing-engine.md)) |
 | `POST /v1/candidates/{id}/permission` · `…/stop` · `…/stop/lift` | Record what a person said yes to; they asked not to be contacted; lift it with a reason ([permission-and-stop.md](permission-and-stop.md)) |

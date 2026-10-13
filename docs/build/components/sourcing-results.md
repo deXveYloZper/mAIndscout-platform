@@ -42,6 +42,8 @@ The owner called this crucial (2026-10-12): "we should have the ability to criti
   - the cheapest interview, or the most relevant people if there are no interviews yet.
 - **The budget kept apart.** Sourcing purposes are left out of the monthly model budget (`costs.month_spent`). The desk's sourcing budget sits in `org.settings` and only an owner changes it.
 
+**Since phase 1b:** the company groups include "where the hiring company's people came from", large feeders and "where strong candidates worked before" (snowball), so each tier is a strategy whose cost and results can be compared.
+
 ## Depends on
 - [sourcing-engine.md](sourcing-engine.md): hits, searches and runs
 - [pipeline.md](pipeline.md): pair history

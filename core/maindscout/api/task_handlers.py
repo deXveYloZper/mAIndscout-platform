@@ -73,8 +73,12 @@ def research_company(session: Session, task: Task) -> dict[str, Any]:
 
 @handler("profile_candidate")
 def profile_candidate(session: Session, task: Task) -> dict[str, Any]:
-    return profiles.run(session, task.org_id, uuid.UUID(task.payload["candidate_id"]), llm_factory, task_id=task.id,
-                        search_factory=search_factory)
+    from maindscout.api.coverage import discovered_only
+
+    cid = uuid.UUID(task.payload["candidate_id"])
+    # Someone known only from a public profile: their career reading, but no paid university research (phase 1b).
+    return profiles.run(session, task.org_id, cid, llm_factory, task_id=task.id,
+                        search_factory=None if discovered_only(session, cid) else search_factory)
 
 
 @handler("profile_job")
@@ -106,6 +110,21 @@ def read_transcript(session: Session, task: Task) -> dict[str, Any]:
     except LLMError as error:
         calls.fail(session, review_id, f"The model could not be reached ({error}): try again later.")
     return {"status": "failed"}
+
+
+@handler("sourcing_strategy")
+def sourcing_strategy(session: Session, task: Task) -> dict[str, Any]:
+    """Build a role's strategy: talent DNA and the tiered target list (needs Exa)."""
+    from maindscout.api import autosource, strategy
+
+    caller = exa_factory()
+    if caller is None:
+        return {"status": "skipped", "reason": "Web search is not set up (no EXA_API_KEY)"}
+    try:
+        return strategy.build(session, task.org_id, uuid.UUID(task.payload["job_id"]), caller, task.payload.get("actor") or "system",
+                              task_id=task.id)
+    except autosource.SourcingEngineError as error:
+        return {"status": "skipped", "reason": str(error)}
 
 
 @handler("sourcing_run")

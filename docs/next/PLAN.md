@@ -3,8 +3,9 @@
 **Status: Phase 1 APPROVED** 2026-10-12 by the owner ("go"), including a first look at Exa with a few test searches.
 Phase 1 is built (see [STATUS](../build/STATUS.md)) and waits for its first real role; its gate (two weeks on a real
 role) is the owner's to declare.
-**Phase 1b DRAFT** 2026-10-13 (section 4b): company knowledge by identity keys (Exa for breadth, Grok for depth) and a
-staged search (talent DNA, tiered target list, batches, exhaustion, widening with the owner's say). Waits for approval.
+**Phase 1b APPROVED** 2026-10-13 by the owner ("go ahead with phase 1b"; section 4b): company knowledge by identity keys (Exa for breadth, Grok for depth) and a
+staged search (talent DNA, tiered target list, batches, exhaustion, widening with the owner's say). Built 2026-10-13
+(see [STATUS](../build/STATUS.md)); peers come from descriptive company searches, since find-similar matched on names.
 Phases 2–6 stay drafts until the owner approves them. Revised the same day with the owner's answers (section 10).
 Written after a survey of what is built ([STATUS](../build/STATUS.md)).
 
@@ -128,10 +129,10 @@ Changed (owner, 2026-10-12):
   the person put on the role, the channel recorded in S5. LinkedIn's direct ATS connection is for partners only;
   forwarding is the practical route. Reading those emails needs a wider mailbox permission than today's (decision 9).
 
-## 4b. Phase 1b (DRAFT, 2026-10-13): know the companies, and search like a recruiter
+## 4b. Phase 1b (APPROVED 2026-10-13): know the companies, and search like a recruiter
 
-Written after the owner's questions of 2026-10-13 and five small Exa tests ($0.13 in all). Waits for the owner's
-approval; nothing in it is built yet.
+Written after the owner's questions of 2026-10-13 and five small Exa tests ($0.13 in all). Approved by the owner
+2026-10-13 ("go ahead with phase 1b").
 
 **Why.** Phase 1 finds people, but two things are weak.
 - **People found by Exa get no company work.** Their fit rests on titles and skills alone, while every client rates

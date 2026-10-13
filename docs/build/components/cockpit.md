@@ -45,10 +45,12 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
 - **Sourcing (next build, phase 1):**
   - the role's **Sourcing tab** ([sourcing-engine.md](sourcing-engine.md)):
     - how often it searches, the target and the budget;
-    - the market map (companies with why; pin, drop, add, find peers; "releasing talent" with the news sentence and its source, [talent-release-radar.md](talent-release-radar.md));
+    - the Strategy panel: "Build the strategy", then the hiring company's talent DNA ([sourcing-strategy.md](sourcing-strategy.md));
+    - a widening proposal with its options, when it is time;
+    - the market map in tiers A, B and C (open or closed), each company with its facts, why, progress (searches, found, known, relevant, exhausted) and pin, drop, add, find peers; "releasing talent" with the news sentence and its source ([talent-release-radar.md](talent-release-radar.md));
     - the role titles and countries;
     - "Run now";
-    - the suggestions waiting, each with who found them and why;
+    - the suggestions waiting, each with who found them and why, and where they work in facts ([company-knowledge.md](company-knowledge.md));
     - the funnel, and recent runs (with their web and news searches).
 
     The older campaign sits folded below ("Search the desk only, by hand").

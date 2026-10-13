@@ -37,6 +37,8 @@ Owner's decision 2026-10-03 ([ADR](../../decisions/2026-10-03-coverage-gate.md))
   - Basic research asks only for kind and head office, and refreshes after 365 days.
   - Research now also sets `company.hq_country`.
 
+**Since phase 1b:** a person known only from public profiles still gets no company research of their own, but when sourcing adds them to a role, their employers are profiled by Exa id and their career reading is queued ([company knowledge](company-knowledge.md)).
+
 ## Depends on
 [process.md](process.md), [companies.md](companies.md), [company-research.md](company-research.md), [sourcing.md](sourcing.md), [review.md](review.md).
 

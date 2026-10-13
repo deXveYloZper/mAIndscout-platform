@@ -390,6 +390,10 @@ tr.rowlink { cursor: pointer; }
 .tiertag, .thintag, .stale-tag { background: transparent; border: 1px dashed var(--line-strong); }
 .thintag, .stale-tag, .blocktag { border-color: var(--amber-line); color: var(--amber-text); }
 .releasetag { border-color: var(--amber-line); color: var(--amber-text); border-style: dashed; }
+.tier + .tier { margin-top: var(--space-4, 16px); }
+.tierhead { margin: var(--space-2, 8px) 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.dna { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+.widening { border-color: var(--amber-line); }
 .blocktag { background: var(--amber-soft); border-style: solid; }
 .verdict.gap, .verdict.against { color: var(--cream-faint); text-decoration: line-through; }
 .chip { height: 24px; padding: 0 10px; font-size: 12px; margin: 2px 4px 2px 0; }

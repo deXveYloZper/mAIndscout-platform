@@ -6,6 +6,7 @@ claims (org-scoped), so one desk never sees another desk's people.
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -28,22 +29,126 @@ def canonical(session: Session, company: Company | None) -> Company | None:
     return company
 
 
+# --- identity keys (phase 1b) -----------------------------------------------------------------------------------------
+# A company is found by its keys before its name: its website, its Exa company id, its LinkedIn company page. Two names
+# that share a key are one company; a key is not a guess, so a new name with a known key becomes an alias of it.
+
+KEYS = ("exa_id", "linkedin", "domain")
+NOT_A_WEBSITE = ("linkedin.com", "facebook.com", "twitter.com", "x.com", "instagram.com", "crunchbase.com", "github.com",
+                 "medium.com", "linktr.ee", "wixsite.com", "exa.ai", "google.com", "youtube.com", "angel.co", "wellfound.com")
+
+
+def domain_of(url: str | None) -> str | None:
+    """'https://www.Procure.ai/en' -> 'procure.ai'. Profile and social sites are not a company's website."""
+    text = (url or "").strip().lower()
+    if not text:
+        return None
+    host = re.sub(r"^[a-z]+://", "", text).split("/")[0].split("?")[0].split("#")[0].split(":")[0].removeprefix("www.")
+    if "." not in host or any(host == h or host.endswith("." + h) for h in NOT_A_WEBSITE):
+        return None
+    return host
+
+
+def linkedin_of(value: str | None) -> str | None:
+    """'https://www.linkedin.com/company/procureai/' or 'procureai' -> 'procureai'."""
+    text = (value or "").strip()
+    m = re.search(r"linkedin\.com/company/([^/?#\s]+)", text, re.I)
+    slug = m.group(1) if m else (text if re.fullmatch(r"[A-Za-z0-9_.%-]+", text) else None)
+    return slug.lower().strip("/") if slug else None
+
+
+def by_key(session: Session, *, exa_id: str | None = None, linkedin: str | None = None,
+           domain: str | None = None) -> Company | None:
+    """The company that holds one of these keys (strongest first), followed to the one that stands today."""
+    for column, value in ((Company.exa_id, exa_id), (Company.linkedin, linkedin_of(linkedin)), (Company.domain, domain_of(domain))):
+        if value:
+            hit = session.scalar(select(Company).where(column == value).order_by(Company.created_at).limit(1))
+            if hit is not None:
+                return canonical(session, hit)
+    return None
+
+
+def learn_keys(session: Session, company: Company, *, exa_id: str | None = None, linkedin: str | None = None,
+               domain: str | None = None, aliases: tuple[str, ...] | list[str] = (), org_id: uuid.UUID | None = None,
+               subject_id: uuid.UUID | None = None) -> Company | None:
+    """Give a company the keys it does not have yet. A key another company already holds is never moved: the two
+    may be one company, so a person decides ("Same company?", filed when an org is given). Returns the other company
+    in that case. Aliases (other names a profile lists) are added when nobody holds them."""
+    found = {"exa_id": exa_id, "linkedin": linkedin_of(linkedin), "domain": domain_of(domain)}
+    clash = None
+    for key, value in found.items():
+        if not value or getattr(company, key) == value:
+            continue
+        other = canonical(session, session.scalar(select(Company).where(getattr(Company, key) == value,
+                                                                        Company.id != company.id).limit(1)))
+        if other is not None and other.id != company.id:
+            clash = other
+            continue
+        if getattr(company, key) is None:
+            setattr(company, key, value)
+    for name in aliases:
+        parsed = names.normalize(name)
+        if parsed.kind == "company" and parsed.normalized and session.get(CompanyAlias, parsed.normalized) is None:
+            session.add(CompanyAlias(normalized=parsed.normalized, company_id=company.id, source="profile"))
+            session.flush()
+    session.flush()
+    if clash is not None and org_id is not None:
+        _same_card(session, company, clash, org_id, subject_id, why="they share a website, LinkedIn page or Exa id")
+    return clash
+
+
+def _same_card(session: Session, company: Company, other: Company, org_id: uuid.UUID, subject_id: uuid.UUID | None,
+               why: str | None = None) -> None:
+    if session.scalar(select(Decision.id).where(Decision.org_id == org_id, Decision.type == "company_same",
+                                                Decision.sealed_at.is_(None), Decision.subject_id == company.id,
+                                                Decision.context["existing"]["id"].astext == str(other.id)).limit(1)):
+        return
+    session.add(Decision(org_id=org_id, type="company_same", priority=30, subject_type="company", subject_id=company.id,
+                         context={"question": "same company?", "new": {"id": str(company.id), "name": company.name},
+                                  "existing": {"id": str(other.id), "name": other.name},
+                                  "candidate_id": str(subject_id) if subject_id else None, **({"why": why} if why else {})}))
+    session.flush()
+
+
 def resolve(session: Session, raw_name: str, source: str, org_id: uuid.UUID | None = None,
-            subject_id: uuid.UUID | None = None) -> tuple[Company | None, names.CompanyName]:
-    """Exact match on the normalised name, else a new company. Self-employment and undisclosed names are not
-    companies. A new name that looks like an existing one raises a "Same company?" card for a human (when the
-    caller gives an org and subject to file it under); it is never merged automatically."""
+            subject_id: uuid.UUID | None = None, keys: dict[str, str | None] | None = None) -> tuple[Company | None, names.CompanyName]:
+    """A company record for a name. With keys (website, Exa company id, LinkedIn page), the company holding a key
+    wins and the name becomes its alias. Otherwise an exact match on the normalised name, else a new company.
+    Self-employment and undisclosed names are not companies. A new name that looks like an existing one raises a
+    "Same company?" card for a human (when the caller gives an org and subject); it is never merged automatically.
+    Two different companies with one name (their Exa ids differ) stay two records: the second is found by its key."""
     parsed = names.normalize(raw_name)
     if parsed.kind != "company":
         return None, parsed
+    keys = {k: v for k, v in (keys or {}).items() if k in KEYS and v}
+    if keys:
+        hit = by_key(session, **keys)
+        if hit is not None:
+            if session.get(CompanyAlias, parsed.normalized) is None:
+                session.add(CompanyAlias(normalized=parsed.normalized, company_id=hit.id, source=source))
+                session.flush()
+            learn_keys(session, hit, **keys, org_id=org_id, subject_id=subject_id)
+            return hit, parsed
     alias = session.get(CompanyAlias, parsed.normalized)
     if alias is not None:
-        return canonical(session, session.get(Company, alias.company_id)), parsed
+        company = canonical(session, session.get(Company, alias.company_id))
+        if keys.get("exa_id") and company is not None and company.exa_id and company.exa_id != keys["exa_id"]:
+            # Same name, another company: its own record, reached by its key (the name stays with the first).
+            other = Company(name=parsed.display, normalized=f"{parsed.normalized} #{keys['exa_id'].rsplit('/', 1)[-1]}")
+            session.add(other)
+            session.flush()
+            learn_keys(session, other, **keys)
+            return other, parsed
+        if keys and company is not None:
+            learn_keys(session, company, **keys, org_id=org_id, subject_id=subject_id)
+        return company, parsed
     company = Company(name=parsed.display, normalized=parsed.normalized)
     session.add(company)
     session.flush()
     session.add(CompanyAlias(normalized=parsed.normalized, company_id=company.id, source=source))
     session.flush()
+    if keys:
+        learn_keys(session, company, **keys, org_id=org_id, subject_id=subject_id)
     if org_id is not None and subject_id is not None:
         _suggest_duplicates(session, company, org_id, subject_id)
     return company, parsed

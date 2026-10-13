@@ -46,6 +46,8 @@ The owner's next build: sourcing beyond inbound, with Exa ([plan](../../next/PLA
 - **News** (for the [talent-release radar](talent-release-radar.md)): `exa.search(..., since=…, summary=…)` adds `startPublishedDate` and, when asked, Exa's structured summary of each page. The summary only proposes company names; the radar's reader decides.
 - **Record and replay:** with `LLM_REPLAY`, Exa searches are recorded and replayed like model calls, keyed by the exact request body. They are kept in `core/.llm-recordings/exa/` (never in git).
 
+**Since phase 1b:** each employer in a found profile is registered under its keys (Exa company id, LinkedIn company link) before the profile is read, so career steps link to the exact company (`discovery.register_employers`). `exa.fetch` reads pages by address or Exa id (`/contents`, about $0.001 a page); `exa.clean` removes executives, emails, phones and reviews from company pages before anything is kept, recordings included ([company knowledge](company-knowledge.md)).
+
 ## Depends on
 - [process.md](process.md): the CV path
 - [ingestion.md](ingestion.md)

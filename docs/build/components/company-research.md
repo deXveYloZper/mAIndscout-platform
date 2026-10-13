@@ -33,6 +33,8 @@ Matching and sourcing need to know what kind of company someone worked at (plan 
 - **Light research** for large consultancies and outsourcers (kind and head office only, yearly), and only for people in coverage ([coverage-gate.md](coverage-gate.md)).
 - **Budget:** shared research has its own monthly budget, `RESEARCH_MONTHLY_BUDGET_USD` (default $10). Its cost is recorded without an org.
 
+**Since phase 1b** ([company knowledge](company-knowledge.md)): Grok research is the depth level, for hiring companies, live targets and employers of candidates about to be submitted; Exa profiles ($0.001 by id) are the middle level. Both store facts through `write_facts`; `cross_check` clears `single_source_web` when two sources agree and flags `sources_disagree` when they do not. A status quote about an agreement or a pending deal is stored as active ("agreed to be acquired, not completed"). The research website becomes the company's domain key.
+
 ## Depends on
 [companies.md](companies.md) (who the company is), [tasks-and-costs.md](tasks-and-costs.md) (queue, ledger, budget), [writer.md](writer.md) (guarded claim write; schemas and registry).
 

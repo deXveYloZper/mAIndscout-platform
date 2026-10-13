@@ -67,6 +67,13 @@ flags:
     blocks_matching: false
     valid_subject_types: [candidate, company]
 
+  - key: sources_disagree
+    default_severity: medium
+    brief_template: "Two sources give different values for this company fact (for example a registry and Exa). A person decides."
+    blocks_auto_approval: true
+    blocks_matching: false
+    valid_subject_types: [company]
+
   - key: suppressed_by_critic
     default_severity: low
     brief_template: "Held back by the critic (not in Slice 0). Review if this should surface."

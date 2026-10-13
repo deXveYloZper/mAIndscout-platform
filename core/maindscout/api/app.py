@@ -563,6 +563,8 @@ class PlanBody(BaseModel):
     monthly_budget_usd: float | None = None
     role_variants: list[str] | None = None
     countries: list[str] | None = None
+    rules: dict[str, float] | None = None
+    open_tiers: list[str] | None = None
 
 
 @app.patch("/v1/jobs/{job_id}/sourcing/plan")
@@ -636,6 +638,38 @@ def run_sourcing_now(job_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), se
                          priority=60, dedupe_key=f"sourcing:{job_id}", max_attempts=1)
     session.commit()
     return {"task_id": str(task.id), "status": task.status}
+
+
+@app.post("/v1/jobs/{job_id}/sourcing/strategy", status_code=202)
+def build_sourcing_strategy(job_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                            actor: str = Depends(get_actor)):
+    """Build the role's strategy in the background: the hiring company's talent DNA and the tiered target list
+    (paid, under $0.50; docs/next/PLAN.md section 4b)."""
+    from maindscout.api import autosource
+
+    autosource._job(session, org_id, job_id)
+    autosource.plan(session, org_id, job_id, actor)
+    task = tasks.enqueue(session, org_id, "sourcing_strategy", {"job_id": str(job_id), "actor": actor},
+                         priority=60, dedupe_key=f"strategy:{job_id}", max_attempts=1)
+    session.commit()
+    return {"task_id": str(task.id), "status": task.status}
+
+
+class WidenBody(BaseModel):
+    option: str
+    value: str | list[str] | None = None
+
+
+@app.post("/v1/jobs/{job_id}/sourcing/widen")
+def widen_sourcing(job_id: uuid.UUID, body: WidenBody, org_id: uuid.UUID = Depends(get_org),
+                   session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """The owner's choice from a widening proposal: open a tier, add titles or a country, or search the market."""
+    from maindscout.api import autosource, strategy
+
+    strategy.widen(session, org_id, job_id, actor, body.option, body.value)
+    out = autosource.page(session, org_id, job_id, actor)
+    session.commit()
+    return out
 
 
 @app.get("/v1/sourcing/stats")

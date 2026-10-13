@@ -114,10 +114,18 @@ def _payload(fact: engine.Fact, today: date) -> tuple[str, dict[str, Any]] | Non
         lo, hi = _team(v)
         return "TeamSizeClaim", {"raw": v, "min": lo, "max": hi, "as_of": _date(fact.as_of) or today.isoformat()}
     if fact.kind == "status":
+        if v in ("acquired", "merged") and PENDING.search(fact.quote or ""):
+            # "Entered into a definitive agreement to be acquired" is not done yet: still active (owner, 2026-10-13).
+            return "CompanyStatusClaim", {"status": "active", "date": None, "detail": f"agreed to be {v}, not completed"}
         return "CompanyStatusClaim", {"status": v, "date": None, "detail": None}
     if fact.kind == "hq":
         return "CompanyLocationClaim", {"hq_raw": v, "hq_country": _country(v), "offices": []}
     return None
+
+
+PENDING = re.compile(r"\b(agreement to (be )?acquire|agreed to (be )?acquire|to be acquired|will acquire|will be acquired|"
+                     r"plans? to acquire|intends? to acquire|proposed (acquisition|merger)|pending|subject to (regulatory|closing)|"
+                     r"expected to close|to merge with|agreed to merge)\b", re.I)
 
 
 def _key(company_id: uuid.UUID, claim_type: str, p: dict[str, Any]) -> str:
@@ -148,8 +156,25 @@ def apply(session: Session, company: Company, outcome: engine.ResearchOutcome) -
     company.research_status = "identified" if outcome.identified else "not_identified"
     if outcome.identified and outcome.website and not company.website:
         company.website = outcome.website[:300]
+    if outcome.identified and company.website:
+        from maindscout.api import companies
+
+        companies.learn_keys(session, company, domain=company.website)
+    written = write_facts(session, company, outcome.facts, now)
+    _settle(session, company, outcome)
+    session.flush()
+    cross_check(session, company)
+    if written:
+        _rematch_wishes(session, company.id)
+    return {"identified": outcome.identified, "facts_written": written, "facts_seen": len(outcome.facts),
+            "rejected": len(outcome.rejected), "usd": outcome.cost.get("usd", 0)}
+
+
+def write_facts(session: Session, company: Company, facts_: list[engine.Fact], now: datetime, detail: str | None = None) -> int:
+    """Store facts with their evidence. Same fact seen again (same natural key) = a new observation on the same claim,
+    so two sources of one fact sit side by side. Returns how many new claims were written."""
     written = 0
-    for fact in outcome.facts:
+    for fact in facts_:
         made = _payload(fact, now.date())
         if made is None:
             continue
@@ -169,17 +194,62 @@ def apply(session: Session, company: Company, outcome: engine.ResearchOutcome) -
                             locator={"url": fact.source_url}, snippet=fact.quote, source_authority=authority, origin=origin,
                             observed_as_of=now.date(),
                             span_validation={"tier": "typed", "result": "pass", "metric_bucket": "none",
-                                             "detail": f"web research {engine.RESEARCH_PROMPT_VERSION}"})
+                                             "detail": detail or f"web research {engine.RESEARCH_PROMPT_VERSION}"})
         session.add(evidence)
         session.flush()
         session.add(ClaimObservation(org_id=PUBLIC_ORG_ID, claim_id=claim.id, attribute_path=".", value=payload,
                                      evidence_id=evidence.id, source_authority=authority, origin=origin, observed_as_of=now.date()))
-    _settle(session, company, outcome)
     session.flush()
-    if written:
-        _rematch_wishes(session, company.id)
-    return {"identified": outcome.identified, "facts_written": written, "facts_seen": len(outcome.facts),
-            "rejected": len(outcome.rejected), "usd": outcome.cost.get("usd", 0)}
+    return written
+
+
+def _same_value(claim_type: str, a: dict[str, Any], b: dict[str, Any]) -> bool | None:
+    """Do two sources agree on a fact? None when this kind of fact is not compared (lists of industries)."""
+    if claim_type == "CompanyFoundedClaim":
+        return (a.get("founded") or "")[:4] == (b.get("founded") or "")[:4]
+    if claim_type == "CompanyLocationClaim":
+        return bool(a.get("hq_country")) and a.get("hq_country") == b.get("hq_country")
+    if claim_type == "CompanyTypeClaim":
+        return a.get("type") == b.get("type")
+    if claim_type == "CompanyStatusClaim":
+        return a.get("status") == b.get("status")
+    if claim_type == "FundingRoundClaim":
+        x, y = a.get("amount_usd"), b.get("amount_usd")
+        return True if not x or not y else abs(x - y) <= 0.2 * max(x, y)
+    return None
+
+
+def cross_check(session: Session, company: Company) -> dict[str, int]:
+    """Where two different sources give the same company fact: agreement means it is no longer single-source;
+    disagreement flags it (`sources_disagree`) so a person sees both, each with its source (phase 1b, K3)."""
+    agreed = disagreed = 0
+    for claim in session.scalars(select(Claim).where(Claim.org_id == PUBLIC_ORG_ID, Claim.subject_id == company.id,
+                                                     Claim.status.in_(LIVE))):
+        rows = session.execute(select(ClaimObservation.value, Evidence.locator).join(
+            Evidence, Evidence.id == ClaimObservation.evidence_id).where(ClaimObservation.claim_id == claim.id)).all()
+        by_host: dict[str, dict[str, Any]] = {}
+        for value, locator in rows:
+            host = engine._host((locator or {}).get("url") or "")
+            if host:
+                by_host.setdefault(host, value)
+        if len(by_host) < 2:
+            continue
+        values = list(by_host.values())
+        verdicts = [_same_value(claim.claim_type, values[0], v) for v in values[1:]]
+        if any(v is None for v in verdicts):
+            continue
+        flags = dict(claim.flags or {})
+        if all(verdicts):
+            if flags.pop("single_source_web", None):
+                agreed += 1
+            flags.pop("sources_disagree", None)
+        else:
+            flags["sources_disagree"] = True
+            disagreed += 1
+        if flags != (claim.flags or {}):
+            claim.flags = flags
+    session.flush()
+    return {"agreed": agreed, "disagreed": disagreed}
 
 
 def _settle(session: Session, company: Company, outcome: engine.ResearchOutcome) -> None:

@@ -1,0 +1,241 @@
+"""Phase 1b (docs/next/PLAN.md section 4b): companies found by their keys, profiled from Exa without people's names,
+checked against research; people found by Exa get their employers and a career reading; the search is a strategy
+(talent DNA, tiers, batches, exhaustion, snowball, widening). Exa is a fake: synthetic companies and people."""
+
+import copy
+import json
+import uuid
+from datetime import date, datetime, timezone
+
+import pytest
+from sqlalchemy import func, select
+
+from maindscout.api import autosource, companies, company_profiles, research, strategy
+from maindscout.api.process import _ensure_pair
+from maindscout.db.models import PUBLIC_ORG_ID, Candidate, CandidateJob, Claim, Company, Decision, SourcingQuery, Task
+from maindscout.intelligence import exa
+from maindscout.intelligence import research as engine
+from tests.test_api import client, fake, make_job  # noqa: F401 (fixtures)
+from tests.test_autosource import ADA, FakeExa, blobs, job, person_named, profile  # noqa: F401 (fixtures)
+
+ORG_URL = "https://exa.ai/library/organization/"
+
+
+def page(exa_key, name, homepage, *, industry="Software Development", employees=120, hq="Munich, Bavaria, Germany",
+         founded=2018, countries="Germany: 70 (60%), Canada: 20 (20%)", rounds=("Series a (2024-03-01): USD 20.0M",),
+         talent="Via (2)", categories="earth observation, remote sensing, satellite data", linkedin=None):
+    """A synthetic Exa company page in Exa's layout, with executives and emails that must never be kept."""
+    linkedin = linkedin or name.lower().replace(" ", "-")
+    text = "\n".join([
+        f"# {name}", "", f"{name} is a {industry} company. {name} employs {employees} people (+5% YoY), founded in {founded}. "
+        f"Headquartered in {hq}.", "", "## Company Details", f"- Industry: {industry}", "- Type: Privately held",
+        f"- Headquarters: {hq}", f"- Founded Year: {founded}", f"- Homepage: {homepage}", f"- Aliases: {name} GmbH",
+        f"- LinkedIn: linkedin.com/company/{linkedin}", f"- Emails: hello@{homepage}", "", "## Financials",
+        *[f"  - {r}" for r in rounds], "", "## Workforce", f"- Employees: {employees}", "- Key Executives:",
+        "  - Jane Example: Chief Executive Officer", "  - John Example: CTO", "- Breakdown:", f"  - By Country: {countries}",
+        "  - By Department: Technical: 50 (42%), Sales: 10 (8%)", f"- Talent Sources: {talent}", "", "## Reviews & Ratings",
+        "- Employer Rating: 4.0/5.0", "", "## Categories", "", categories])
+    return {"url": f"https://linkedin.com/company/{linkedin}", "title": name, "text": text,
+            "entities": [{"id": ORG_URL + exa_key, "type": "company", "properties": {"name": name, "foundedYear": founded,
+                                                                                     "workforce": {"total": employees}}}]}
+
+
+def with_ids(person, ids):
+    """A synthetic person whose work history carries Exa company ids."""
+    out = copy.deepcopy(person)
+    for job_ in out["entities"][0]["properties"]["workHistory"]:
+        job_["company"]["id"] = ids.get(job_["company"]["name"])
+    return out
+
+
+# --- K1: identity keys ---------------------------------------------------------------------------------------------------
+
+
+def test_a_company_is_found_by_its_keys_before_its_name(session, job):
+    a, _ = companies.resolve(session, "Procure Testai", "test", keys={"exa_id": ORG_URL + "pta", "domain": "https://www.procure-test.example/en"})
+    assert (a.exa_id, a.domain) == (ORG_URL + "pta", "procure-test.example")
+    b, _ = companies.resolve(session, "ProcureTestai Ltd", "test", keys={"domain": "procure-test.example"})
+    assert b.id == a.id, "another name with the same website is the same company"
+    assert companies.resolve(session, "ProcureTestai", "test")[0].id == a.id, "and that name is now its alias"
+    c, _ = companies.resolve(session, "Procure Testai", "test", keys={"exa_id": ORG_URL + "other"})
+    assert c.id != a.id and companies.by_key(session, exa_id=ORG_URL + "other").id == c.id, "same name, another company"
+    d, _ = companies.resolve(session, "Unrelated Testco", "test")
+    clash = companies.learn_keys(session, d, domain="procure-test.example", org_id=job.org_id)
+    assert clash.id == a.id and d.domain is None, "a key held by another company is never moved"
+    card = session.scalar(select(Decision).where(Decision.type == "company_same", Decision.subject_id == d.id))
+    assert card is not None and card.context["existing"]["id"] == str(a.id) and "share" in card.context["why"]
+    assert companies.domain_of("https://www.linkedin.com/company/x") is None, "a profile site is not a company's website"
+
+
+# --- K2, K3: a profile without people, checked against research ---------------------------------------------------------
+
+
+def test_a_profile_is_read_without_people_and_checked_against_research(session):
+    company, _ = companies.resolve(session, "Orbital Testworks", "test", keys={"domain": "orbital.example"})
+    now = datetime.now(timezone.utc)
+    research.write_facts(session, company, [
+        engine.Fact("founded", "2016-04-20", "https://find-and-update.company-information.service.gov.uk/company/1",
+                    "Incorporated on 20 April 2016", registry=True),
+        engine.Fact("hq", "Munich, Germany", "https://orbital.example/imprint", "Orbital Testworks GmbH, Munich, Germany"),
+        engine.Fact("funding_round", {"stage": "series_a", "date": "2024-03-12", "amount": "$20M", "investors": []},
+                    "https://dealroom.co/companies/orbital", "raised a $20M Series A in March 2024"),
+    ], now)
+    found = exa.parse({"results": [page("orb", "Orbital Testworks", "orbital.example")]}, "", "contents").found[0]
+    company_profiles.apply(session, company, found)
+
+    assert (company.exa_id, company.linkedin) == (ORG_URL + "orb", "orbital-testworks")
+    kept = json.dumps(company.exa_profile)
+    assert "Example" not in kept and "hello@" not in kept and "Employer Rating" not in kept, "never executives, emails or reviews"
+    assert company.exa_profile["countries"][0] == {"country": "Germany", "n": 70, "pct": 60}
+    assert companies.resolve(session, "Orbital Testworks GmbH", "test")[0].id == company.id, "the profile's other names"
+
+    claims = {c.claim_type: c for c in session.scalars(select(Claim).where(Claim.org_id == PUBLIC_ORG_ID, Claim.subject_id == company.id))}
+    assert claims["CompanyFoundedClaim"].flags.get("sources_disagree"), "the registry says 2016, Exa 2018: a person sees both"
+    assert not claims["FundingRoundClaim"].flags.get("single_source_web"), "two sources agree on the round: no longer single-source"
+    assert not claims["CompanyLocationClaim"].flags.get("sources_disagree")
+    assert claims["CompanyTypeClaim"].payload == {"type": "product"}
+    assert company_profiles.summary(company)["employees"] == 120
+
+
+def test_an_agreement_to_be_acquired_is_not_an_acquisition():
+    fact = engine.Fact("status", "acquired", "https://catalyst.example/news",
+                       "Catalyst Testworks today shared that it has entered into a definitive agreement to be acquired by Intermap")
+    assert research._payload(fact, date.today()) == ("CompanyStatusClaim", {"status": "active", "date": None,
+                                                                             "detail": "agreed to be acquired, not completed"})
+    done = engine.Fact("status", "acquired", "https://x.example", "In 2024 the company was acquired by a larger rival.")
+    assert research._payload(done, date.today())[1]["status"] == "acquired"
+
+
+# --- K4: people found by Exa get their employers and a career reading ----------------------------------------------------
+
+
+def test_people_found_on_the_web_get_their_employers_profiled_and_a_career_reading(session, job, blobs, monkeypatch):
+    monkeypatch.setenv("PROFILE_AUTO", "true")
+    ids = {"Orbital Testworks": ORG_URL + "orb", "Example University": ORG_URL + "uni"}
+    fake_exa = FakeExa(people=[with_ids(ADA, ids)], pages={ORG_URL + "orb": page("orb", "Orbital Testworks", "orbital.example")})
+    autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", mode="weekly", open_tiers=["A", "B", "market"])
+    row = autosource.run(session, blobs, job.org_id, job.id, "manual", fake_exa)
+    ada = person_named(session, "Ada Testperson")
+
+    assert len(fake_exa.fetched) == 1 and set(fake_exa.fetched[0]["urls"]) == set(ids.values()), "one fetch for all employers"
+    orbital = companies.by_key(session, exa_id=ORG_URL + "orb")
+    assert orbital is not None and orbital.exa_profile["employees"] == 120
+    step = session.scalar(select(Claim).where(Claim.subject_id == ada, Claim.claim_type == "CareerStepClaim",
+                                              Claim.valid_to.is_(None)))
+    assert step.payload["company"]["company_id"] == str(orbital.id), "the career step links to the exact company"
+    assert session.scalar(select(Task.id).where(Task.kind == "profile_candidate", Task.payload["candidate_id"].astext == str(ada)))
+    assert row.report["profiles"]["companies"] >= 1
+    suggestion = next(s for s in autosource.page(session, job.org_id, job.id)["suggestions"] if s["candidate_id"] == str(ada))
+    assert suggestion["employer"]["employees"] == 120 and suggestion["employer"]["kind"] == "product"
+
+
+# --- S7: the strategy ------------------------------------------------------------------------------------------------------
+
+
+def _client_person(slug, history):
+    """Someone at the hiring company (never stored: they work at the client)."""
+    return {"url": f"https://www.linkedin.com/in/{slug}", "title": slug, "text": "# x",
+            "entities": [{"id": slug, "type": "person", "properties": {"name": slug, "workHistory": history}}]}
+
+
+def _job(title, company, cid, start, end=None):
+    return {"title": title, "company": {"id": cid, "name": company}, "dates": {"from": start, "to": end}, "location": None}
+
+
+def test_the_strategy_reads_the_talent_dna_and_builds_tiers(session, job):
+    hiring = session.get(Company, job.hiring_company_id)
+    hiring.domain = "catalyst.example"
+    autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", role_variants=["InSAR engineer", "SAR engineer"],
+                           countries=[])
+    cat, orb, club = ORG_URL + "cat", ORG_URL + "orb", ORG_URL + "club"
+    p1 = _client_person("client-one-demo", [_job("InSAR Engineer", "Catalyst Geo", cat, "2023-01"),
+                                            _job("Radar Engineer", "Orbital Testworks", orb, "2019-01", "2022-12"),
+                                            _job("Member", "Testcity Hackathon Club", club, "2017-01", "2018-01")])
+    p2 = _client_person("client-two-demo", [_job("InSAR Engineer", "Catalyst Geo", cat, "2022-05"),
+                                            _job("SAR Analyst", "Orbital Testworks", orb, "2018-01", "2022-04")])
+    stranger = _client_person("stranger-demo", [_job("InSAR Engineer", "Elsewhere Testco", ORG_URL + "else", "2020-01")])
+    fake_exa = FakeExa(
+        by_query={"Catalyst Geo (catalyst.example)": [page("cat", "Catalyst Geo", "catalyst.example", employees=300,
+                                                           countries="Germany: 180 (60%), Canada: 60 (20%), France: 9 (3%)")],
+                  "InSAR engineer at Catalyst Geo": [p1, p2, stranger], "SAR engineer at Catalyst Geo": [p1]},
+        pages={orb: page("orb", "Orbital Testworks", "orbital.example")},
+        companies=[page("rad", "Radar Testworks", "radar.example", employees=40), page("cat", "Catalyst Geo", "catalyst.example"),
+                   page("tiny", "Tiny Lookalike", "tiny.example", employees=3)])
+    out = strategy.build(session, job.org_id, job.id, fake_exa, "owner@desk.test")
+    p = autosource.current_plan(session, job.id)
+
+    assert p.dna["people"] == 2, "only people whose history shows the hiring company by its exact id"
+    assert p.dna["titles"][0] == ["InSAR Engineer", 2]
+    assert [f["name"] for f in p.dna["feeders"]] == ["Orbital Testworks"], "a hackathon club is not where people came from"
+    tiers = {t["name"]: (t["tier"], t["group"]) for t in p.targets}
+    assert tiers["Orbital Testworks"] == ("feeder", "A") and tiers["Radar Testworks"] == ("peer", "B")
+    assert "Catalyst Geo" not in tiers, "the hiring company is never a target"
+    assert p.countries == ["DE", "CA"], "where its team works, not where it is registered"
+    assert out["targets"]["A"] >= 1 and out["targets"]["B"] >= 1
+    assert session.scalar(select(func.count()).select_from(Candidate).where(Candidate.org_id == job.org_id)) == 0, \
+        "nobody at the client is ever stored"
+    assert all(c["query"].endswith("at Catalyst Geo") for c in fake_exa.calls if c["category"] == "people")
+    peer_searches = [c["query"] for c in fake_exa.calls if c["category"] == "company"][1:]
+    assert peer_searches == ["earth observation companies in Germany and Canada", "earth observation startups, Series A to C"]
+    assert "Tiny Lookalike" not in tiers, "micro companies are left out"
+
+
+def test_companies_are_searched_in_batches_until_exhausted_then_widening_is_proposed(session, job, blobs):
+    autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", role_variants=["InSAR engineer"], target=5)
+    names = [f"Batch Testco {i}" for i in range(7)]
+    for name in names:
+        autosource.add_target(session, job.org_id, job.id, name, "owner@desk.test")
+    p = autosource.current_plan(session, job.id)
+    first = strategy.next_searches(session, job, p, set(), {})
+    assert len({q["company_id"] for q in first}) == 5, "a batch of five companies"
+    assert strategy.widening(session, job.org_id, job, p) is None, "nothing is exhausted yet"
+
+    now = datetime.now(timezone.utc)
+    for t in p.targets:
+        session.add(SourcingQuery(org_id=job.org_id, job_id=job.id, key=f"k-{t['company_id']}", channel="exa_people",
+                                  text=f"InSAR engineer at {t['name']}", target=t["name"], tier=t["tier"], runs=1, results=10,
+                                  new=1, known=9, relevant=0, cost_usd=0.007, last_run_at=now, company_id=uuid.UUID(t["company_id"])))
+    session.flush()
+    state = strategy.company_state(session, job.id, p)
+    assert all(state[t["company_id"]]["exhausted"] for t in p.targets), "nine of ten already known: exhausted"
+    assert strategy.next_searches(session, job, p, set(), {}) == [], "an exhausted company waits 90 days"
+    proposal = strategy.widening(session, job.org_id, job, p)
+    assert proposal and "exhausted" in proposal["why"]
+    assert {o["option"] for o in proposal["options"]} >= {"open_tier", "market"}
+
+    p = strategy.widen(session, job.org_id, job.id, "owner@desk.test", "market")
+    assert "market" in p.open_tiers
+    assert [q["tier"] for q in strategy.next_searches(session, job, p, set(), {})] == ["market"], "the owner chose the last step"
+    with pytest.raises(autosource.SourcingEngineError):
+        autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", open_tiers=["B"])
+
+
+def test_the_list_grows_from_where_strong_people_worked_before(session, job, blobs):
+    from maindscout.api import discovery
+
+    autosource.plan(session, job.org_id, job.id)
+    people = [profile(f"snow-{i}-demo", f"Snow{i} Testperson", "InSAR Engineer", "Munich, Bavaria, Germany", "DE",
+                      [("InSAR Engineer", f"Current Testco {i}", "Jan 2023", "Present", "2023-01-01", None),
+                       ("InSAR Engineer", "Feeder Testworks", "Jan 2019", "Dec 2022", "2019-01-01", "2022-12-01")],
+                      skills=["insar"]) for i in range(2)]
+    for raw in people:
+        found = exa.parse({"results": [raw]}, "q", "people").found[0]
+        cid, _ = discovery.add(session, blobs, job.org_id, found, ["insar"])
+        pair = _ensure_pair(session, job.org_id, cid, job)
+        pair.triage_band = "priority"
+    session.flush()
+    report = {}
+    strategy.snowball(session, job.org_id, job, FakeExa(), report)
+    p = autosource.current_plan(session, job.id)
+    added = next(t for t in p.targets if t["name"] == "Feeder Testworks")
+    assert (added["tier"], added["group"]) == ("snowball", "B") and "2 strong" in added["why"][0]
+    assert report["snowball"] == ["Feeder Testworks"]
+
+
+def test_strategy_and_widen_routes(client, session, job):
+    r = client.post(f"/v1/jobs/{job.id}/sourcing/strategy")
+    assert r.status_code == 202 and session.get(Task, uuid.UUID(r.json()["task_id"])).kind == "sourcing_strategy"
+    page_ = client.post(f"/v1/jobs/{job.id}/sourcing/widen", json={"option": "market"}).json()
+    assert "market" in page_["plan"]["open_tiers"]
+    bad = client.post(f"/v1/jobs/{job.id}/sourcing/widen", json={"option": "everything"})
+    assert bad.status_code == 422

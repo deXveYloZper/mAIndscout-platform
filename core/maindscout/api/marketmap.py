@@ -18,9 +18,10 @@ from maindscout.db.models import PUBLIC_ORG_ID, Claim, Company, Job
 from maindscout.domain import geo
 
 LIVE = ("proposed", "approved")
-TIERS = ("named", "known", "peer", "adjacent", "release", "manual")
+TIERS = ("named", "known", "peer", "adjacent", "release", "manual", "feeder", "feeder_large", "snowball")
 TIER_LABEL = {"named": "named by the hiring manager", "known": "our people worked there", "peer": "peer company",
-              "adjacent": "adjacent industry", "release": "releasing talent", "manual": "added by you"}
+              "adjacent": "adjacent industry", "release": "releasing talent", "manual": "added by you",
+              "feeder": "their people came from here", "feeder_large": "large feeder", "snowball": "strong candidates worked here"}
 
 # Titles that mean the same work, per role family (the shared families of career profiles). The job's own title
 # comes first; these widen the search. Editable on the plan.
@@ -122,14 +123,19 @@ def web_peers(session: Session, job: Job, plan_targets: list[dict[str, Any]], co
     query = peer_query(hiring_summary, countries, role)
     if not query:
         return [], 0.0, None
-    results = exa.search(caller, query, "company", num_results=10, country=countries[0] if countries else None, text_chars=400)
+    results = exa.search(caller, query, "company", num_results=10, country=countries[0] if countries else None, text_chars=8000)
     have = {t.get("company_id") for t in plan_targets} | {(t.get("name") or "").lower() for t in plan_targets}
     out = []
     for found in results.found:
         name = re.split(r"\s+[|–—-]\s+", found.title)[0].strip()
         if not name or name.lower() in have:
             continue
-        company, _ = companies.resolve(session, name, "web")
+        from maindscout.api import company_profiles
+        from maindscout.intelligence import company_profile
+
+        profile = company_profile.read(found.text)
+        company, _ = companies.resolve(session, profile.name or name, "web",
+                                       keys={"exa_id": found.entity_id, "domain": profile.homepage or found.url})
         if company is None:
             continue
         company = companies.canonical(session, company)
@@ -138,7 +144,10 @@ def web_peers(session: Session, job: Job, plan_targets: list[dict[str, Any]], co
         have |= {str(company.id), name.lower()}
         if not company.website:
             company.website = found.url
+        if found.entity_id and profile.name:
+            company_profiles.apply(session, company, found)  # the result is its profile page: kept, no second call
         target = _target(company, "peer", [f'found by a company search: "{query}"'], "exa_company")
+        target["group"] = "B"
         target["website"] = found.url
         out.append(target)
     return out, results.usd, query

@@ -5,6 +5,10 @@ one link) and read through the ordinary CV path by `webprofile.EntityReader`: th
 LinkedIn page is the same person; no merge on a name alone), the same span check, company links and coverage gate,
 the same suppression (someone erased is never stored again). What sourcing adds on top (off-limits, "stop", the
 role's pair) lives in `autosource.py`.
+
+Phase 1b (K4): each employer in the profile is registered under its keys first (Exa's company id, the LinkedIn company
+page the profile links), so the CV path links the career step to that exact company, never to a similar name.
+`employers` gives the ids to profile (`company_profiles.by_ids`).
 """
 
 from __future__ import annotations
@@ -54,6 +58,37 @@ def person_by_profile(session: Session, org_id: uuid.UUID, url: str) -> uuid.UUI
     return cid
 
 
+_COMPANY_LINK = re.compile(r"\[([^\]]+)\]\(https?://[^)\s]*linkedin\.com/company/([^/)?#\s]+)", re.I)
+
+
+def employers(found: Found) -> list[dict[str, str | None]]:
+    """The companies in a found profile's work history, with their keys: [{name, exa_id, linkedin}]."""
+    links = {m.group(1).strip().lower(): m.group(2) for m in _COMPANY_LINK.finditer(found.text or "")}
+    out, seen = [], set()
+    for job in (found.person or {}).get("workHistory") or []:
+        c = job.get("company") or {}
+        name = (c.get("name") or "").strip()
+        if not name or name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        out.append({"name": name, "exa_id": c.get("id") or None, "linkedin": links.get(name.lower())})
+    return out
+
+
+def register_employers(session: Session, found: Found) -> list[str]:
+    """Each employer under its keys, before the profile is read (so its career steps link to the exact company).
+    Returns the Exa ids of the employers, to profile."""
+    from maindscout.api import companies
+
+    ids = []
+    for e in employers(found):
+        if e["exa_id"] or e["linkedin"]:
+            companies.resolve(session, e["name"], "exa", keys={"exa_id": e["exa_id"], "linkedin": e["linkedin"]})
+        if e["exa_id"]:
+            ids.append(e["exa_id"])
+    return ids
+
+
 def _label(url: str) -> str:
     slug = re.sub(r"[^A-Za-z0-9._-]+", "-", url.split("://", 1)[-1]).strip("-")
     return f"{slug[:80]}.txt"
@@ -82,6 +117,7 @@ def add(session: Session, blobs: BlobStore, org_id: uuid.UUID, found: Found, ski
     if not found.person or not found.text.strip() or not (found.person.get("name") or "").strip():
         return None, "not_a_profile"
     before = person_by_profile(session, org_id, found.url)
+    register_employers(session, found)
     doc, reused = store_profile(session, blobs, org_id, found)
     reader = webprofile.EntityReader(webprofile.read(found, skills))
     result = process.process_document(session, blobs, reader, org_id=org_id, document_id=doc.id)

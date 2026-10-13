@@ -17,6 +17,8 @@ The intelligence track ([plan](../../intelligence/PLAN.md)) needs companies as t
 - **Linking:** reading a CV resolves each career step's company into `payload.company.company_id` (the payload only: an approved view is never rewritten; readers take the link from the payload); reading a job ad sets `job.hiring_company_id`. `python -m maindscout link-companies` links data read before this existed.
 - **Erasure:** company records hold no personal data and stay; "Same company?" cards raised by an erased person's CV are deleted, and verify checks for them.
 
+**Since phase 1b** ([company knowledge](company-knowledge.md)): a company is found by its keys (website domain, Exa company id, LinkedIn page) before its name. A new name with a known key becomes its alias; a key another company holds raises a "Same company?" card (with why), never a silent merge. Two companies with one name and different Exa ids stay two records.
+
 ## Depends on
 [process.md](process.md), [review.md](review.md) (the card), [persistence.md](persistence.md).
 

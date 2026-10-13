@@ -11,6 +11,10 @@
 - **Who found whom** (`sourcing_hit`, first finder per role) and what each search cost feed results and spend
   (`sourcing_stats.py`).
 - Modes: daily, weekly, continuous until the target (checked hourly), paused. The clock (`__main__`) queues due runs.
+- Phase 1b (`strategy.py`): the plan carries the hiring company's talent DNA, target companies in tiers (A, B, C), the
+  tiers open for searching and the rules for exhaustion and widening. A run searches the next batch of companies,
+  profiles the employers of the people it adds (Exa, by id) and queues their career readings, then grows the list
+  (snowball). Country-wide searches only when the owner opens them.
 """
 
 from __future__ import annotations
@@ -37,6 +41,7 @@ from maindscout.db.models import (
     SourcingPlan,
     SourcingQuery,
     SourcingRun,
+    Task,
 )
 from maindscout.storage import BlobStore
 
@@ -90,7 +95,8 @@ def plan(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
 def update_plan(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str, **changes: Any) -> SourcingPlan:
     """A new version with the changes: mode, target, monthly_budget_usd, role_variants, countries, targets."""
     old = plan(session, org_id, job_id, actor)
-    fields = {k: getattr(old, k) for k in ("mode", "target", "monthly_budget_usd", "targets", "role_variants", "countries")}
+    fields = {k: getattr(old, k) for k in ("mode", "target", "monthly_budget_usd", "targets", "role_variants", "countries",
+                                           "dna", "rules", "open_tiers")}
     for key, value in changes.items():
         if key not in fields:
             raise SourcingEngineError(f"Unknown plan field {key!r}")
@@ -107,6 +113,19 @@ def update_plan(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: s
         raise SourcingEngineError("a plan needs at least one role title to search for")
     fields["role_variants"] = list(dict.fromkeys(variants))[:8]
     fields["countries"] = [c.upper() for c in fields["countries"] if isinstance(c, str) and len(c) == 2][:8]
+    tiers = [t for t in dict.fromkeys(fields["open_tiers"] or ["A", "B"]) if t in ("A", "B", "C", "market")]
+    if "A" not in tiers:
+        raise SourcingEngineError("tier A (the companies named and the feeders) is always searched")
+    fields["open_tiers"] = tiers
+    from maindscout.api.strategy import RULES
+
+    rules = dict(fields["rules"] or {})
+    for k, v in list(rules.items()):
+        if k not in RULES or not isinstance(v, (int, float)) or v < 0:
+            raise SourcingEngineError(f"Unknown or invalid rule {k!r}")
+    if not 1 <= rules.get("batch", RULES["batch"]) <= 20 or not 0 <= rules.get("known_share", RULES["known_share"]) <= 1:
+        raise SourcingEngineError("batch must be 1-20 companies and known_share 0-1")
+    fields["rules"] = rules
     old.superseded_at = _now()
     row = SourcingPlan(org_id=org_id, job_id=job_id, version=old.version + 1, created_by=actor, **fields)
     session.add(row)
@@ -300,27 +319,6 @@ def _key(channel: str, text: str, country: str | None) -> str:
     return hashlib.sha1(f"{channel}|{text.lower()}|{country or ''}".encode("utf-8")).hexdigest()
 
 
-def web_queries(p: SourcingPlan, releasing: set[str] | frozenset[str] = frozenset()) -> list[dict[str, Any]]:
-    """The searches a plan gives, in order: the role at each target company (pinned first, then companies releasing
-    talent, then by tier), then the role across each country. They name roles, companies and places, never a person."""
-    order = {t: i for i, t in enumerate(("named", "manual", "release", "known", "peer", "adjacent"))}
-    targets = sorted((t for t in p.targets if not t.get("removed")),
-                     key=lambda t: (not t.get("pinned"), t.get("company_id") not in releasing, order.get(t.get("tier"), 9)))
-    variants = p.role_variants or []
-    countries = p.countries or [None]
-    out: list[dict[str, Any]] = []
-    for t in targets:
-        for v in variants[:2]:
-            out.append({"text": f"{v} at {t['name']}", "target": t["name"], "tier": t.get("tier"),
-                        "country": t.get("country") or (p.countries[0] if p.countries else None)})
-    from maindscout.domain import geo
-
-    for v in variants[:3]:
-        for c in countries[:3]:
-            out.append({"text": f"{v} in {geo.name_of(c)}" if c else v, "target": None, "tier": "market", "country": c})
-    return out
-
-
 def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID, trigger: str, caller,
         actor: str = "system", task_id=None) -> SourcingRun:
     """One run of the role's plan. `caller` is the Exa client (None: the pool only)."""
@@ -349,6 +347,8 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
         """Put a found person on the role. Returns (added, strong suggestion)."""
         if session.scalar(select(CandidateJob.id).where(CandidateJob.job_id == job.id, CandidateJob.candidate_id == cid)):
             row.known += 1
+            if query is not None:
+                query.known += 1
             return False, False
         if why := refusal(session, org_id, job, cid, limits, not_wanted):
             refuse(why)
@@ -388,12 +388,16 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
     # 2. The web, when there is an Exa client: only searches not made in the last 30 days.
     if caller is None:
         return done("done", "pool_only")
+    from maindscout.api import company_profiles, profiles, strategy
+
     skills = discovery.skill_tokens(session, job)
     made = 0
     seen_people: set[uuid.UUID] = set()  # the same person found by two searches in one run counts once
     seen_pages: set[str] = set()
+    added_people: list[uuid.UUID] = []
+    employer_ids: dict[str, None] = {}
     reason = None
-    for q in web_queries(p, set(radar.live(session, org_id))):
+    for q in strategy.next_searches(session, job, p, set(radar.live(session, org_id)), limits):
         if strong_waiting(session, job.id) >= p.target:
             return done("done", "target")
         if made >= MAX_WEB_QUERIES_PER_RUN:
@@ -407,7 +411,8 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
             continue
         if sq is None:
             sq = SourcingQuery(org_id=org_id, job_id=job.id, key=key, channel="exa_people", text=q["text"],
-                               target=q["target"], tier=q["tier"], country=q["country"], runs=0, results=0, new=0, cost_usd=0)
+                               target=q["target"], tier=q["tier"], country=q["country"], runs=0, results=0, new=0, cost_usd=0,
+                               relevant=0, known=0, company_id=uuid.UUID(q["company_id"]) if q.get("company_id") else None)
             session.add(sq)
             session.flush()
         try:
@@ -442,11 +447,31 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
                 row.new += 1
                 sq.new += 1
                 entry["new"] += 1
-            _, strong = put_on(cid, "exa_people", sq, new_to_desk=is_new)
+            elif outcome == "known":
+                sq.known += 1
+            added, strong = put_on(cid, "exa_people", sq, new_to_desk=is_new)
             entry["strong"] += strong
+            sq.relevant += strong
+            if added:
+                added_people.append(cid)
+                employer_ids.update({i: None for i in discovery.register_employers(session, found)})
         report["web"]["queries"].append(entry)
 
-    # 3. The talent-release radar: its own few searches, last (its finds lead the next run).
+    # 3. Who they worked for: each new employer profiled by its Exa id (about $0.001), then their career reading.
+    if employer_ids and not _budget_left(session, org_id, job, p):
+        try:
+            done_ids = company_profiles.by_ids(session, employer_ids, caller, org_id, job.id, task_id)
+            report["profiles"] = {"companies": len(done_ids), "people": len(added_people)}
+        except exa.ExaError as error:
+            row.error = str(error)[:500]
+    for cid in added_people:
+        profiles.queue(session, org_id, cid)
+
+    # 4. The list grows: earlier employers of strong people, and companies like the ones that produce.
+    if made:
+        strategy.snowball(session, org_id, job, caller, report, task_id)
+
+    # 5. The talent-release radar: its own few searches, last (its finds lead the next run).
     news = radar.sweep(session, org_id, job, p, caller, row, report, task_id)
     if report["radar"]["stopped"] in ("budget", "desk_budget") and not reason:
         return done("stopped", report["radar"]["stopped"])
@@ -477,13 +502,18 @@ def due(session: Session, now: datetime | None = None) -> list[tuple[uuid.UUID, 
 
 
 def _people_facts(session: Session, org_id: uuid.UUID, ids: list[uuid.UUID]) -> dict[uuid.UUID, dict[str, Any]]:
-    out: dict[uuid.UUID, dict[str, Any]] = {i: {"current": None, "location": None, "profile": None} for i in ids}
+    from maindscout.api import company_profiles
+
+    out: dict[uuid.UUID, dict[str, Any]] = {i: {"current": None, "location": None, "profile": None, "employer": None} for i in ids}
     for c in session.scalars(select(Claim).where(Claim.org_id == org_id, Claim.subject_id.in_(ids or [None]),
                                                  Claim.status.in_(LIVE),
                                                  Claim.claim_type.in_(("CareerStepClaim", "LocationClaim", "ContactClaim")))):
         p, row = c.approved_view or c.payload, out[c.subject_id]
         if c.claim_type == "CareerStepClaim" and c.valid_to is None and not row["current"]:
             row["current"] = f"{p.get('title_raw')} at {(p.get('company') or {}).get('raw_name')}"
+            company_id = (p.get("company") or {}).get("company_id")
+            if company_id:  # where they work, in facts: kind, size, stage (phase 1b)
+                row["employer"] = company_profiles.summary(session.get(Company, uuid.UUID(company_id)))
         elif c.claim_type == "LocationClaim" and not row["location"]:
             row["location"] = p.get("place_raw")
         elif c.claim_type == "ContactClaim" and p.get("kind") == "linkedin" and not row["profile"]:
@@ -493,7 +523,7 @@ def _people_facts(session: Session, org_id: uuid.UUID, ids: list[uuid.UUID]) -> 
 
 def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "system") -> dict[str, Any]:
     """Everything the role's sourcing tab shows: the plan, budgets, recent runs, and the suggestions waiting."""
-    from maindscout.api import hiring, radar
+    from maindscout.api import company_profiles, hiring, radar, strategy
     from maindscout.api.queries import _gap_rows_many, _gap_summary, names
     from maindscout.settings import env
 
@@ -501,7 +531,13 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
     p = plan(session, org_id, job_id, actor)
     limits = off_limits(session, org_id)
     signals = radar.live(session, org_id)
-    targets = [{**t, "off_limits": limits.get(t.get("company_id") or ""), "release": signals.get(t.get("company_id") or "")}
+    state = strategy.company_state(session, job.id, p)
+    profiles_by_id = {str(c.id): c for c in session.scalars(select(Company).where(
+        Company.id.in_([uuid.UUID(t["company_id"]) for t in p.targets if t.get("company_id")] or [None])))}
+    targets = [{**t, "group": strategy.group_of(t), "off_limits": limits.get(t.get("company_id") or ""),
+                "release": signals.get(t.get("company_id") or ""),
+                "progress": {k: v for k, v in (state.get(t.get("company_id") or "") or {}).items() if k not in ("texts", "recent")} or None,
+                "profile": company_profiles.summary(profiles_by_id.get(t.get("company_id") or ""))}
                for t in p.targets]
     hits = {h.candidate_id: h for h in session.scalars(select(SourcingHit).where(SourcingHit.job_id == job.id))}
     pairs = [x for x in session.scalars(select(CandidateJob).where(CandidateJob.job_id == job.id,
@@ -529,12 +565,16 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
         "job_id": str(job.id), "title": job.title, "state": job.state,
         "plan": {"version": p.version, "mode": p.mode, "target": p.target, "monthly_budget_usd": float(p.monthly_budget_usd),
                  "role_variants": p.role_variants, "countries": p.countries, "targets": targets,
+                 "dna": p.dna, "rules": strategy.rules(p), "open_tiers": p.open_tiers,
                  "changed_by": p.created_by, "changed_at": p.created_at.isoformat() if p.created_at else None},
         "hiring": hiring.company_summary(session, session.get(Company, job.hiring_company_id) if job.hiring_company_id else None),
         "budget": {"role_spent_usd": round(costs.sourcing_spent(session, org_id, job.id), 4),
                    "role_budget_usd": float(p.monthly_budget_usd),
                    "desk_spent_usd": round(costs.sourcing_spent(session, org_id), 4), "desk_budget_usd": desk_budget(session, org_id)},
         "strong_waiting": strong_waiting(session, job.id),
+        "widening": strategy.widening(session, org_id, job, p),
+        "building": session.scalar(select(func.count()).select_from(Task).where(
+            Task.kind == "sourcing_strategy", Task.dedupe_key == f"strategy:{job.id}", Task.status.in_(("queued", "running")))) > 0,
         "web_ready": bool(env("EXA_API_KEY")),
         "running": any(r.status == "running" for r in runs),
         "runs": [{"id": str(r.id), "trigger": r.trigger, "status": r.status, "stop_reason": r.stop_reason, "found": r.found,

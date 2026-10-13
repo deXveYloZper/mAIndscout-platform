@@ -70,6 +70,8 @@ How the build follows those rules (the CV path for found profiles, separate budg
   - Each due run becomes a `sourcing_run` task, one per role at a time, with no retries. "Run now" queues the same task.
 - **Searches name roles, companies and places, never a person.**
 
+**Since phase 1b** ([sourcing strategy](sourcing-strategy.md)): what a run searches comes from the strategy: the next batch of 5 companies in the open tiers (A and B at first), each with its title variants until it is exhausted; country-wide searches only when the owner opens them. After the searches, the employers of the people added are profiled by Exa id and their career readings queued; then the list grows (snowball), then the radar. Searches record per company what they found, what was already known and what was relevant. The plan carries the talent DNA, the rules and the open tiers.
+
 ## Depends on
 - [web-discovery.md](web-discovery.md)
 - [process.md](process.md): `_ensure_pair`, `not_wanted_by`
