@@ -155,6 +155,11 @@ def talent_dna(session: Session, org_id: uuid.UUID, job: Job, p: SourcingPlan, c
 # --- stage 2: the target list in tiers ---------------------------------------------------------------------------------
 
 
+# A programming tool is not a field of work: "node.js companies" is no peer search (seen on a real role, 2026-10-13).
+TOOLS = {"python", "java", "javascript", "typescript", "node.js", "nodejs", "node", "react", "react.js", "vue", "angular", "go",
+         "golang", "rust", "c", "c++", "c#", ".net", "php", "ruby", "scala", "kotlin", "swift", "sql", "nosql", "postgresql",
+         "mysql", "mongodb", "aws", "azure", "gcp", "docker", "kubernetes", "terraform", "linux", "git", "graphql", "rest",
+         "html", "css", "django", "flask", "fastapi", "spring", "next.js", "pytorch", "tensorflow", "spark", "kafka", "matlab"}
 STAGE_WORDS = {"pre seed": "pre-seed to Series A", "seed": "seed to Series B", "series a": "Series A to C",
                "series b": "Series A to C", "series c": "growth stage", "private equity": "growth stage", "venture": "venture-backed"}
 MIN_PEER_STAFF = 10  # smaller ones are mostly name look-alikes and one-person pages
@@ -175,8 +180,8 @@ def peer_queries(company: Company, countries: list[str] | None = None, skills: l
     if stage in STAGE_WORDS:
         out.append(f"{market} startups, {STAGE_WORDS[stage]}")
     place = f" in {' and '.join(where)}" if where else ""
-    for skill in (skills or [])[:1]:  # who else does this specialist work: "insar companies in Canada"
-        out.append(f"{skill} companies{place}")
+    for skill in [k for k in skills or [] if k.lower() not in TOOLS][:1]:  # who else does this specialist work:
+        out.append(f"{skill} companies{place}")                           # "insar companies in Canada"
     return out
 
 

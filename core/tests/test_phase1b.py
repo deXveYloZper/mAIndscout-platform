@@ -356,3 +356,12 @@ def test_peer_searches_also_ask_who_else_does_the_roles_specialist_work(session)
     company.exa_profile = {**company.exa_profile, "domains": ["earth observation"], "offering": "earth observation solutions"}
     assert strategy.peer_queries(company, ["CA"], ["insar"]) == [
         "earth observation solutions companies in Canada", "earth observation startups, Series A to C", "insar companies in Canada"]
+
+
+def test_a_programming_tool_is_never_a_peer_search(session):
+    company, _ = companies.resolve(session, "Tool Testworks", "test", keys={"domain": "tool.example"})
+    found = exa.parse({"results": [page("tool", "Tool Testworks", "tool.example")]}, "", "contents").found[0]
+    company_profiles.apply(session, company, found)
+    company.exa_profile = {**company.exa_profile, "domains": ["procurement"], "offering": "procurement platform"}
+    assert not any("node.js" in q for q in strategy.peer_queries(company, ["DE"], ["node.js"]))
+    assert strategy.peer_queries(company, ["DE"], ["node.js", "insar"])[-1] == "insar companies in Germany"
