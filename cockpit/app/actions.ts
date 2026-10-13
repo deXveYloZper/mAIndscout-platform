@@ -718,9 +718,14 @@ export async function setSourcingPlan(jobId: string, _: FormState, form: FormDat
   return { message: "Saved: a new version of the plan." };
 }
 
-export async function setSourcingMode(jobId: string, mode: string): Promise<void> {
-  await apiSend(`/v1/jobs/${jobId}/sourcing/plan`, "PATCH", { mode });
+export async function setSourcingMode(jobId: string, mode: string, _: FormState): Promise<FormState> {
+  try {
+    await apiSend(`/v1/jobs/${jobId}/sourcing/plan`, "PATCH", { mode });
+  } catch (e) {
+    return fail(e);
+  }
   revalidatePath(`/jobs/${jobId}`);
+  return {};
 }
 
 export async function addSourcingTarget(jobId: string, _: FormState, form: FormData): Promise<FormState> {

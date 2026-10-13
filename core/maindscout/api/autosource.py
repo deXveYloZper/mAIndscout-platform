@@ -238,8 +238,9 @@ def current_employers(session: Session, org_id: uuid.UUID, candidate_id: uuid.UU
 
 
 def refusal(session: Session, org_id: uuid.UUID, job: Job, candidate_id: uuid.UUID, limits: dict[str, str],
-            not_wanted: set[uuid.UUID] | None = None) -> str | None:
-    """Why this person is not suggested for this role, or None."""
+            not_wanted: set[uuid.UUID] | None = None, countries: set[str] | None = None) -> str | None:
+    """Why this person is not suggested for this role, or None. `countries`: the role's countries (the plan's, in
+    step with the hiring profile): someone living elsewhere is not suggested."""
     from maindscout.api import coverage
     from maindscout.api.pipeline import active_block
     from maindscout.api.process import not_wanted_by
@@ -257,6 +258,11 @@ def refusal(session: Session, org_id: uuid.UUID, job: Job, candidate_id: uuid.UU
         return "not_for_them"
     if not coverage.would_accept(session, org_id, candidate_id, job):
         return "outside_countries"
+    if countries:
+        from maindscout.api.strategy import outside_countries
+
+        if outside_countries(session, org_id, candidate_id, countries):
+            return "outside_countries"
     return None
 
 
@@ -307,12 +313,20 @@ def _job(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> Job:
 
 
 def strong_waiting(session: Session, job_id: uuid.UUID) -> int:
-    """Strong suggestions found by sourcing that nobody has contacted yet (never someone who said stop)."""
-    return session.scalar(select(func.count()).select_from(CandidateJob).join(
+    """Strong suggestions found by sourcing that nobody has contacted yet: never someone who said stop, nor someone
+    living outside the role's countries (they are not shown, so they never hold the search back)."""
+    rows = session.execute(select(CandidateJob.candidate_id, CandidateJob.org_id).join(
         SourcingHit, (SourcingHit.job_id == CandidateJob.job_id) & (SourcingHit.candidate_id == CandidateJob.candidate_id)).join(
         Candidate, Candidate.id == CandidateJob.candidate_id).where(
         CandidateJob.job_id == job_id, CandidateJob.triage_band == "priority", CandidateJob.pair_state.in_(WAITING),
-        Candidate.do_not_contact_at.is_(None))) or 0
+        Candidate.do_not_contact_at.is_(None))).all()
+    p = current_plan(session, job_id)
+    countries = set(p.countries or []) if p is not None else set()
+    if not countries:
+        return len(rows)
+    from maindscout.api.strategy import outside_countries
+
+    return sum(1 for cid, org_id in rows if not outside_countries(session, org_id, cid, countries))
 
 
 def _key(channel: str, text: str, country: str | None) -> str:
@@ -329,7 +343,9 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
     job = _job(session, org_id, job_id)
     if job.state != "open":
         raise SourcingEngineError("Only an open role is sourced")
-    p = plan(session, org_id, job_id, actor)
+    from maindscout.api import strategy as _strategy
+
+    p = _strategy.sync(session, org_id, job)  # in step with the hiring profile: its countries, its named companies
     row = SourcingRun(org_id=org_id, job_id=job.id, plan_id=p.id, trigger=trigger, status="running", report={})
     session.add(row)
     session.flush()
@@ -350,7 +366,7 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
             if query is not None:
                 query.known += 1
             return False, False
-        if why := refusal(session, org_id, job, cid, limits, not_wanted):
+        if why := refusal(session, org_id, job, cid, limits, not_wanted, set(p.countries or [])):
             refuse(why)
             return False, False
         pair = _ensure_pair(session, org_id, cid, job, cause={"act": "sourced", "run_id": str(row.id), "channel": channel})
@@ -433,13 +449,13 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
         for found in results.found:
             if found.url in seen_pages:
                 continue
-            seen_pages.add(found.url)
             if target_company is not None and found.person and not discovery.worked_at(session, found, target_company):
                 # A search aimed at a company counts only people who work or worked there; the rest are look-alikes,
-                # never stored.
+                # never stored (and not "seen": another search in this run may still find them rightly).
                 entry["off_target"] += 1
                 report["web"]["off_target"] += 1
                 continue
+            seen_pages.add(found.url)
             cid, outcome = discovery.add(session, blobs, org_id, found, skills)
             if cid is None:
                 refuse(outcome)
@@ -536,7 +552,7 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
     from maindscout.settings import env
 
     job = _job(session, org_id, job_id)
-    p = plan(session, org_id, job_id, actor)
+    p = strategy.sync(session, org_id, job) if job.state == "open" else plan(session, org_id, job_id, actor)
     limits = off_limits(session, org_id)
     signals = radar.live(session, org_id)
     state = strategy.company_state(session, job.id, p)
@@ -552,8 +568,10 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
                                                                    CandidateJob.candidate_id.in_(list(hits) or [None])))]
     stopped = set(session.scalars(select(Candidate.id).where(Candidate.id.in_(list(hits) or [None]),
                                                              Candidate.do_not_contact_at.is_not(None))))
+    countries = set(p.countries or [])
     waiting = [x for x in pairs if x.pair_state in WAITING and x.triage_band in ("priority", "review_later")
-               and x.candidate_id not in stopped]
+               and x.candidate_id not in stopped
+               and not strategy.outside_countries(session, org_id, x.candidate_id, countries)]
     waiting.sort(key=lambda x: (x.triage_band != "priority", -(hits[x.candidate_id].created_at.timestamp())))
     ids = [x.candidate_id for x in waiting[:100]]
     who, facts = names(session, ids), _people_facts(session, org_id, ids)

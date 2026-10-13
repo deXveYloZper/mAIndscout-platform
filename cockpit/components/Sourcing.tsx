@@ -209,7 +209,7 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
           <h3><Radar aria-hidden="true" className="h-icon" />Sourcing: {MODE_LABEL[p.mode]}</h3>
           <div className="row">
             {(["daily", "weekly", "continuous", "paused"] as SourcingMode[]).filter((m) => m !== p.mode).map((m) => (
-              <form key={m} action={setSourcingMode.bind(null, jobId, m)}><button className="btn small ghost">{MODE_LABEL[m]}</button></form>
+              <OneClick key={m} action={setSourcingMode.bind(null, jobId, m)} label={MODE_LABEL[m]} busy="Saving…" />
             ))}
           </div>
         </div>
@@ -223,8 +223,15 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
         <div className="row">
           {s.running ? <span className="sub" role="status">Searching now…</span>
             : <OneClick action={runSourcingNow.bind(null, jobId)} label="Search now" busy="Starting…" primary />}
-          {lastRun && <span className="hint">Last run {when(lastRun.started_at)}: {STOP[lastRun.stop_reason ?? ""] ?? lastRun.status}</span>}
+          {lastRun && <span className="hint">Last run {when(lastRun.started_at)}: {lastRun.stop_reason === "target" && lastRun.found === 0
+            ? "did not search, the target was already reached" : STOP[lastRun.stop_reason ?? ""] ?? lastRun.status}</span>}
         </div>
+        {s.strong_waiting >= p.target && (
+          <p className="warn">Searching waits while {s.strong_waiting} strong suggestions are waiting to be contacted (the target is {p.target}):
+            contact or pass on some, or raise the target under &ldquo;Frequency, target and budget&rdquo;.</p>
+        )}
+        {p.countries.length > 0 && <p className="hint">Only people living in {p.countries.join(", ")} are suggested (the role&apos;s countries;
+          the hiring profile&apos;s &ldquo;must live in&rdquo; sets them when it has one).</p>}
         <details>
           <summary className="sub">Frequency, target and budget</summary>
           <PlanSettings action={setSourcingPlan.bind(null, jobId)} mode={p.mode} target={p.target} budget={p.monthly_budget_usd} />
@@ -239,9 +246,20 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
       <section className="panel">
         <h3>Suggestions to contact {s.suggestions_total > 0 && <span className="pill">{s.suggestions_total}</span>}</h3>
         {s.suggestions.length === 0 ? <p className="empty">No suggestions waiting. Choose how often to search, or search now.</p> : (
-          <ul className="people personcards stagger">
-            {s.suggestions.map((x) => <SuggestionCard key={x.candidate_id} jobId={jobId} s={x} />)}
-          </ul>
+          <>
+            <ul className="people personcards stagger">
+              {s.suggestions.filter((x) => x.band === "priority").map((x) => <SuggestionCard key={x.candidate_id} jobId={jobId} s={x} />)}
+            </ul>
+            {s.suggestions.some((x) => x.band !== "priority") && (
+              <details>
+                <summary className="sub">{s.suggestions.filter((x) => x.band !== "priority").length} possible matches (weaker: they miss
+                  some of what the role asks for)</summary>
+                <ul className="people personcards">
+                  {s.suggestions.filter((x) => x.band !== "priority").map((x) => <SuggestionCard key={x.candidate_id} jobId={jobId} s={x} />)}
+                </ul>
+              </details>
+            )}
+          </>
         )}
         <p className="hint">Public data only: a guide to who to contact. Their CV, contact details and permission come from them.</p>
       </section>

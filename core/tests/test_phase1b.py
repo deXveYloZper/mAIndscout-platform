@@ -302,3 +302,23 @@ def test_a_search_aimed_at_a_company_keeps_only_its_people(session, job, blobs):
     assert person_named(session, "Dev Testperson") is None, "a look-alike from a search aimed at a company is never stored"
     ada = next(s for s in autosource.page(session, job.org_id, job.id)["suggestions"] if s["name"] == "Ada Testperson")
     assert ada["found_by"]["at_target"] == "now" and ada["found_by"]["target"] == "Orbital Testworks"
+
+
+def test_the_plan_follows_the_hiring_profile_and_suggests_only_the_roles_countries(session, job, blobs, monkeypatch):
+    from maindscout.api import coverage, search
+
+    named, _ = companies.resolve(session, "Named Testworks", "test")
+    monkeypatch.setattr(coverage, "ad_countries", lambda session, job: {"DE"})
+    monkeypatch.setattr(search, "job_filters", lambda session, job: (search.Filters(), [str(named.id)]))
+    p = strategy.sync(session, job.org_id, job)
+    assert p.countries == ["DE"], "the hiring profile's 'must live in' sets the role's countries"
+    assert p.targets[0]["name"] == "Named Testworks" and (strategy.group_of(p.targets[0]), p.targets[0]["pinned"]) == ("A", True)
+    assert strategy.sync(session, job.org_id, job).version == p.version, "no new version when nothing changed"
+
+    ion = profile("ion-testperson-demo", "Ion Testperson", "InSAR Engineer", "Bucharest, Bucharest, Romania", "RO",
+                  [("InSAR Engineer", "Danube Testworks", "Jan 2021", "Present", "2021-01-01", None)], skills=["insar"])
+    autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", mode="weekly", open_tiers=["A", "B", "market"])
+    row = autosource.run(session, blobs, job.org_id, job.id, "manual", FakeExa(people=[ADA, ion]))
+    assert row.report["refused"].get("outside_countries") == 1, "Romania is in the desk's coverage, but not this role's"
+    names = {s["name"] for s in autosource.page(session, job.org_id, job.id)["suggestions"]}
+    assert "Ada Testperson" in names and "Ion Testperson" not in names

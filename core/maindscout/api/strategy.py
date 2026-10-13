@@ -252,6 +252,45 @@ def build(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, caller, actor:
             "countries": new.countries, "role_variants": new.role_variants}
 
 
+# --- in step with the hiring profile -----------------------------------------------------------------------------------
+
+
+def sync(session: Session, org_id: uuid.UUID, job: Job, actor: str = "hiring profile") -> SourcingPlan:
+    """The plan follows the role's hiring profile (owner, 2026-10-13): where people must live (its residence
+    requirement) are the role's countries, and every company it names is a pinned tier A target. A new plan version
+    only when something changed."""
+    from maindscout.api import coverage, search
+
+    p = autosource.plan(session, org_id, job.id, actor)
+    changes: dict[str, Any] = {}
+    residence = sorted(coverage.ad_countries(session, job))
+    if residence and sorted(p.countries or []) != residence:
+        changes["countries"] = residence
+    _, named = search.job_filters(session, job)
+    have = {t.get("company_id") for t in p.targets}
+    new = []
+    for company_id in named:
+        company = companies.canonical(session, session.get(Company, uuid.UUID(company_id)))
+        if company is not None and str(company.id) not in have and company.id != job.hiring_company_id:
+            new.append(_target(company, "named", ["named in the hiring profile"], "hiring_profile", pinned=True))
+            have.add(str(company.id))
+    if new:
+        changes["targets"] = [*new, *p.targets]
+    return autosource.update_plan(session, org_id, job.id, actor, **changes) if changes else p
+
+
+def outside_countries(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID, countries: set[str]) -> bool:
+    """Is this person outside the role's countries? Where they live decides; where they work only when where they
+    live is unknown; unknown altogether is not refused (a person can tell us on the call)."""
+    from maindscout.api import coverage
+
+    if not countries:
+        return False
+    lives, works = coverage.signals(session, org_id, candidate_id)
+    where = set(lives) or {c for c, _ in works}
+    return bool(where) and not (where & countries)
+
+
 # --- stage 3: progress per company, exhaustion, snowball ---------------------------------------------------------------
 
 
