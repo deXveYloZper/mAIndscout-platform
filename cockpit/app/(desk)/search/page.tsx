@@ -2,6 +2,7 @@ import Link from "next/link";
 import { putOnJob } from "@/app/actions";
 import { ApiError, api, type JobSummary } from "@/lib/api";
 import { DOMAINS, EMPLOYER_KIND_LABEL, FAMILY_LABEL, LEVELS, READING_WORDS } from "@/lib/format";
+import { ActForm } from "@/components/ActForm";
 
 export const metadata = { title: "Search" };
 
@@ -128,13 +129,13 @@ export default async function Search({ searchParams }: { searchParams: Promise<R
                     </div>
                   ) : <div className="met">{(p.met ?? []).join(" · ")}</div>}
                   {jobs.length > 0 && (
-                    <form action={putOnJob.bind(null, p.candidate_id)} className="row">
+                    <ActForm action={putOnJob.bind(null, p.candidate_id)} className="row">
                       <select name="job" aria-label={`Job to put ${p.name ?? "this person"} on`} defaultValue="">
                         <option value="" disabled>Put on a job…</option>
                         {jobs.map((j) => <option key={j.id} value={j.id}>{j.title}</option>)}
                       </select>
                       <button className="btn small">Put on job</button>
-                    </form>
+                    </ActForm>
                   )}
                 </li>
               ))}

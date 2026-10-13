@@ -70,6 +70,16 @@ The tests that decided it are in [plan section 4b](../../next/PLAN.md):
 - Flag `sources_disagree` (company facts).
 - Ledger purpose `sourcing_company_profile`.
 
+## A CV's companies, and keys typed by a person (x-ray, 2026-10-14)
+- **A company on a CV gets an Exa profile** (`by_name_and_place`, task `profile_company`, about a cent each, from the shared research budget). It is confirmed by one of:
+  - a key (website, LinkedIn page, Exa id);
+  - else the exact same name (or one of its names), with its head office or team in the country the CV gives for that job.
+
+  Anything less is not taken: a similar name is not the same company.
+- **Grok research** (about $0.09) is kept for hiring companies (from the ad, the intake notes or typed), companies named on a role, and "Research now". Before this, every company on every CV got it, and one re-check queued 88 at once against a $10 budget.
+- **A person can type a company's website or LinkedIn page** on its company page (`PUT /v1/companies/{id}/keys`). A key another company already holds raises "Same company?" instead of moving.
+- The company page shows the Exa profile, and what the last research attempt did (queued, or could not run because the shared budget is used up).
+
 ## Tests
 `core/tests/test_phase1b.py` (also: a company's domain is its market, read with a quote and never a technology; without a model, the non-technology tags are shown):
 - a company is found by its keys before its name;

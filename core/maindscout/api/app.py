@@ -341,6 +341,10 @@ def set_pair_state(job_id: uuid.UUID, candidate_id: uuid.UUID, body: StateBody, 
     """Move a pair along the pipeline (new → seen → contacted → screened → submitted → interviewing → offer → placed;
     or we passed / withdrawn / client rejected). Notes and reasons as the rules say; pairs are never deleted."""
     pair = review.set_state(session, org_id, job_id, candidate_id, body.state, actor, body.reason, body.note)
+    if body.state == "contacted":  # set by hand: the same contact record as every other door (x-ray B2)
+        from maindscout.api import outreach
+
+        outreach.record_contact(session, org_id, job_id, candidate_id, "other", actor)
     session.commit()
     return {"state": pair.pair_state, "outcome": pair.outcome}
 
@@ -616,45 +620,6 @@ def verify_erase(candidate_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), 
     return {"clean": not survivors, "survivors": survivors}
 
 
-class CampaignBody(BaseModel):
-    source: str = "auto"
-    cap: int = sourcing.DEFAULT_CAP
-    target: int = sourcing.DEFAULT_TARGET
-
-
-@app.post("/v1/jobs/{job_id}/campaigns", status_code=201)
-def start_campaign(job_id: uuid.UUID, body: CampaignBody | None = None, org_id: uuid.UUID = Depends(get_org),
-                   session: Session = Depends(get_session), actor: str = Depends(get_actor)):
-    """Refill a thin priority queue: a bounded find whose people go through the same triage as uploads."""
-    body = body or CampaignBody()
-    campaign = sourcing.start(session, org_id, job_id, actor, body.source, body.cap, body.target)
-    session.commit()
-    return sourcing.as_dict(campaign)
-
-
-@app.get("/v1/jobs/{job_id}/campaigns")
-def list_campaigns(job_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
-    from maindscout.db.models import Campaign
-
-    rows = session.scalars(select(Campaign).where(Campaign.job_id == job_id, Campaign.org_id == org_id).order_by(Campaign.created_at.desc()))
-    from maindscout.db.models import CareerProfile, Job
-
-    job = session.get(Job, job_id)
-    profile = sourcing.profile_query(session, job) if job is not None and job.org_id == org_id else None
-    has_profiles = bool(session.scalar(select(CareerProfile.id).where(CareerProfile.org_id == org_id).limit(1)))
-    return {"priority": sourcing.priority_count(session, job_id), "default_target": sourcing.DEFAULT_TARGET,
-            "by_profile": profile["words"] if profile and has_profiles else None,
-            "campaigns": [sourcing.as_dict(c) for c in rows]}
-
-
-@app.post("/v1/campaigns/{campaign_id}/stop")
-def stop_campaign(campaign_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
-                  actor: str = Depends(get_actor)):
-    campaign = sourcing.stop(session, org_id, campaign_id, actor)
-    session.commit()
-    return sourcing.as_dict(campaign)
-
-
 # --- the sourcing engine (docs/next/PLAN.md, phase 1) ---------------------------------------------------------------
 
 
@@ -682,9 +647,13 @@ class PlanBody(BaseModel):
 @app.patch("/v1/jobs/{job_id}/sourcing/plan")
 def change_sourcing_plan(job_id: uuid.UUID, body: PlanBody, org_id: uuid.UUID = Depends(get_org),
                          session: Session = Depends(get_session), actor: str = Depends(get_actor)):
-    from maindscout.api import autosource
+    from maindscout.api import autosource, hiring
 
-    autosource.update_plan(session, org_id, job_id, actor, **body.model_dump(exclude_none=True))
+    changes = body.model_dump(exclude_none=True)
+    if "countries" in changes:  # the role's countries live in its hiring profile ("must live in"): written there
+        hiring.set_residence(session, org_id, job_id, changes.pop("countries"), actor)
+    if changes:
+        autosource.update_plan(session, org_id, job_id, actor, **changes)
     out = autosource.page(session, org_id, job_id, actor)
     session.commit()
     return out
@@ -719,21 +688,6 @@ def change_sourcing_target(job_id: uuid.UUID, company_id: uuid.UUID, body: Targe
     out = autosource.page(session, org_id, job_id, actor)
     session.commit()
     return out
-
-
-@app.post("/v1/jobs/{job_id}/sourcing/peers")
-def find_peer_companies(job_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
-                        actor: str = Depends(get_actor)):
-    """More peer companies from a web company search (about a cent), added to the plan."""
-    from maindscout.api import autosource
-
-    caller = task_handlers.exa_factory()
-    if caller is None:
-        raise HTTPException(422, "Web search is not set up: add EXA_API_KEY to core/.env")
-    result = autosource.find_peers(session, org_id, job_id, actor, caller)
-    out = autosource.page(session, org_id, job_id, actor)
-    session.commit()
-    return {**out, "peers": result}
 
 
 @app.post("/v1/jobs/{job_id}/sourcing/run", status_code=202)
@@ -933,6 +887,33 @@ def get_company(company_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), ses
     return companies.company_page(session, org_id, company_id)
 
 
+class CompanyKeysBody(BaseModel):
+    website: str | None = None
+    linkedin: str | None = None
+
+
+@app.put("/v1/companies/{company_id}/keys")
+def put_company_keys(company_id: uuid.UUID, body: CompanyKeysBody, org_id: uuid.UUID = Depends(get_org),
+                     session: Session = Depends(get_session)):
+    """A company's website or LinkedIn page, typed by a person: how Exa confirms it is this company (so a role's talent
+    DNA can be learned). A key another company already holds is never moved: a "Same company?" card asks instead."""
+    from maindscout.db.models import Company
+
+    company = companies.canonical(session, session.get(Company, company_id))
+    if company is None:
+        raise LookupError(f"No company {company_id}")
+    if body.website and not companies.domain_of(body.website):
+        raise ValueError("That is not a company website (a LinkedIn or other profile site is not one): type e.g. buonaventura.it")
+    if body.linkedin and not companies.linkedin_of(body.linkedin):
+        raise ValueError("Type the company's LinkedIn page, e.g. linkedin.com/company/buonaventura")
+    clash = companies.learn_keys(session, company, domain=body.website, linkedin=body.linkedin, org_id=org_id)
+    if body.website and companies.domain_of(body.website) and not company.website:
+        company.website = f"https://{companies.domain_of(body.website)}"
+    session.commit()
+    out = companies.company_page(session, org_id, company.id)
+    return {**out, "clash": {"id": str(clash.id), "name": clash.name} if clash is not None else None}
+
+
 class MergeBody(BaseModel):
     into: uuid.UUID
 
@@ -984,10 +965,11 @@ class CountriesBody(BaseModel):
 @app.put("/v1/jobs/{job_id}/countries")
 def set_job_countries(job_id: uuid.UUID, body: CountriesBody, org_id: uuid.UUID = Depends(get_org),
                       session: Session = Depends(get_session), actor: str = Depends(get_actor)):
-    """Open a job to countries beyond the desk's coverage (codes or names). Its people are re-checked."""
-    from maindscout.api import coverage
+    """Where people must live for this role (codes or names): the hiring profile's "must live in", the one place the
+    role's countries are kept. Its people are re-checked and the sourcing plan follows."""
+    from maindscout.api import hiring
 
-    coverage.set_open_countries(session, org_id, job_id, body.countries, actor)
+    hiring.set_residence(session, org_id, job_id, body.countries, actor)
     session.commit()
     return queries.job_page(session, org_id, job_id)
 
@@ -1005,6 +987,34 @@ def bring_back(candidate_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), se
 
 class IntakeBody(BaseModel):
     text: str
+
+
+class JobStateBody(BaseModel):
+    state: str  # open | on_hold | filled | cancelled
+    note: str | None = None
+
+
+@app.put("/v1/jobs/{job_id}/state")
+def put_job_state(job_id: uuid.UUID, body: JobStateBody, org_id: uuid.UUID = Depends(get_org),
+                  session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Close a role (on hold, filled, cancelled: sourcing stops, everything is kept) or open it again."""
+    from maindscout.api import roles
+
+    roles.set_state(session, org_id, job_id, body.state, actor, body.note)
+    session.commit()
+    return queries.job_page(session, org_id, job_id)
+
+
+@app.delete("/v1/jobs/{job_id}")
+def delete_job(job_id: uuid.UUID, remove_people: bool = Query(False), org_id: uuid.UUID = Depends(get_org),
+               session: Session = Depends(get_session), blobs: BlobStore = Depends(get_blobs), actor: str = Depends(get_actor)):
+    """Delete a role added by mistake. `remove_people`: also the people only its own sourcing found (web profiles, on
+    no other role), without putting them on the never-again list."""
+    from maindscout.api import roles
+
+    counts = roles.delete_role(session, blobs, org_id, job_id, actor, remove_people)
+    session.commit()
+    return {"deleted": True, "counts": counts}
 
 
 class HiringCompanyBody(BaseModel):
@@ -1325,8 +1335,12 @@ def log_person_activity(candidate_id: uuid.UUID, body: ActivityBody, org_id: uui
     """Log a call, email, meeting, message or note with a person."""
     from maindscout.api import relationship
 
+    from maindscout.api import outreach
+
     a = relationship.log(session, org_id, "candidate", candidate_id, body.kind, body.summary, actor, direction=body.direction,
                          occurred_at=_when(body.occurred_at), job_id=body.job_id)
+    # About a role, it counts there: "we reached out" is first contact, "they reached out" a reply (x-ray B2).
+    outreach.from_activity(session, org_id, candidate_id, body.kind, body.direction, body.job_id, actor, a.occurred_at, body.summary)
     session.commit()
     return {"id": str(a.id)}
 

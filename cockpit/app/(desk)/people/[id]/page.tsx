@@ -13,6 +13,7 @@ import { EraseForm } from "@/components/EraseForm";
 import { FactForm } from "@/components/FactForm";
 import { api, apiOr404, type CallReview, type JobSummary, type MailboxStatus, type PersonPage, type Preference } from "@/lib/api";
 import { BAND_LABEL, jobsWorthShowing, reasonWords } from "@/lib/format";
+import { ActForm } from "@/components/ActForm";
 
 export const metadata = { title: "Person" };
 
@@ -65,25 +66,25 @@ export default async function Person({ params, searchParams }: { params: Promise
           </p>
           <div className="row tags">
             {person.relationship.tags.map((t) => (
-              <form key={t} action={untagPerson.bind(null, person.id, t, path)} className="chipform">
+              <ActForm key={t} action={untagPerson.bind(null, person.id, t, path)} className="chipform">
                 <span className="chip">{t} <button className="chip-x" aria-label={`Remove tag ${t}`}>×</button></span>
-              </form>
+              </ActForm>
             ))}
-            <form action={tagPerson.bind(null, person.id, path)} className="row tagadd">
+            <ActForm action={tagPerson.bind(null, person.id, path)} className="row tagadd">
               <input name="tag" aria-label="Add a tag (talent pool)" placeholder="+ tag, e.g. insar-pool" size={18} />
               <button className="btn small ghost">Tag</button>
-            </form>
+            </ActForm>
           </div>
         </div>
         <div className="ph-actions">
           {otherJobs.length > 0 && (
-            <form action={putOnJob.bind(null, person.id)} className="row">
+            <ActForm action={putOnJob.bind(null, person.id)} className="row">
               <select name="job" aria-label="Job to put this person on" defaultValue="">
                 <option value="" disabled>Put on a job…</option>
                 {otherJobs.map((j) => <option key={j.id} value={j.id}>{j.title}</option>)}
               </select>
               <button className="btn small">Put on job</button>
-            </form>
+            </ActForm>
           )}
           <div className="row">
             {!person.archived && <Link href={`${path}/brief`} className="btn small primary"><Phone aria-hidden="true" />Brief for a call</Link>}
@@ -96,7 +97,7 @@ export default async function Person({ params, searchParams }: { params: Promise
       {person.archived && (
         <div className="warn archived-note">
           Archived: {person.archived.reason ?? "outside the desk's coverage"}. No company research or profiling is spent on archived people.
-          <form action={bringBack.bind(null, person.id, path)}><button className="btn small">Bring back</button></form>
+          <ActForm action={bringBack.bind(null, person.id, path)}><button className="btn small">Bring back</button></ActForm>
         </div>
       )}
       {person.coverage_override && !person.archived && <p className="hint">Brought back by a person: the coverage rule leaves them be.</p>}
@@ -118,17 +119,17 @@ export default async function Person({ params, searchParams }: { params: Promise
       {person.blocks.filter((b) => !b.lifted).map((b) => (
         <div key={b.id} className="warn archived-note">
           Blocked at <Link href={`/companies/${b.company_id}`}>{b.company ?? "a client"}</Link>: the client said no ({b.reason}).
-          <form action={liftBlock.bind(null, b.id, path)} className="row">
+          <ActForm action={liftBlock.bind(null, b.id, path)} className="row">
             <input name="note" aria-label="Why lift the block" placeholder="why lift it" size={22} required />
             <button className="btn small">Lift block</button>
-          </form>
+          </ActForm>
         </div>
       ))}
       {person.merges.map((m) => (
         <div key={m.id} className="hint archived-note">
           Two records of this person were merged{m.merged_at ? ` on ${new Date(m.merged_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : ""} by {m.merged_by}
           {" "}({m.facts} facts, {m.documents} document{m.documents === 1 ? "" : "s"}, {m.jobs} job{m.jobs === 1 ? "" : "s"} moved).
-          <form action={undoMerge.bind(null, m.id, path)}><button className="btn small ghost">Undo the merge</button></form>
+          <ActForm action={undoMerge.bind(null, m.id, path)}><button className="btn small ghost">Undo the merge</button></ActForm>
         </div>
       ))}
       {person.open_decisions.length > 0 && (
@@ -182,10 +183,10 @@ export default async function Person({ params, searchParams }: { params: Promise
                 <PermissionForm action={recordPermission.bind(null, person.id, path)} jobs={person.jobs.map((j) => ({ id: j.job_id, title: j.title }))} />
                 <details>
                   <summary className="sub">They asked not to be contacted</summary>
-                  <form action={stopContact.bind(null, person.id, path)} className="row">
+                  <ActForm action={stopContact.bind(null, person.id, path)} className="row">
                     <input name="note" placeholder="their words (optional)" aria-label="Their words" className="grow" />
                     <button className="btn small danger">Never contact again</button>
-                  </form>
+                  </ActForm>
                 </details>
               </>
             )}
@@ -210,10 +211,10 @@ export default async function Person({ params, searchParams }: { params: Promise
         <>
           <p className="sub">Facts are proposed by the machine and official only once approved.</p>
           {toApprove > 0 && cvs.map((d) => (
-            <form key={d.id} action={approveAllFromDocument.bind(null, person.id, d.id, path)} className="row approveall">
+            <ActForm key={d.id} action={approveAllFromDocument.bind(null, person.id, d.id, path)} className="row approveall">
               <button className="btn small primary">Approve all from {cvs.length > 1 ? d.filename ?? "this CV" : "this CV"}</button>
               <span className="sub">Facts that wait on a question (two values disagree, a garbled email or phone) stay for you to settle one by one.</span>
-            </form>
+            </ActForm>
           ))}
           {SECTIONS.map(([type, title]) =>
             person.claims[type]?.length ? (
@@ -264,7 +265,7 @@ export default async function Person({ params, searchParams }: { params: Promise
             </ul>
           )}
           {mailbox.connected && person.messages.some((m) => m.status === "in_mailbox" || m.status === "sent") && (
-            <form action={syncMailbox.bind(null, path)}><button className="btn small">Check my mailbox now</button></form>
+            <ActForm action={syncMailbox.bind(null, path)}><button className="btn small">Check my mailbox now</button></ActForm>
           )}
         </section>
       ))}

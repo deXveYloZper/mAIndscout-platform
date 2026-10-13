@@ -193,3 +193,37 @@ def by_name(session: Session, company: Company, caller, org_id: uuid.UUID | None
             read_domains(session, [company], org_id, task_id=task_id)
             return True
     return False
+
+
+RESEARCH_PURPOSE = "research_company_exa"  # shared knowledge about a company on a CV: the shared research budget
+
+
+def by_name_and_place(session: Session, company: Company, country: str | None, caller, task_id=None) -> bool:
+    """Profile a company from a CV, which rarely gives its website (x-ray C, owner 2026-10-13: the Exa profile by
+    default, Grok research only for hiring companies, named targets and "Research now"). Without a key, a result
+    counts only when its name is exactly the company's (or one of its names) and its head office or its team is in the
+    country the CV gives for that job. Otherwise nothing is taken: a similar name is not the same company."""
+    from maindscout.domain import companies as company_names
+    from maindscout.domain import geo
+
+    if fresh(company):
+        return True
+    if company.domain or company.linkedin or company.exa_id:
+        return by_name(session, company, caller, None, task_id=task_id)
+    if not country:
+        return False
+    costs.ensure_budget(session, None)
+    results = exa.search(caller, company.name, "company", num_results=5, text_chars=8000)
+    costs.record(session, None, RESEARCH_PURPOSE, {"model": "exa", "usd": results.usd, "sources": len(results.found)},
+                 subject_type="company", subject_id=company.id, task_id=task_id)
+    wanted = {company_names.normalize(company.name).normalized,
+              *session.scalars(select(companies.CompanyAlias.normalized).where(companies.CompanyAlias.company_id == company.id))}
+    for found in results.found:
+        p = company_profile.read(found.text)
+        name = company_names.normalize(p.name or (found.company or {}).get("name") or "").normalized
+        team = {geo.country_in(c.get("country")) for c in p.countries or []}
+        if name and name in wanted and (p.hq_country == country or country in team):
+            apply(session, company, found)
+            read_domains(session, [company], None, task_id=task_id)
+            return True
+    return False

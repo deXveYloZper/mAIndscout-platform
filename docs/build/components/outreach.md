@@ -51,6 +51,13 @@ The owner (2026-10-13): "we should also think about ease of use and fast workflo
   - LinkedIn does not email what the owner has already seen in the app, so the one-click "replied" stays.
   - Mailboxes connected before this need connecting again for the read permission; until then the sync skips this step quietly.
 
+## One contact record (x-ray, 2026-10-14)
+- **Every door writes the same record.** `record_contact` is used by the card's "Contacted by", a message marked sent ("I sent it myself" or the mailbox), the stage set to contacted by hand, and a logged call, email, message or meeting about the role with "we reached out".
+- **Every reply writes the same record.** `record_reply` is used by the card's reply buttons, a message marked replied, a logged activity with "they reached out", and LinkedIn's email.
+- **The first record stands.** A later door fills only what is missing: it never overwrites the first contact, and a reply with no meaning never blanks the one the owner gave.
+- **The follow-up comes from the message thread:** due, drafted (waiting for you to send it), or sent. A contact with no message (a call, the stage set by hand) has only its reminder date. Follow-ups are drafted every few minutes even without a mailbox: a LinkedIn follow-up is a draft to copy.
+- The channels are a LinkedIn request, a LinkedIn message, InMail, email, phone, or another way.
+
 ## Tests
 `core/tests/test_phase1c.py`:
 - a suggestion stays off the role's bands and the job counts until the owner chooses; decide, undo (the machine's reason comes back), pass with a reason, maybe later;

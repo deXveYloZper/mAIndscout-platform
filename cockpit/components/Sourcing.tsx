@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { Pin, PinOff, Radar, Undo2, X } from "lucide-react";
-import { addSourcingTarget, buildStrategy, changeSourcingTarget, draftLinkedIn, findPeerCompanies, runSourcingNow, setSourcingMode, setSourcingPlan,
+import { addSourcingTarget, buildStrategy, changeSourcingTarget, draftLinkedIn, runSourcingNow, setSourcingMode, setSourcingPlan,
   widenSourcing } from "@/app/actions";
 import { Refresh } from "@/components/CallsClient";
 import { ProfileLink, Triage } from "@/components/Outreach";
 import { AddTarget, OneClick, PlanSettings, PlanWords } from "@/components/SourcingForms";
 import type { CompanyProfile, SourcingMode, SourcingPage, SourcingStats, SourcingTarget, Suggestion, TalentDna, Widening } from "@/lib/api";
 import { MODE_LABEL, reasonWords, TIER_WORDS } from "@/lib/format";
+import { ActForm } from "@/components/ActForm";
 
 /* The role's sourcing (docs/next/PLAN.md, phase 1): how often it searches, the market map, suggestions to contact,
    runs, and what each strategy cost and brought. */
@@ -24,6 +25,7 @@ const STOP: Record<string, string> = {
 export const REFUSED: Record<string, string> = {
   off_limits: "at an off-limits company", stop: "asked not to be contacted", client_block: "blocked by the client",
   not_for_them: "said this kind of role isn't for them", outside_countries: "outside the role's countries",
+  not_from: "at a company the hiring profile says not to recruit from",
   not_a_profile: "not a person's profile", unreadable: "profile could not be read",
 };
 const CHANNEL: Record<string, string> = { pool: "our own pool", exa_people: "web people search", exa_news: "talent-release radar" };
@@ -109,9 +111,9 @@ function SuggestionCard({ jobId, s, since }: { jobId: string; s: Suggestion; sin
       <div className="pc-side">
         <ProfileLink jobId={jobId} s={s} />
         {s.profile && (s.stage === "to_contact" || (s.stage === "contacted" && s.follow_up_due)) && (
-          <form action={draftLinkedIn.bind(null, jobId, s.candidate_id)}>
+          <ActForm action={draftLinkedIn.bind(null, jobId, s.candidate_id)}>
             <button className="btn small">{s.stage === "contacted" ? "Follow-up draft" : "Draft LinkedIn message"}</button>
-          </form>
+          </ActForm>
         )}
       </div>
     </li>
@@ -337,8 +339,8 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
           <p className="warn">Searching waits while {s.strong_waiting} strong suggestions are waiting to be contacted (the target is {p.target}):
             contact or pass on some, or raise the target under &ldquo;Frequency, target and budget&rdquo;.</p>
         )}
-        {p.countries.length > 0 && <p className="hint">Only people living in {p.countries.join(", ")} are suggested (the role&apos;s countries;
-          the hiring profile&apos;s &ldquo;must live in&rdquo; sets them when it has one).</p>}
+        {p.countries.length > 0 && <p className="hint">Only people living in {p.countries.join(", ")} are suggested: the role&apos;s countries,
+          kept in its <Link href={`/jobs/${jobId}?tab=profile`}>hiring profile</Link> (&ldquo;where people must live&rdquo;).</p>}
         <details>
           <summary className="sub">Frequency, target and budget</summary>
           <PlanSettings action={setSourcingPlan.bind(null, jobId)} mode={p.mode} target={p.target} budget={p.monthly_budget_usd} />
@@ -360,7 +362,7 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
           <p className="sub">{s.hiring.name}{s.hiring.stage ? ` · ${s.hiring.stage}` : ""}{s.hiring.domains?.length ? ` · ${s.hiring.domains.join(", ")}` : ""}
             {s.hiring.team ? ` · ${s.hiring.team}` : ""}{s.hiring.hq ? ` · ${s.hiring.hq}` : ""}</p>
         )}
-        {live.length === 0 ? <p className="empty">No target companies yet: build the strategy, add some, or look for peers on the web.</p> : (
+        {live.length === 0 ? <p className="empty">No target companies yet: build the strategy, or add some by name.</p> : (
           (["A", "B", "C"] as const).map((g) => {
             const rows = live.filter((t) => t.group === g);
             if (!rows.length) return null;
@@ -376,7 +378,6 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
         )}
         {p.open_tiers.includes("market") && <p className="hint">Country-wide searches by title are open.</p>}
         <AddTarget action={addSourcingTarget.bind(null, jobId)} />
-        <OneClick action={findPeerCompanies.bind(null, jobId)} label="Find peer companies on the web (about a cent)" busy="Searching…" />
         {removed.length > 0 && (
           <details>
             <summary className="sub">Removed ({removed.length})</summary>

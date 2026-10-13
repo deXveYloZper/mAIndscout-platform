@@ -86,10 +86,15 @@ def talent_dna(session: Session, org_id: uuid.UUID, job: Job, p: SourcingPlan, c
     company = hiring_company(session, job)
     if company is None:
         raise autosource.SourcingEngineError("The role has no hiring company")
+    if not (company.domain or company.linkedin or company.exa_id):
+        # Exa is never asked by a name alone: a similar name is not the same company (x-ray A6, 2026-10-13).
+        raise autosource.SourcingEngineError(
+            f"The desk has no website or LinkedIn page for {company.name}, so Exa cannot be sure which company it is: add "
+            "one on its company page, then build again")
     if not company_profiles.fresh(company) and not company_profiles.by_name(session, company, caller, org_id, job.id, task_id):
         raise autosource.SourcingEngineError(
-            f"Exa could not confirm {company.name} by its website or LinkedIn page: research it first (Research now on "
-            "its company page), or add target companies by hand")
+            f"Exa found no company with {company.name}'s website or LinkedIn page ({company.domain or company.linkedin}): "
+            "check it on its company page")
     if not company.exa_id:
         raise autosource.SourcingEngineError(f"Exa has no company id for {company.name}: add target companies by hand")
     profile = company.exa_profile or {}
@@ -244,6 +249,8 @@ def _peers(session: Session, org_id: uuid.UUID, job: Job, of: Company | None, ca
             if company is None or str(company.id) in have or company.id == job.hiring_company_id or (of is not None and company.id == of.id):
                 continue
             company_profiles.apply(session, company, found, org_id)
+            if fit(session, company, set(), not_from(session, job)[1])["searched"] is False:
+                continue  # a kind of company the hiring profile does not want
             have.add(str(company.id))
             made.append(company)
             out.append(_target(company, "peer", [why, f'company search: "{query}"'], "exa_company"))
@@ -344,8 +351,10 @@ def sync(session: Session, org_id: uuid.UUID, job: Job, actor: str = "hiring pro
     p = autosource.plan(session, org_id, job.id, actor)
     changes: dict[str, Any] = {}
     wanted = role_countries(session, job)
-    if wanted - set(p.countries or []):  # only added: countries the owner added (widening) are never taken away
-        changes["countries"] = [*(p.countries or []), *sorted(wanted - set(p.countries or []))]
+    # One source of truth (x-ray B1): the hiring profile's "must live in" (else the ad's places). Every country box
+    # writes there, so the plan follows it both ways. With neither, the plan keeps what the strategy chose.
+    if wanted and set(p.countries or []) != wanted:
+        changes["countries"] = [c for c in (p.countries or []) if c in wanted] + sorted(wanted - set(p.countries or []))
     _, named = search.job_filters(session, job)
     have = {t.get("company_id") for t in p.targets}
     new = []
@@ -402,10 +411,40 @@ def closed(session: Session, company: Company | None) -> bool:
     return bool(status) and (status.approved_view or status.payload).get("status") == "shut_down"
 
 
-def fit(session: Session, company: Company | None, countries: set[str]) -> dict[str, Any]:
+# A background the hiring profile does not want, as the kinds of company that give it.
+ANTI_KIND = {"consultancy": {"consultancy", "outsourcing"}, "agency": {"agency"}, "public_sector": {"public_sector"},
+             "non_profit": {"non_profit"}}
+
+
+def not_from(session: Session, job: Job) -> tuple[set[str], set[str]]:
+    """The hiring profile's "not from" (x-ray B3, 2026-10-13): the companies it names (every id each is known by), and
+    the kinds of company a background it does not want comes from ("no candidates from big consultancies")."""
+    ids: set[str] = set()
+    kinds: set[str] = set()
+    for c in session.scalars(select(Claim).where(Claim.subject_id == job.id, Claim.claim_type == "JobRequirementClaim",
+                                                 Claim.status.in_(LIVE))):
+        p = c.approved_view or c.payload
+        if p.get("strength") != "anti":
+            continue
+        if p.get("category") == "target_company":
+            for named in p.get("companies") or []:
+                company = (companies.canonical(session, session.get(Company, uuid.UUID(named["company_id"])))
+                           if named.get("company_id") else None)
+                if company is not None:
+                    ids |= set(companies._ids_for(session, company))
+        elif p.get("category") == "employer":
+            for k in p.get("employer_kinds") or []:
+                kinds |= ANTI_KIND.get(k, set())
+    return ids, kinds
+
+
+def fit(session: Session, company: Company | None, countries: set[str], avoid_kinds: set[str] | None = None) -> dict[str, Any]:
     """Why a company is or is not searched for this role, for the map."""
     if closed(session, company):
         return {"searched": False, "why": "shut down"}
+    kind = ((company.exa_profile or {}).get("kind") if company is not None else None)
+    if kind and avoid_kinds and kind in avoid_kinds:
+        return {"searched": False, "why": f"a {kind.replace('_', ' ')}: the hiring profile says not from there"}
     inside = team_in(company, countries)
     if inside is False:
         where = ", ".join(r["country"] for r in (company.exa_profile or {}).get("countries", [])[:2])
@@ -502,11 +541,14 @@ def next_searches(session: Session, job: Job, p: SourcingPlan, releasing: set[st
     out: list[dict[str, Any]] = []
     used = 0
     countries = set(p.countries or [])
+    avoid_ids, avoid_kinds = not_from(session, job)
     for t in targets:
         s = state.get(t["company_id"])
+        if t["company_id"] in avoid_ids:
+            continue  # the hiring profile says not from here
         company = session.get(Company, uuid.UUID(t["company_id"]))
-        if not t.get("pinned") and not fit(session, company, countries)["searched"]:
-            continue  # shut down, or its team works only outside the role's countries
+        if not t.get("pinned") and not fit(session, company, countries, avoid_kinds)["searched"]:
+            continue  # shut down, its team works only outside the role's countries, or a kind the profile does not want
         if s and s["exhausted"]:
             last = datetime.fromisoformat(s["last_run_at"]) if s["last_run_at"] else None
             if last and now - last < timedelta(days=r["recheck_days"]) and t["company_id"] not in releasing:
@@ -680,5 +722,8 @@ def widen(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str, op
         codes = [c.upper() for c in codes if isinstance(c, str) and len(c) == 2]
         if not codes:
             raise autosource.SourcingEngineError("Say which country (a two-letter code)")
-        return autosource.update_plan(session, org_id, job_id, actor, countries=list(dict.fromkeys([*p.countries, *codes])))
+        from maindscout.api import hiring
+
+        hiring.set_residence(session, org_id, job_id, list(dict.fromkeys([*p.countries, *codes])), actor)  # the one place
+        return autosource.current_plan(session, job_id)
     raise autosource.SourcingEngineError("option must be open_tier, titles, country or market (a must-have is changed on the hiring profile)")

@@ -88,10 +88,15 @@ def test_contacted_then_a_follow_up_is_due_then_a_reply_and_a_call(client, sessi
     assert client.post(f"/v1/jobs/{job.id}/people/{ada}/undo").status_code == 422, "contacted is not undone from here"
     page = client.get(f"/v1/jobs/{job.id}/sourcing").json()
     assert page["lists"]["contacted"][0]["follow_up_due"] is False and page["follow_ups_due"] == 0
-    p = pair_of(session, job, ada)
-    p.contact = {**p.contact, "follow_up_due": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()}
+    m.follow_up_due = datetime.now(timezone.utc) - timedelta(hours=1)  # four days later, no reply
     session.commit()
     assert client.get(f"/v1/jobs/{job.id}/sourcing").json()["follow_ups_due"] == 1
+    from maindscout.api import messages
+
+    messages.due_follow_ups(session, job.org_id)  # the clock drafts it (a LinkedIn follow-up: a draft to copy)
+    session.commit()
+    card = client.get(f"/v1/jobs/{job.id}/sourcing").json()["lists"]["contacted"][0]
+    assert card["follow_up"]["drafted"] and card["follow_up_due"] is False, "drafted: waiting for you to send it, no longer due"
 
     r = client.post(f"/v1/jobs/{job.id}/people/{ada}/replied", json={"outcome": "interested", "text": "Happy to talk"}).json()
     assert r["stage"] == "replied" and r["contact"]["reply"]["outcome"] == "interested"

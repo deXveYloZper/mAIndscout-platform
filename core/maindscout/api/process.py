@@ -625,10 +625,13 @@ def _retire_earlier_reading(session: Session, doc: Document, run: IntelligenceRu
 
 
 def _queue_research(session: Session, candidate_id, org_id) -> int:
-    """Queue company research for the stints that matter: the last 10 years, at least 6 months or still current.
-    Shared public work (no org); deduplicated per company; skipped while a company's facts are fresh."""
-    from maindscout.api import research, tasks
+    """Queue what is known about the companies of the stints that matter (the last 10 years, at least 6 months or still
+    current): their Exa profile, about a cent each, confirmed by exact name and the job's country (x-ray C, owner
+    2026-10-13). Grok research (about $0.09) is kept for hiring companies, companies named on a role and "Research
+    now". Shared public work (no org); deduplicated per company; skipped while a company is fresh."""
+    from maindscout.api import company_profiles, research, tasks
     from maindscout.db.models import Company
+    from maindscout.domain import geo
     from maindscout.settings import env
 
     if (env("RESEARCH_AUTO", "true") or "").lower() in ("0", "false", "no", "off"):
@@ -644,12 +647,11 @@ def _queue_research(session: Session, candidate_id, org_id) -> int:
         if end < horizon or not long_enough:
             continue
         company = session.get(Company, uuid.UUID(company_id))
-        if company is None or not research.due(company):
+        if company is None or company_profiles.fresh(company) or not research.due(company):
             continue
-        tasks.enqueue(session, None, "research_company",
-                      {"company_id": company_id,
-                       "context": research.context_for_step(c.payload["company"]["raw_name"], c.payload.get("location_raw"))},
-                      priority=150, dedupe_key=f"research:{company_id}")
+        tasks.enqueue(session, None, "profile_company",
+                      {"company_id": company_id, "country": geo.country_in(c.payload.get("location_raw"))},
+                      priority=150, dedupe_key=f"profile:{company_id}")
         queued += 1
     return queued
 

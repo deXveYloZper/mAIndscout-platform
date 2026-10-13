@@ -5,6 +5,7 @@ import { ContactFix } from "@/components/ContactFix";
 import { FactForm } from "@/components/FactForm";
 import { api, type CallReview, type InboxItem, type JobSummary, type Side } from "@/lib/api";
 import { summary } from "@/lib/format";
+import { ActForm } from "@/components/ActForm";
 
 export const metadata = { title: "Inbox" };
 
@@ -54,8 +55,8 @@ function Card({ item, path }: { item: InboxItem; path: string }) {
           <p className="sub">It will not be used to match people or send mail until you confirm it.</p>
           <Snippet ev={{ type: "document_span", document_id: null, filename: item.claim.filename, page: item.claim.page, snippet: item.claim.snippet, note: null, observed_as_of: null }} />
           <div className="row decide">
-            <form action={approveClaim.bind(null, item.claim.claim_id, path)}><button className="btn small primary">It is right: approve</button></form>
-            <form action={rejectClaim.bind(null, item.claim.claim_id, path, "wrong")}><button className="btn small">Not theirs: reject</button></form>
+            <ActForm action={approveClaim.bind(null, item.claim.claim_id, path)}><button className="btn small primary">It is right: approve</button></ActForm>
+            <ActForm action={rejectClaim.bind(null, item.claim.claim_id, path, "wrong")}><button className="btn small">Not theirs: reject</button></ActForm>
           </div>
           <details className="fix">
             <summary>Or correct it</summary>
@@ -78,17 +79,17 @@ function Card({ item, path }: { item: InboxItem; path: string }) {
             {item.document_id && <> <a href={`/files/${item.document_id}`} target="_blank" rel="noreferrer">Open the CV</a>.</>}
           </p>
           {item.possibly && item.possibly.length === 1 && (
-            <form action={mergePeople.bind(null, item.subject.id, item.possibly[0].id, path)} className="row" style={{ marginTop: 8 }}>
+            <ActForm action={mergePeople.bind(null, item.subject.id, item.possibly[0].id, path)} className="row" style={{ marginTop: 8 }}>
               <button className="btn small primary">Same person: merge</button>
               <span className="sub">Everything moves onto one record (the older one). It can be undone from their page.</span>
-            </form>
+            </ActForm>
           )}
           {!item.subject.name && (
             <FactForm action={addFact.bind(null, item.subject.id, path, null, item.id)} kinds={["name"]} label="Save name" />
           )}
-          <form action={act(item.possibly && item.possibly.length ? "different" : "acknowledge")} style={{ marginTop: 8 }}>
+          <ActForm action={act(item.possibly && item.possibly.length ? "different" : "acknowledge")} style={{ marginTop: 8 }}>
             <button className="btn small">{item.possibly && item.possibly.length ? "Different people" : "Understood"}</button>
-          </form>
+          </ActForm>
         </>
       )}
 
@@ -99,8 +100,8 @@ function Card({ item, path }: { item: InboxItem; path: string }) {
             <div className="side"><h3>New source says</h3><View view={item.new_view ?? {}} changed={item.changed_paths ?? []} /></div>
           </div>
           <div className="row" style={{ marginTop: 10 }}>
-            <form action={act("keep_old")}><button className="btn">Keep official</button></form>
-            <form action={act("accept_new")}><button className="btn primary">Accept new</button></form>
+            <ActForm action={act("keep_old")}><button className="btn">Keep official</button></ActForm>
+            <ActForm action={act("accept_new")}><button className="btn primary">Accept new</button></ActForm>
           </div>
         </>
       )}
@@ -109,8 +110,8 @@ function Card({ item, path }: { item: InboxItem; path: string }) {
         <>
           <div className="two"><SideBox side={item.left} title="Entry A" /><SideBox side={item.right} title="Entry B" /></div>
           <div className="row" style={{ marginTop: 10 }}>
-            <form action={act("same")}><button className="btn">Same job</button></form>
-            <form action={act("two")}><button className="btn">Two jobs</button></form>
+            <ActForm action={act("same")}><button className="btn">Same job</button></ActForm>
+            <ActForm action={act("two")}><button className="btn">Two jobs</button></ActForm>
           </div>
         </>
       )}
@@ -122,14 +123,14 @@ function Card({ item, path }: { item: InboxItem; path: string }) {
           </p>
           <p className="sub">Merging links everyone who worked at either. A wrong merge mixes two companies&apos; people, so only merge when you are sure.</p>
           <div className="row" style={{ marginTop: 10 }}>
-            <form action={act("same")}><button className="btn">Same company</button></form>
-            <form action={act("different")}><button className="btn">Different companies</button></form>
+            <ActForm action={act("same")}><button className="btn">Same company</button></ActForm>
+            <ActForm action={act("different")}><button className="btn">Different companies</button></ActForm>
             {item.context.candidate_id && (
-              <form action={act("ask")}>
+              <ActForm action={act("ask")}>
                 <button className="btn ghost" title="Leaves the inbox; a question in their Brief, settled by their answer">
                   Not sure: ask {item.subject?.name ? item.subject.name.split(" ")[0] : "them"} on the call
                 </button>
-              </form>
+              </ActForm>
             )}
           </div>
         </>
@@ -139,8 +140,8 @@ function Card({ item, path }: { item: InboxItem; path: string }) {
         <>
           <div className="two"><SideBox side={item.left} title="Option A" /><SideBox side={item.right} title="Option B" /></div>
           <div className="row" style={{ marginTop: 10 }}>
-            <form action={act("pick", item.left.claim_id)}><button className="btn">A is true</button></form>
-            <form action={act("pick", item.right.claim_id)}><button className="btn">B is true</button></form>
+            <ActForm action={act("pick", item.left.claim_id)}><button className="btn">A is true</button></ActForm>
+            <ActForm action={act("pick", item.right.claim_id)}><button className="btn">B is true</button></ActForm>
           </div>
         </>
       )}

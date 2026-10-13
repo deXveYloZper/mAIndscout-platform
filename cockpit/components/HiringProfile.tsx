@@ -6,6 +6,7 @@ import { HiringCompanyForm } from "@/components/HiringCompanyForm";
 import { IntakeForm } from "@/components/IntakeForm";
 import type { ClaimView, JobPage } from "@/lib/api";
 import { EMPLOYER_KIND_LABEL, FAMILY_LABEL, KIND_LABEL, STRENGTH_GROUPS, STRENGTHS } from "@/lib/format";
+import { ActForm } from "@/components/ActForm";
 
 const SOURCE: Record<string, string> = { ad: "from the ad", intake: "from the intake notes", recruiter: "added by a person" };
 
@@ -79,17 +80,17 @@ export function HiringProfile({ job, requirements }: { job: JobPage; requirement
                   {detail(r, job.hiring.targets)}
                   <span className="sub"> · {SOURCE[r.payload.source ?? "ad"] ?? "from the ad"}{r.status === "approved" ? ", approved" : ""}</span>
                   <div className="row reqacts">
-                    <form action={setStrength.bind(null, r.id, path)} className="row">
+                    <ActForm action={setStrength.bind(null, r.id, path)} className="row">
                       <select name="strength" defaultValue={r.payload.strength} aria-label="How much it matters">
                         {STRENGTHS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                         {!STRENGTHS.some(([v]) => v === r.payload.strength) && <option value={r.payload.strength}>{r.payload.strength}</option>}
                       </select>
                       <button className="btn small" title="Save how much it matters (this approves it too)">Save</button>
-                    </form>
+                    </ActForm>
                     {r.status === "proposed" && (
                       <>
-                        <form action={approveClaim.bind(null, r.id, path)}><button className="btn small" title="Keep it as the desk read it">Approve</button></form>
-                        <form action={rejectClaim.bind(null, r.id, path, "wrong")}><button className="btn small ghost">Reject</button></form>
+                        <ActForm action={approveClaim.bind(null, r.id, path)}><button className="btn small" title="Keep it as the desk read it">Approve</button></ActForm>
+                        <ActForm action={rejectClaim.bind(null, r.id, path, "wrong")}><button className="btn small ghost">Reject</button></ActForm>
                       </>
                     )}
                     <details><summary>source</summary><Snippet ev={r.evidence[0]} /></details>

@@ -2,6 +2,7 @@ import { FileText, Quote } from "lucide-react";
 import { applyCallReview, dismissCallReview, rejectClaim, retryCallReview } from "@/app/actions";
 import type { CallLine, CallReview, Preference } from "@/lib/api";
 import { Refresh, TranscriptForm } from "./CallsClient";
+import { ActForm } from "@/components/ActForm";
 
 const OUTCOME: Record<string, string> = { confirmed: "Confirmed", not_met: "Not met", noted: "Noted" };
 
@@ -73,8 +74,8 @@ export function CallReviewCard({ review, path }: { review: CallReview; path: str
         {head}
         <p className="warn">{review.error}</p>
         <div className="row">
-          <form action={retryCallReview.bind(null, review.id, path)}><button className="btn small">Try again</button></form>
-          <form action={dismissCallReview.bind(null, review.id, path)}><button className="btn small ghost">Dismiss</button></form>
+          <ActForm action={retryCallReview.bind(null, review.id, path)}><button className="btn small">Try again</button></ActForm>
+          <ActForm action={dismissCallReview.bind(null, review.id, path)}><button className="btn small ghost">Dismiss</button></ActForm>
         </div>
       </section>
     );
@@ -101,7 +102,7 @@ export function CallReviewCard({ review, path }: { review: CallReview; path: str
       {count === 0 ? (
         <>
           <p className="sub">{review.error ?? "Nothing about the candidate was found in this transcript."}</p>
-          <form action={dismissCallReview.bind(null, review.id, path)}><button className="btn small">Close</button></form>
+          <ActForm action={dismissCallReview.bind(null, review.id, path)}><button className="btn small">Close</button></ActForm>
         </>
       ) : (
         <>
@@ -109,12 +110,12 @@ export function CallReviewCard({ review, path }: { review: CallReview; path: str
             What the call said, in their own words <Quote aria-hidden="true" className="inline-icon" />. Untick anything that is wrong;
             facts a person already approved are only changed if you tick them.
           </p>
-          <form action={applyCallReview.bind(null, review.id, path)} id={`call-${review.id}`}>
+          <ActForm action={applyCallReview.bind(null, review.id, path)} id={`call-${review.id}`}>
             {lists}
-          </form>
+          </ActForm>
           <div className="row callactions">
             <button className="btn primary" form={`call-${review.id}`}>Approve all ticked</button>
-            <form action={dismissCallReview.bind(null, review.id, path)}><button className="btn ghost">Dismiss the call</button></form>
+            <ActForm action={dismissCallReview.bind(null, review.id, path)}><button className="btn ghost">Dismiss the call</button></ActForm>
           </div>
         </>
       )}
@@ -141,9 +142,9 @@ export function WhatTheyWant({ prefs, path }: { prefs: Preference[]; path: strin
               <span className="what">{p.summary.replace(/^(Must|Prefers): /, "")}</span>
               {p.said && <q className="cl-quote">{p.said}</q>}
               <span className="sub">{p.stale ? `said ${p.as_of}: ask again` : `said ${p.as_of}`}</span>
-              <form action={rejectClaim.bind(null, p.claim_id, path, "outdated")}>
+              <ActForm action={rejectClaim.bind(null, p.claim_id, path, "outdated")}>
                 <button className="btn small ghost" title="No longer what they want">Remove</button>
-              </form>
+              </ActForm>
             </li>
           ))}
         </ul>

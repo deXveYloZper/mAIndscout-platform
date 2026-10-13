@@ -114,7 +114,8 @@ def stats(session: Session, org_id: uuid.UUID, job_id: uuid.UUID | None = None, 
         reached = max(furthest[pair.id] if pair else -1, _rank(pair.pair_state if pair else None))
         sent = [m for m in messages if m.candidate_id == h.candidate_id and m.status in ("sent", "replied")
                 and (m.job_id in (None, h.job_id))]
-        replied = any(m.status == "replied" for m in sent)
+        track = (pair.contact or {}) if pair else {}
+        replied = any(m.status == "replied" for m in sent) or track.get("stage") in ("replied", "call_booked")
         flags = {
             "found": True,
             "new_to_desk": h.new_to_desk,
@@ -122,7 +123,8 @@ def stats(session: Session, org_id: uuid.UUID, job_id: uuid.UUID | None = None, 
             "possible": bool(pair and pair.triage_band == "review_later"),
             "contacted": bool(sent) or reached >= _rank("contacted"),
             "replied": replied or reached >= _rank("screened"),
-            "interested": (h.candidate_id, h.job_id) in permissions or h.candidate_id in anyjob_permission or reached >= _rank("screened"),
+            "interested": (h.candidate_id, h.job_id) in permissions or h.candidate_id in anyjob_permission or reached >= _rank("screened")
+                          or (track.get("reply") or {}).get("outcome") == "interested" or track.get("stage") == "call_booked",
             "cv": any(c >= h.created_at for c in cvs.get(h.candidate_id, [])),
             "submitted": reached >= _rank("submitted"),
             "interviewed": reached >= _rank("interviewing"),

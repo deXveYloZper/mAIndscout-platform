@@ -4,6 +4,31 @@ from tests.test_api import RoutingFake, client, drop_cv, fake, make_job, pdf_fil
 from tests.test_process import CV_LINES, cv_json
 
 
+class _Reply:
+    def __init__(self, status_code, body):
+        self.status_code, self._body = status_code, body
+
+    def json(self):
+        return self._body
+
+
+def campaign(session, client, job, json=None):
+    """The pool matching every sourcing run starts with. Its endpoint (a search of the desk by hand) was removed as a
+    duplicate of the sourcing run (x-ray B4, 2026-10-13); the matching itself is what these tests check."""
+    import uuid
+
+    from maindscout.api import sourcing
+
+    body = json or {}
+    try:
+        c = sourcing.start(session, uuid.UUID(client.headers["X-Org-Id"]), uuid.UUID(job), "test", body.get("source", "auto"),
+                           body.get("cap", sourcing.DEFAULT_CAP), body.get("target", sourcing.DEFAULT_TARGET))
+    except sourcing.SourcingError as error:
+        return _Reply(422, {"detail": str(error)})
+    session.flush()
+    return _Reply(201, sourcing.as_dict(c))
+
+
 def pool_person(client, fake, name, email, skills):
     """Read a CV into the pool (no job) for a distinct person with the given skills."""
     fake.cv = cv_json(full_name={"value": name, "quote": "JANE EXAMPLE"},
@@ -14,10 +39,10 @@ def pool_person(client, fake, name, email, skills):
     return r.json()["subject_id"]
 
 
-def test_a_thin_queue_is_refilled_from_the_desk_through_the_same_triage(client, fake):
+def test_a_thin_queue_is_refilled_from_the_desk_through_the_same_triage(client, fake, session):
     job = make_job(client)  # distinctive must-have: insar
     specialist = pool_person(client, fake, "Ana Radar", "jane.example@example.com", ["insar", "python"])
-    r = client.post(f"/v1/jobs/{job}/campaigns", json={"cap": 10, "target": 5})
+    r = campaign(session, client, job, json={"cap": 10, "target": 5})
     assert r.status_code == 201, r.text
     c = r.json()
     assert c["query"] == {"tokens": ["insar"]} and c["source"] == "desk"
@@ -27,37 +52,37 @@ def test_a_thin_queue_is_refilled_from_the_desk_through_the_same_triage(client, 
     assert page["history"][0]["cause"]["act"] == "sourced"
 
 
-def test_distinctive_tokens_do_not_pull_software_generalists_in(client, fake):
+def test_distinctive_tokens_do_not_pull_software_generalists_in(client, fake, session):
     job = make_job(client)
     generalist = pool_person(client, fake, "Gen Eral", "jane.example@example.com", ["python", "react", "typescript"])
-    c = client.post(f"/v1/jobs/{job}/campaigns", json={}).json()
+    c = campaign(session, client, job, json={}).json()
     assert c["added"] == 0 and c["status"] == "exhausted"
     assert generalist not in [p["candidate_id"] for band in client.get(f"/v1/jobs/{job}").json()["people"].values() for p in band]
 
 
-def test_a_campaign_stops_at_its_cap(client, fake):
+def test_a_campaign_stops_at_its_cap(client, fake, session):
     job = make_job(client)
     for i in range(3):
         pool_person(client, fake, f"Radar {i}", f"radar{i}@example.com", ["insar"])
-    c = client.post(f"/v1/jobs/{job}/campaigns", json={"cap": 2, "target": 10}).json()
+    c = campaign(session, client, job, json={"cap": 2, "target": 10}).json()
     assert (c["spent"], c["added"], c["status"], c["stop_reason"]) == (2, 2, "stopped", "cap")
 
 
-def test_a_campaign_stops_once_priority_reaches_the_target(client, fake):
+def test_a_campaign_stops_once_priority_reaches_the_target(client, fake, session):
     job = make_job(client)
     for i in range(3):
         pool_person(client, fake, f"Radar {i}", f"radar{i}@example.com", ["insar"])
-    c = client.post(f"/v1/jobs/{job}/campaigns", json={"cap": 10, "target": 2}).json()
+    c = campaign(session, client, job, json={"cap": 10, "target": 2}).json()
     assert (c["added"], c["stop_reason"]) == (2, "target_reached")
-    again = client.post(f"/v1/jobs/{job}/campaigns", json={"target": 2})
+    again = campaign(session, client, job, json={"target": 2})
     assert again.status_code == 422 and "thin queue" in again.json()["detail"]
 
 
-def test_a_sourced_person_is_handled_exactly_like_an_uploaded_one(client, fake):
+def test_a_sourced_person_is_handled_exactly_like_an_uploaded_one(client, fake, session):
     job = make_job(client)
     uploaded = drop_cv(client, job)["subject_id"]  # Jane, do_not_submit on this job
     sourced = pool_person(client, fake, "Bo Radar", "bo@example.com", ["insar"])
-    client.post(f"/v1/jobs/{job}/campaigns", json={})
+    campaign(session, client, job, json={})
     a = client.get(f"/v1/jobs/{job}/people/{uploaded}/gaps").json()
     b = client.get(f"/v1/jobs/{job}/people/{sourced}/gaps").json()
     assert set(a) == set(b), "same shape of record"
@@ -68,19 +93,10 @@ def test_a_sourced_person_is_handled_exactly_like_an_uploaded_one(client, fake):
     assert client.get(f"/v1/jobs/{job}/people/{uploaded}/gaps").json()["band"] == b["band"] == "priority"
 
 
-def test_a_running_campaign_can_be_stopped_and_listed(client, fake):
-    job = make_job(client)
-    c = client.post(f"/v1/jobs/{job}/campaigns", json={"cap": 1}).json()
-    stopped = client.post(f"/v1/campaigns/{c['id']}/stop").json()
-    assert stopped["status"] in ("stopped", "exhausted")
-    listing = client.get(f"/v1/jobs/{job}/campaigns").json()
-    assert listing["campaigns"][0]["id"] == c["id"] and listing["default_target"] == 5
-
-
-def test_a_job_without_must_have_skills_cannot_be_sourced(client, fake):
+def test_a_job_without_must_have_skills_cannot_be_sourced(client, fake, session):
     fake.jd = {**fake.jd, "requirements": []}
     job = make_job(client)
-    r = client.post(f"/v1/jobs/{job}/campaigns", json={})
+    r = campaign(session, client, job, json={})
     assert r.status_code == 422 and "no must-have skills" in r.json()["detail"]
 
 

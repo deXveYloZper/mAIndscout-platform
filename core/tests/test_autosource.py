@@ -360,24 +360,6 @@ def test_erasure_takes_finds_and_permissions(session, job, blobs, monkeypatch):
     assert not session.scalar(select(func.count()).select_from(Permission).where(Permission.candidate_id == ada))
 
 
-def test_peer_companies_from_a_company_search_join_the_plan(session, job):
-    autosource.plan(session, job.org_id, job.id)
-    company_results = [{"url": "https://orbital-testworks.example", "title": "Orbital Testworks | Satellite radar", "entities": []},
-                       {"url": "https://catalyst.example", "title": "Catalyst Geo", "entities": []}]
-    with pytest.raises(autosource.SourcingEngineError):  # the hiring company is not researched here: no industries yet
-        autosource.find_peers(session, job.org_id, job.id, "owner@desk.test", FakeExa(companies=company_results))
-    from maindscout.api import marketmap
-
-    found, usd, query = marketmap.web_peers(session, job, [], ["DE"], "radar engineer", FakeExa(companies=company_results),
-                                            {"domains": ["earth observation"], "stage": "series a (2025-01)"})
-    assert query == "Series A earth observation startups in Germany hiring radar engineer"
-    assert [t["name"] for t in found] == ["Orbital Testworks"], "the hiring company itself is never a target"
-    assert usd == pytest.approx(0.007)
-
-
-# --- the API -------------------------------------------------------------------------------------------------------------
-
-
 def test_sourcing_routes(client, session, job, blobs):
     page = client.get(f"/v1/jobs/{job.id}/sourcing").json()
     assert page["plan"]["mode"] == "paused" and page["suggestions"] == []

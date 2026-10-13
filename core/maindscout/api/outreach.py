@@ -27,7 +27,8 @@ from maindscout.db.models import Candidate, CandidateJob, Claim, Job, Message, P
 LIVE = ("proposed", "approved")
 WAITING = ("new", "seen")
 CHANNELS = {"linkedin_invite": "LinkedIn connection request", "linkedin_message": "LinkedIn message",
-            "inmail": "LinkedIn InMail / Recruiter", "email": "email"}
+            "inmail": "LinkedIn InMail / Recruiter", "email": "email",
+            "phone": "phone call", "other": "another way"}
 OUTCOMES = ("interested", "not_now", "not_interested", "stop")
 PASS = {"level": "seniority", "skills": "skills", "location": "location", "domain": "other", "other": "other"}
 MANAGES = re.compile(r"\b(head of|director|vice president|vp\b|chief|cto|cio|ceo|coo|cpo|co-?founder|founder|"
@@ -170,10 +171,79 @@ def undo(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, candidate_id: u
 # --- the contact track -----------------------------------------------------------------------------------------------
 
 
+def record_contact(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, candidate_id: uuid.UUID, channel: str, actor: str,
+                   at: datetime | None = None, message: Message | None = None) -> CandidateJob | None:
+    """The one record of first contact on a role, whichever door was used: the card's "Contacted by", a message marked
+    sent, the stage set to contacted by hand, or a logged outgoing call or email about the role (x-ray B2, 2026-10-13).
+    The card, the follow-up reminder, the LinkedIn email reader, freshness and the results all read this. A later
+    door never overwrites the first record."""
+    from maindscout.api import messages, review
+
+    pair = session.scalar(select(CandidateJob).where(CandidateJob.org_id == org_id, CandidateJob.job_id == job_id,
+                                                     CandidateJob.candidate_id == candidate_id))
+    if pair is None:
+        return None
+    at = at or _now()
+    track = pair.contact or {}
+    if not track.get("contacted_at"):
+        due = message.follow_up_due if message is not None and message.follow_up_due else at + timedelta(days=messages.follow_up_days())
+        _track(pair, stage=track.get("stage") if track.get("stage") in ("replied", "call_booked") else "contacted",
+               channel=channel if channel in CHANNELS else "other", contacted_at=at.isoformat(), follow_up_due=due.isoformat(),
+               **({"message_id": str(message.id)} if message is not None else {}))
+    elif message is not None and not track.get("message_id"):
+        _track(pair, message_id=str(message.id))
+    if pair.pair_state in WAITING:
+        review.set_state(session, org_id, job_id, candidate_id, "contacted", actor)
+    session.flush()
+    return pair
+
+
+def record_reply(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, candidate_id: uuid.UUID, actor: str, *,
+                 at: datetime | None = None, outcome: str | None = None, text: str | None = None, note: str | None = None,
+                 check_back: date | None = None, source: str | None = None, from_message: bool = False) -> CandidateJob | None:
+    """The one record of their reply, whichever door it came through: one click on the card, a message marked replied,
+    a logged call or email from them about the role, or LinkedIn's email. A reply stops the follow-ups. A reply whose
+    meaning the owner already gave is never blanked by a later one that has none."""
+    from maindscout.api import messages
+
+    pair = record_contact(session, org_id, job_id, candidate_id, "other", actor, at=at)  # a reply means they were reached
+    if pair is None:
+        return None
+    at = at or _now()
+    if not from_message:
+        m = _open_outreach(session, org_id, job_id, candidate_id)
+        if m is not None and m.status == "sent":
+            messages.mark_replied(session, org_id, m.id, at, track=False)
+    old = (pair.contact or {}).get("reply") or {}
+    if old.get("outcome") and not outcome:
+        return pair
+    _track(pair, stage="call_booked" if (pair.contact or {}).get("stage") == "call_booked" else "replied",
+           reply={"outcome": outcome, "at": at.isoformat(), "note": note or old.get("note"),
+                  "text": (text or "")[:2000] or old.get("text"), "source": source or old.get("source"),
+                  "check_back": (check_back or (date.today() + timedelta(days=90))).isoformat() if outcome == "not_now" else None})
+    session.flush()
+    return pair
+
+
+ACTIVITY_CHANNEL = {"call": "phone", "email": "email", "message": "other", "meeting": "other"}
+
+
+def from_activity(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID, kind: str, direction: str | None,
+                  job_id: uuid.UUID | None, actor: str, at: datetime | None = None, summary: str | None = None) -> None:
+    """A call, email, message or meeting logged by a person about a role counts on that role: "we reached out" is first
+    contact; "they reached out" is a reply."""
+    if job_id is None or kind not in ACTIVITY_CHANNEL or direction not in ("in", "out"):
+        return
+    if direction == "out":
+        record_contact(session, org_id, job_id, candidate_id, ACTIVITY_CHANNEL[kind], actor, at=at)
+    else:
+        record_reply(session, org_id, job_id, candidate_id, actor, at=at, text=summary, source="logged")
+
+
 def contacted(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, candidate_id: uuid.UUID, channel: str, actor: str,
               note: str | None = None) -> Message:
-    """They were contacted outside the desk (on LinkedIn, by InMail, by email): recorded as a sent first contact, so the
-    follow-up reminder (4 days) and the reply tracking work as for any message."""
+    """They were contacted outside the desk (on LinkedIn, by InMail, by email, by phone): recorded as a sent first
+    contact, so the follow-up reminder (4 days) and the reply tracking work as for any message."""
     from maindscout.api import messages
 
     if channel not in CHANNELS:
@@ -183,18 +253,16 @@ def contacted(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, candidate_
         raise LookupError(f"No candidate {candidate_id}")
     if person.do_not_contact_at is not None:
         raise OutreachError("They asked not to be contacted")
-    pair = _pair(session, org_id, job_id, candidate_id)
-    linkedin = channel != "email"
-    to = (messages._linkedin(session, org_id, candidate_id) if linkedin else messages._email(session, org_id, candidate_id)) or "(outside the desk)"
+    _pair(session, org_id, job_id, candidate_id)
+    linkedin = channel in LINKEDIN_CHANNELS
+    to = (messages._linkedin(session, org_id, candidate_id) if linkedin
+          else messages._email(session, org_id, candidate_id) if channel == "email" else None) or "(outside the desk)"
     m = Message(org_id=org_id, kind="candidate_outreach", to_address=to, subject=CHANNELS[channel],
                 body=(note or "").strip() or f"Contacted by {CHANNELS[channel]}, outside the desk.", status="draft",
                 created_by=actor, provider="linkedin" if linkedin else None, candidate_id=candidate_id, job_id=job_id)
     session.add(m)
     session.flush()
-    messages.mark_sent(session, org_id, m.id)
-    _track(pair, stage="contacted", channel=channel, contacted_at=m.sent_at.isoformat(),
-           follow_up_due=m.follow_up_due.isoformat() if m.follow_up_due else None, message_id=str(m.id))
-    session.flush()
+    messages.mark_sent(session, org_id, m.id, channel=channel)
     return m
 
 
@@ -208,26 +276,23 @@ def replied(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, candidate_id
             note: str | None = None, check_back: date | None = None, text: str | None = None) -> CandidateJob:
     """Their answer: interested, not now (back in the pool, with a date to check back), not interested, or stop. A
     reply stops the follow-ups."""
-    from maindscout.api import consent, messages, relationship, review
+    from maindscout.api import consent, relationship, review
 
     if outcome not in OUTCOMES:
         raise OutreachError(f"outcome must be one of {OUTCOMES}")
     pair = _pair(session, org_id, job_id, candidate_id)
-    m = _open_outreach(session, org_id, job_id, candidate_id)
-    if m is not None and m.status == "sent":
-        messages.mark_replied(session, org_id, m.id)
     words = {"interested": "interested", "not_now": "not now", "not_interested": "not interested", "stop": "asked to stop"}[outcome]
     relationship.log(session, org_id, "candidate", candidate_id, "message",
                      f"Replied: {words}" + (f". {note.strip()}" if (note or "").strip() else "") + (f' "{text.strip()[:500]}"' if text else ""),
                      actor, direction="in", job_id=job_id)
+    record_reply(session, org_id, job_id, candidate_id, actor, outcome=outcome, text=text, note=note, check_back=check_back,
+                 source="you")
     if outcome == "stop":
         consent.stop(session, org_id, candidate_id, actor, note)
     elif outcome in ("not_now", "not_interested") and pair.pair_state not in ("we_passed", "withdrawn", "placed", "client_rejected"):
         when = check_back or (date.today() + timedelta(days=90) if outcome == "not_now" else None)
         review.set_state(session, org_id, job_id, candidate_id, "we_passed", actor, reason="candidate_not_interested",
                          note=f"{words}" + (f"; check back from {when.isoformat()}" if when else ""))
-    _track(pair, stage="replied", reply={"outcome": outcome, "at": _now().isoformat(), "note": note, "text": (text or "")[:2000] or None,
-                                         "check_back": (check_back or (date.today() + timedelta(days=90))).isoformat() if outcome == "not_now" else None})
     session.flush()
     return pair
 
@@ -357,7 +422,7 @@ def read_linkedin(session: Session, org_id: uuid.UUID, provider: Any, now: datet
 
 
 def _apply(session: Session, org_id: uuid.UUID, pair: CandidateJob, kind: str, at: datetime, snippet: str | None) -> bool:
-    from maindscout.api import messages, relationship
+    from maindscout.api import relationship
 
     if kind == "accepted":
         if (pair.contact or {}).get("accepted_at"):
@@ -366,14 +431,10 @@ def _apply(session: Session, org_id: uuid.UUID, pair: CandidateJob, kind: str, a
         return True
     if (pair.contact or {}).get("stage") != "contacted":
         return False
-    m = _open_outreach(session, org_id, pair.job_id, pair.candidate_id)
-    if m is not None and m.status == "sent":
-        messages.mark_replied(session, org_id, m.id, at)
     relationship.log(session, org_id, "candidate", pair.candidate_id, "message",
                      "Replied on LinkedIn" + (f': "{snippet.strip()[:500]}"' if (snippet or "").strip() else ""), "mailbox",
                      direction="in", occurred_at=at, job_id=pair.job_id)
-    _track(pair, stage="replied", reply={"outcome": None, "at": at.isoformat(), "text": (snippet or "")[:2000] or None,
-                                         "source": "linkedin_email", "note": None, "check_back": None})
+    record_reply(session, org_id, pair.job_id, pair.candidate_id, "mailbox", at=at, text=snippet, source="linkedin_email")
     return True
 
 

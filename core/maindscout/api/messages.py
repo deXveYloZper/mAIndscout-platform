@@ -254,7 +254,7 @@ def _log(session: Session, m: Message, direction: str, when: datetime, text: str
                          occurred_at=min(when, datetime.now(timezone.utc)), job_id=m.job_id, contact_id=m.contact_id)
 
 
-def mark_sent(session: Session, org_id, message_id: uuid.UUID, when: datetime | None = None) -> Message:
+def mark_sent(session: Session, org_id, message_id: uuid.UUID, when: datetime | None = None, channel: str | None = None) -> Message:
     m = get(session, org_id, message_id)
     if m.status not in OPEN:
         return m
@@ -263,24 +263,27 @@ def mark_sent(session: Session, org_id, message_id: uuid.UUID, when: datetime | 
     if m.kind in FOLLOW_UP_KINDS:
         m.follow_up_due = when + timedelta(days=follow_up_days())
     _log(session, m, "out", when, f"Sent: {m.subject}")
-    if m.kind in ("candidate_outreach", "follow_up") and m.job_id and m.candidate_id:
-        _contacted(session, org_id, m.job_id, m.candidate_id)
+    if m.job_id and m.candidate_id and m.kind == "candidate_outreach":
+        # The one contact record (outreach.record_contact): the card, the follow-up, the LinkedIn reader all read it.
+        from maindscout.api import outreach
+
+        outreach.record_contact(session, org_id, m.job_id, m.candidate_id,
+                                channel or ("linkedin_message" if m.provider == "linkedin" else "email"), m.created_by or "system",
+                                at=when, message=m)
+    elif m.job_id and m.candidate_id and m.kind == "follow_up":
+        from maindscout.api import outreach
+        from maindscout.db.models import CandidateJob
+
+        pair = session.scalar(select(CandidateJob).where(CandidateJob.job_id == m.job_id, CandidateJob.candidate_id == m.candidate_id))
+        if pair is not None:
+            outreach._track(pair, followed_up_at=when.isoformat())
     session.flush()
     return m
 
 
-def _contacted(session: Session, org_id, job_id, candidate_id) -> None:
-    """A first message sent: the person on that role is contacted (sourcing stops counting them as waiting)."""
-    from maindscout.api import review
-    from maindscout.db.models import CandidateJob
-
-    pair = session.scalar(select(CandidateJob).where(CandidateJob.job_id == job_id, CandidateJob.candidate_id == candidate_id))
-    if pair is not None and pair.pair_state in ("new", "seen"):
-        review.set_state(session, org_id, job_id, candidate_id, "contacted", "system")
-
-
-def mark_replied(session: Session, org_id, message_id: uuid.UUID, when: datetime | None = None) -> Message:
-    """A reply stops every follow-up in this thread."""
+def mark_replied(session: Session, org_id, message_id: uuid.UUID, when: datetime | None = None, track: bool = True) -> Message:
+    """A reply stops every follow-up in this thread. `track`: also the role's contact track (outreach.record_reply),
+    unless the track is the one asking."""
     m = get(session, org_id, message_id)
     if m.status == "replied":
         return m
@@ -299,6 +302,10 @@ def mark_replied(session: Session, org_id, message_id: uuid.UUID, when: datetime
     if m is not root and root.status == "sent":
         root.status, root.replied_at = "replied", when
     _log(session, m, "in", when, f"Reply to: {m.subject}")
+    if track and root.job_id and root.candidate_id and root.kind == "candidate_outreach":
+        from maindscout.api import outreach
+
+        outreach.record_reply(session, org_id, root.job_id, root.candidate_id, "system", at=when, source="message", from_message=True)
     session.flush()
     return m
 
@@ -325,7 +332,8 @@ def due_follow_ups(session: Session, org_id, client=None, now: datetime | None =
         session.add(f)
         m.follow_up_due = None
         session.flush()
-        box, provider = mailbox.provider_for(session, org_id) if m.provider != "linkedin" else (None, None)
+        # A follow-up to someone reached outside the desk (by phone, LinkedIn, no email on file) stays a draft to copy.
+        box, provider = mailbox.provider_for(session, org_id) if m.provider != "linkedin" and "@" in (m.to_address or "") else (None, None)
         if provider is not None:
             created = provider.create_draft(f.to_address, f.subject, f.body, f.provider_thread_id)
             f.provider, f.provider_draft_id, f.status = box.provider, created["draft_id"], "in_mailbox"

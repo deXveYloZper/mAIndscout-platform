@@ -7,6 +7,7 @@ from sqlalchemy import select
 from maindscout.api import demo, search, sourcing
 from maindscout.db.models import Candidate, CandidateJob, Company, Job
 from maindscout.domain.profile import build
+from tests.test_sourcing import campaign  # noqa: F401
 from tests.test_api import client, drop_cv, fake, make_job  # noqa: F401 (fixtures)
 from tests.test_profile_rubric import AS_OF, stint
 
@@ -65,7 +66,7 @@ def test_a_job_with_a_hiring_profile_is_sourced_by_profile_and_target_alumni_fir
                                                      "role_family": "software_engineering"})
     query = sourcing.profile_query(session, session.get(Job, uuid.UUID(job)))
     assert query["filters"]["family"] == "software_engineering"
-    r = client.post(f"/v1/jobs/{job}/campaigns", json={"cap": 10, "target": 50})
+    r = campaign(session, client, job, json={"cap": 10, "target": 50})
     assert r.status_code == 201, r.text
     c = r.json()
     assert c["source"] == "profile" and c["query"]["words"] and 0 < c["added"] <= 10
@@ -75,5 +76,5 @@ def test_a_job_with_a_hiring_profile_is_sourced_by_profile_and_target_alumni_fir
 
 def test_a_job_without_a_hiring_profile_still_sources_by_keywords(client, fake, session):
     job = make_job(client)
-    r = client.post(f"/v1/jobs/{job}/campaigns", json={})
+    r = campaign(session, client, job, json={})
     assert r.status_code == 201 and r.json()["source"] == "desk"

@@ -25,6 +25,9 @@ Vision: "Sourcing exists only to refill a thin priority queue. Sourced people en
 ## Used by
 [http-api.md](http-api.md), [cockpit.md](cockpit.md) ("Find more people" on a thin job), [golden-eval.md](golden-eval.md) (Slice 2 gate checks), [sourcing-engine.md](sourcing-engine.md) (the pool step of a run).
 
+## Removed from the cockpit (x-ray B4, 2026-10-14)
+The "Search the desk only, by hand" panel and its endpoints (`/v1/jobs/{id}/campaigns`, `/v1/campaigns/{id}/stop`) were removed: every sourcing run searches the desk's own pool first, with the plan's target. The pool matching here stays: the run's pool step uses it, and the Slice 2 gate check in the golden eval still runs `start()`.
+
 ## Tests
 `core/tests/test_sourcing.py` (8): refill through the same triage; distinctive tokens do not pull generalists in; stop at cap; stop at target and refuse when not thin; a sourced person behaves exactly like an uploaded one; stop and list; no must-have skills refused; no mail route. Eval case `slice-2-gate` on real files. e2e: a thin job refilled from the desk.
 

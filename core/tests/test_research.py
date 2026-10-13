@@ -189,12 +189,15 @@ def test_shared_research_has_its_own_budget(session, company, monkeypatch):
 def test_reading_a_cv_queues_research_for_companies_that_matter_without_naming_the_person(client, fake, session):
     job = make_job(client)
     drop_cv(client, job)
-    queued = list(session.scalars(select(Task).where(Task.kind == "research_company")))
-    contexts = " ".join(t.payload.get("context", "") for t in queued)
-    names = {session.get(Company, uuid.UUID(t.payload["company_id"])).name for t in queued}
-    # current job, a 7-month contract (Jun-Dec 2020 inclusive), a 3-year job in the last decade, and the hiring company
-    assert names == {"Acme Space", "Gamma Labs", "Beta Web", "Catalyst Geo"}, names
-    assert "Jane" not in contexts and "Engineer" not in contexts
+    grok = list(session.scalars(select(Task).where(Task.kind == "research_company")))
+    exa = list(session.scalars(select(Task).where(Task.kind == "profile_company")))
+    name = lambda rows: {session.get(Company, uuid.UUID(t.payload["company_id"])).name for t in rows}  # noqa: E731
+    # Grok research for the hiring company; an Exa profile for the CV's companies that matter: the current job, a
+    # 7-month contract (Jun-Dec 2020 inclusive), a 3-year job in the last decade (x-ray C, 2026-10-14).
+    assert name(grok) == {"Catalyst Geo"} and name(exa) == {"Acme Space", "Gamma Labs", "Beta Web"}, (name(grok), name(exa))
+    payloads = " ".join(str(t.payload) for t in grok + exa)
+    assert "Jane" not in payloads and "Engineer" not in payloads, "never the person"
+    queued = grok + exa
     assert all(t.org_id is None for t in queued) and len({t.dedupe_key for t in queued}) == len(queued)
 
 

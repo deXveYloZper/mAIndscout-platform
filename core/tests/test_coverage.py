@@ -10,6 +10,7 @@ from maindscout.api import coverage, research
 from maindscout.db.models import Candidate, Company, Job, Task
 from maindscout.domain import geo
 from maindscout.intelligence import research as engine
+from tests.test_sourcing import campaign  # noqa: F401
 from tests.test_api import client, drop_cv, fake, make_job, pdf_file  # noqa: F401 (fixtures)
 from tests.test_process import JD_JSON, JD_LINES, cv_json
 
@@ -39,7 +40,9 @@ def pune_cv(location="Pune, India", code="IN", job_location=None, job_code=None)
 
 
 def research_tasks(session):
-    return list(session.scalars(select(Task).where(Task.kind == "research_company")))
+    """What is queued to learn about companies: a CV's companies get an Exa profile, hiring companies Grok research
+    (x-ray C, 2026-10-14)."""
+    return list(session.scalars(select(Task).where(Task.kind.in_(("research_company", "profile_company")))))
 
 
 def person(session, cid) -> Candidate:
@@ -104,7 +107,8 @@ def test_opening_a_job_to_a_country_brings_its_people_back(client, fake, session
     cid = drop_cv(client, job, PUNE_LINES, "pune.pdf")["subject_id"]
     assert person(session, cid).archived_at is not None
     page = client.put(f"/v1/jobs/{job}/countries", json={"countries": ["India"]}).json()
-    assert page["coverage"]["opened"] == ["IN"] and page["archived"] == []
+    # The role's one place for countries: its "where people must live" (x-ray B1), which the coverage gate accepts.
+    assert page["coverage"]["from_ad"] == ["IN"] and page["archived"] == []
     assert person(session, cid).archived_at is None
     assert {session.get(Company, uuid.UUID(t.payload["company_id"])).name for t in research_tasks(session)} >= {"Infosys"}
     assert client.put(f"/v1/jobs/{job}/countries", json={"countries": ["Atlantis"]}).status_code == 422
@@ -179,10 +183,10 @@ def test_sourcing_skips_archived_people_unless_the_job_accepts_their_country(cli
     fake.jd = {**JD_JSON, "requirements": [{"text": "Rust", "category": "skill", "strength": "must", "token": "rust",
                                             "distinctive": True, "quote": "You must have InSAR processing experience."}]}
     job = client.post("/v1/jobs", files=pdf_file(JD_LINES, "rust.pdf")).json()["job_id"]
-    found = client.post(f"/v1/jobs/{job}/campaigns", json={}).json()
+    found = campaign(session, client, job, json={}).json()
     assert found["added"] == 0
     client.put(f"/v1/jobs/{job}/countries", json={"countries": ["IN"]})
-    found = client.post(f"/v1/jobs/{job}/campaigns", json={}).json()
+    found = campaign(session, client, job, json={}).json()
     assert found["added"] == 1 and person(session, cid).archived_at is None
 
 

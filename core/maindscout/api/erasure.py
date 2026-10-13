@@ -110,13 +110,16 @@ def _conflicts(session: Session, candidate_id: uuid.UUID, doc_ids: list[uuid.UUI
 
 
 def erase_candidate(session: Session, blobs: BlobStore, org_id: uuid.UUID, candidate_id: uuid.UUID, actor: str,
-                    reason: str | None = None) -> Erasure:
+                    reason: str | None = None, suppress: bool = True) -> Erasure:
+    """Everything about a person, gone, and checked. `suppress=False` is for a record removed by the desk itself (found
+    by a search that was wrong, a role deleted): the person is not put on the never-again list, so a later search may
+    find them again. A person's own request to be forgotten always suppresses."""
     person = session.get(Candidate, candidate_id)
     if person is None or person.org_id != org_id:
         raise LookupError(f"No candidate {candidate_id}")
     # Records merged into this person are the same human: erased first, each with its own verified record.
     for child in list(session.scalars(select(Candidate.id).where(Candidate.merged_into_id == candidate_id))):
-        erase_candidate(session, blobs, org_id, child, actor, reason)
+        erase_candidate(session, blobs, org_id, child, actor, reason, suppress)
     session.execute(delete(PersonMerge).where(or_(PersonMerge.keep_id == candidate_id, PersonMerge.drop_id == candidate_id)))
     doc_ids = _documents_of(session, candidate_id)
     conflicts = _conflicts(session, candidate_id, doc_ids)
@@ -218,14 +221,16 @@ def erase_candidate(session: Session, blobs: BlobStore, org_id: uuid.UUID, candi
     counts["files"] = deleted_blobs
 
     suppressed = 0
-    for kind, normalized in identifiers:
+    for kind, normalized in identifiers if suppress else []:
         digest = identifier_hash(kind, normalized)
         if digest and not session.scalar(select(SuppressionEntry).where(
                 SuppressionEntry.org_id == org_id, SuppressionEntry.identifier_hash == digest)):
             session.add(SuppressionEntry(org_id=org_id, identifier_hash=digest, reason="erased", erasure_id=erasure.id))
             suppressed += 1
     counts["suppressed_identifiers"] = suppressed
-    if identifiers and not env("SUPPRESSION_KEY"):
+    if not suppress:
+        counts["not_suppressed"] = len(identifiers)  # removed by the desk, not at their request
+    elif identifiers and not env("SUPPRESSION_KEY"):
         counts["suppression_skipped_no_key"] = len(identifiers)
     erasure.counts = counts
 

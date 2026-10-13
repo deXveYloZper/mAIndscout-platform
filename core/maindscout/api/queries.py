@@ -135,7 +135,7 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
     stopped = set(session.scalars(select(Candidate.id).where(
         Candidate.id.in_([p.candidate_id for p in pairs] or [None]), Candidate.do_not_contact_at.is_not(None))))
     archived = []
-    from maindscout.api import outreach
+    from maindscout.api import outreach, roles
 
     # Phase 1c: people found by sourcing stay on the Sourcing tab until the owner decides; only a count shows here.
     suggested = outreach.undecided(session, org_id, job.id)
@@ -161,6 +161,7 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
         "rematching": _rematching(session, job.id),
         "people": people,
         "suggestions_waiting": len(suggested),
+        "found_only_here": len(roles.found_only_here(session, org_id, job.id)),
         "archived": archived,
         "stages": pipeline.stage_counts(session, job.id),
         "coverage": coverage.summary(session, job),
@@ -381,8 +382,13 @@ def gap_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, candidate_i
     if pair is None:
         raise LookupError("This person is not on this job")
     rows = _gap_rows(session, org_id, job, person.id)
+    from maindscout.db.models import Permission
+
+    granted = list(session.scalars(select(Permission).where(Permission.org_id == org_id, Permission.candidate_id == person.id)))
     return {
         "job": {"id": str(job.id), "title": job.title, "hiring_company": job.hiring_company},
+        # Permission to put them forward: a warning on Submitted when none is recorded for this role (owner, 2026-10-13).
+        "permission": {"this_role": any(g.job_id == job.id for g in granted), "other_roles": any(g.scope == "other_roles" for g in granted)},
         "person": {"id": str(person.id), "name": names(session, [person.id])[person.id]},
         "band": pair.triage_band, "reason": pair.triage_reason, "overridden_by": pair.band_overridden_by,
         "state": pair.pair_state, "outcome": pair.outcome, "match": pair.match,

@@ -64,6 +64,20 @@ def process_document(session: Session, task: Task) -> dict[str, Any]:
             "span_failures": len(result.span_failures), "usd": result.cost.get("usd", 0) if result.cost else 0}
 
 
+@handler("profile_company")
+def profile_company(session: Session, task: Task) -> dict[str, Any]:
+    """A company from a CV: its Exa profile, confirmed by its exact name and the job's country (x-ray C)."""
+    from maindscout.api import company_profiles
+    from maindscout.db.models import Company
+
+    caller = exa_factory()
+    company = session.get(Company, uuid.UUID(task.payload["company_id"]))
+    if caller is None or company is None:
+        return {"status": "skipped", "reason": "no web search (EXA_API_KEY)" if caller is None else "no such company"}
+    ok = company_profiles.by_name_and_place(session, company, task.payload.get("country"), caller, task_id=task.id)
+    return {"status": "profiled" if ok else "not_confirmed"}
+
+
 @handler("research_company")
 def research_company(session: Session, task: Task) -> dict[str, Any]:
     p = task.payload

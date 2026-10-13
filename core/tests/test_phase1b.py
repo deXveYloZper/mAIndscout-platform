@@ -317,7 +317,7 @@ def test_the_plan_follows_the_hiring_profile_and_suggests_only_the_roles_countri
     assert p.targets[0]["name"] == "Named Testworks" and (strategy.group_of(p.targets[0]), p.targets[0]["pinned"]) == ("A", True)
     assert strategy.sync(session, job.org_id, job).version == p.version, "no new version when nothing changed"
     widened = autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", countries=["DE", "AT"])
-    assert strategy.sync(session, job.org_id, job).countries == ["DE", "AT"], "a country the owner added is never taken away"
+    assert strategy.sync(session, job.org_id, job).countries == ["DE"],         "the plan follows the hiring profile both ways; every country box writes the hiring profile (x-ray B1)"
     p = autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", countries=["DE"])
 
     ion = profile("ion-testperson-demo", "Ion Testperson", "InSAR Engineer", "Bucharest, Bucharest, Romania", "RO",

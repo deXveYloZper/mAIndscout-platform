@@ -3,6 +3,7 @@ import { addSkill, overrideBand, setPairState } from "@/app/actions";
 import { StateControls } from "@/components/StateControls";
 import { apiOr404, type Band } from "@/lib/api";
 import { BAND_LABEL, reasonWords, STATE_LABEL, TIER_WORDS, VERDICT_LABEL } from "@/lib/format";
+import { ActForm } from "@/components/ActForm";
 
 export const metadata = { title: "Person on job" };
 
@@ -45,6 +46,7 @@ type GapPage = {
   reason: string | null;
   overridden_by: string | null;
   state: string;
+  permission: { this_role: boolean; other_roles: boolean };
   counts: Record<GapRow["status"], number>;
   coverage: { applicable: number; official: number; needed: number; met: boolean; words: string };
   history: HistoryEvent[];
@@ -77,7 +79,8 @@ export default async function PersonOnJob({ params }: { params: Promise<{ id: st
       </p>
 
       <section className="panel">
-        <StateControls state={page.state} action={setPairState.bind(null, page.job.id, page.person.id, path)} />
+        <StateControls state={page.state} action={setPairState.bind(null, page.job.id, page.person.id, path)}
+          permission={page.permission} personPath={`/people/${page.person.id}`} />
       </section>
 
       <p className="counts" aria-label="Rows by status">
@@ -127,9 +130,9 @@ export default async function PersonOnJob({ params }: { params: Promise<{ id: st
                   {r.status === "missing" && r.token && (
                     <div className="row" style={{ marginTop: 6 }}>
                       {r.token.split("/").filter(Boolean).map((t) => (
-                        <form key={t} action={addSkill.bind(null, page.person.id, t, path)}>
+                        <ActForm key={t} action={addSkill.bind(null, page.person.id, t, path)}>
                           <button className="btn small" title="Record this skill as an approved fact; the band is recomputed">They have {t}</button>
-                        </form>
+                        </ActForm>
                       ))}
                     </div>
                   )}
@@ -179,13 +182,13 @@ export default async function PersonOnJob({ params }: { params: Promise<{ id: st
 
       <section className="panel">
         <h3>Change the band</h3>
-        <form action={overrideBand.bind(null, page.job.id, page.person.id)} className="row">
+        <ActForm action={overrideBand.bind(null, page.job.id, page.person.id)} className="row">
           <select name="band" defaultValue={page.band} aria-label="Band">
             {(Object.keys(BAND_LABEL) as Band[]).map((b) => <option key={b} value={b}>{BAND_LABEL[b]}</option>)}
           </select>
           <input name="reason" placeholder="why" aria-label="Reason for changing the band" size={24} />
           <button className="btn small">Set</button>
-        </form>
+        </ActForm>
       </section>
     </>
   );

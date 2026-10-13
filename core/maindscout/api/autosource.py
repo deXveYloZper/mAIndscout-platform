@@ -167,24 +167,6 @@ def set_target(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, company_i
     return update_plan(session, org_id, job_id, actor, targets=targets)
 
 
-def find_peers(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str, caller, task_id=None) -> dict[str, Any]:
-    """More peer companies from a web company search (paid, about $0.007), added to the plan."""
-    from maindscout.api import hiring, marketmap
-
-    job = _job(session, org_id, job_id)
-    p = plan(session, org_id, job_id, actor)
-    _check_budgets(session, org_id, job, p)
-    hiring_company = session.get(Company, job.hiring_company_id) if job.hiring_company_id else None
-    summary = hiring.company_summary(session, hiring_company) or {}
-    found, usd, query = marketmap.web_peers(session, job, p.targets, p.countries, p.role_variants[0], caller, summary)
-    if query is None:
-        raise SourcingEngineError("The hiring company's industries are not known yet: research it first, or add companies by hand")
-    costs.record(session, org_id, "sourcing_company_search", {"model": "exa", "usd": usd, "sources": len(found)},
-                 subject_type="job", subject_id=job.id, task_id=task_id)
-    updated = update_plan(session, org_id, job_id, actor, targets=[*p.targets, *found]) if found else p
-    return {"query": query, "added": len(found), "cost_usd": usd, "version": updated.version}
-
-
 # --- gates -----------------------------------------------------------------------------------------------------------
 
 
@@ -252,6 +234,10 @@ def refusal(session: Session, org_id: uuid.UUID, job: Job, candidate_id: uuid.UU
         return "stop"
     if current_employers(session, org_id, candidate_id) & set(limits):
         return "off_limits"
+    from maindscout.api.strategy import not_from
+
+    if current_employers(session, org_id, candidate_id) & not_from(session, job)[0]:
+        return "not_from"  # the hiring profile says not from their company (x-ray B3)
     if active_block(session, org_id, job.id, candidate_id) is not None:
         return "client_block"
     if candidate_id in not_wanted:
@@ -326,7 +312,11 @@ def strong_waiting(session: Session, job_id: uuid.UUID) -> int:
     if not rows:
         return 0
     job = session.get(Job, job_id)
-    rows = [(cid, org_id) for cid, org_id, chosen in rows if chosen or not outreach.reach(session, org_id, cid, job)]
+    from maindscout.api.strategy import not_from
+
+    avoid = not_from(session, job)[0]
+    rows = [(cid, org_id) for cid, org_id, chosen in rows if (chosen or not outreach.reach(session, org_id, cid, job))
+            and not current_employers(session, org_id, cid) & avoid]
     p = current_plan(session, job_id)
     countries = set(p.countries or []) if p is not None else set()
     if not countries:
@@ -552,6 +542,21 @@ def _people_facts(session: Session, org_id: uuid.UUID, ids: list[uuid.UUID]) -> 
     return out
 
 
+def _follow_up(session: Session, track: dict[str, Any]) -> dict[str, Any]:
+    """The follow-up, from the message thread when there is one: due (no reply yet), drafted (waiting for you to send
+    it), or sent. A contact made with no message (a call, the stage set by hand) has only its reminder date."""
+    from maindscout.db.models import Message
+
+    m = session.get(Message, uuid.UUID(track["message_id"])) if track.get("message_id") else None
+    if m is None:
+        return {"due": track.get("follow_up_due"), "drafted": False, "sent_at": track.get("followed_up_at")}
+    child = session.scalar(select(Message).where(Message.follow_up_of == m.id).order_by(Message.created_at.desc()).limit(1))
+    return {"due": m.follow_up_due.isoformat() if m.follow_up_due else None,
+            "drafted": bool(child is not None and child.status in ("draft", "in_mailbox")),
+            "draft_id": str(child.id) if child is not None and child.status in ("draft", "in_mailbox") else None,
+            "sent_at": child.sent_at.isoformat() if child is not None and child.sent_at else track.get("followed_up_at")}
+
+
 def _strategy_note(session: Session, job_id: uuid.UUID) -> dict[str, Any] | None:
     """What the last "Build the strategy" did, when it did not do everything: why it stopped, or what it left out."""
     t = session.scalar(select(Task).where(Task.kind == "sourcing_strategy", Task.dedupe_key == f"strategy:{job_id}",
@@ -585,12 +590,13 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
     limits = off_limits(session, org_id)
     signals = radar.live(session, org_id)
     state = strategy.company_state(session, job.id, p)
+    avoid_ids, avoid_kinds = strategy.not_from(session, job)
     profiles_by_id = {str(c.id): c for c in session.scalars(select(Company).where(
         Company.id.in_([uuid.UUID(t["company_id"]) for t in p.targets if t.get("company_id")] or [None])))}
     targets = [{**t, "group": strategy.group_of(t), "off_limits": limits.get(t.get("company_id") or ""),
                 "release": signals.get(t.get("company_id") or ""),
                 "progress": {k: v for k, v in (state.get(t.get("company_id") or "") or {}).items() if k not in ("texts", "recent")} or None,
-                "fit": strategy.fit(session, profiles_by_id.get(t.get("company_id") or ""), set(p.countries or [])),
+                "fit": strategy.fit(session, profiles_by_id.get(t.get("company_id") or ""), set(p.countries or []), avoid_kinds),
                 "profile": company_profiles.summary(profiles_by_id.get(t.get("company_id") or ""))}
                for t in p.targets]
     hits = {h.candidate_id: h for h in session.scalars(select(SourcingHit).where(SourcingHit.job_id == job.id))}
@@ -607,7 +613,8 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
             continue
         st = outreach.stage(x)
         if st == "to_review" and (x.pair_state not in WAITING or x.triage_band not in ("priority", "review_later")
-                                  or strategy.outside_countries(session, org_id, x.candidate_id, countries)):
+                                  or strategy.outside_countries(session, org_id, x.candidate_id, countries)
+                                  or current_employers(session, org_id, x.candidate_id) & avoid_ids):
             continue
         by_stage.setdefault(st, []).append(x)
     waiting = by_stage.get("to_review", [])
@@ -637,12 +644,14 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
         track = {k: v for k, v in (x.contact or {}).items() if k not in ("mail_ids", "machine")}
         machine = ((x.contact or {}).get("machine") or {}).get("band") or x.triage_band
         st = outreach.stage(x)
+        follow = _follow_up(session, track)
         lists[st].append({"candidate_id": str(x.candidate_id), "name": who.get(x.candidate_id), "band": x.triage_band,
                           "reason": x.triage_reason, "match_tier": x.match_tier, "state": x.pair_state, "stage": st,
                           "hint": "looks strong" if machine == "priority" else "possible",
                           "reach": outreach.reach(session, org_id, x.candidate_id, job),
                           "contact": track or None,
-                          "follow_up_due": bool(st == "contacted" and track.get("follow_up_due") and track["follow_up_due"] <= now),
+                          "follow_up": follow,
+                          "follow_up_due": bool(st == "contacted" and follow["due"] and follow["due"] <= now and not follow["drafted"]),
                           **facts[x.candidate_id], **_gap_summary(rows.get(x.candidate_id, [])),
                           "found_by": {"channel": h.channel, "target": h.target, "tier": h.tier, "query": q.text if q else None,
                                        "at_target": at,

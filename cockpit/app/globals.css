@@ -747,6 +747,9 @@ details.move > summary::before { content: none; }
   background: var(--bg-raise-2); border-radius: var(--r); box-shadow: var(--shadow-pop); animation: pop var(--med) var(--ease);
 }
 details.addcvs > summary { color: var(--cream); font-size: 14px; }
+/* Close or delete a role (x-ray B6) */
+.rolecontrols .movebox { width: min(440px, calc(100vw - 48px)); }
+.rolecontrols .danger-zone { border-top: 1px solid var(--line); padding-top: 10px; }
 details.addcvs[open] > summary { margin-bottom: 12px; }
 @media (max-width: 900px) {
   .bandtiles { grid-template-columns: repeat(2, 1fr); }

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { acceptImportQuote, importRows } from "@/app/actions";
 import { apiOr404 } from "@/lib/api";
+import { ActForm } from "@/components/ActForm";
 
 export const metadata = { title: "Import preview" };
 
@@ -34,7 +35,7 @@ export default async function ImportPreview({ params }: { params: Promise<{ id: 
       <p className="hint">Columns used: {Object.entries(b.columns).map(([ours, theirs]) => `${theirs} → ${ours.replace("_", " ")}`).join(", ")}.</p>
 
       {ready.length > 0 && (
-        <form action={importRows.bind(null, id, path)}>
+        <ActForm action={importRows.bind(null, id, path)}>
           <p className="row">
             <button className="btn primary">Import ticked rows</button>
             <span className="sub">Tick only people and clients you know: each comes in as an approved fact with you as the source (up to {b.free_left} free).</span>
@@ -49,7 +50,7 @@ export default async function ImportPreview({ params }: { params: Promise<{ id: 
               </li>
             ))}
           </ul>
-        </form>
+        </ActForm>
       )}
 
       {b.quote.rows_over_allowance > 0 && !b.quote_accepted && (
@@ -59,7 +60,7 @@ export default async function ImportPreview({ params }: { params: Promise<{ id: 
             {b.quote.rows_over_allowance} more rows than the free allowance. Paid analysis: <strong>${b.quote.quote_usd.toFixed(2)}</strong>
             {" "}<span className="sub">(our measured compute ${b.quote.unit_cost_usd.toFixed(4)} per record × {b.quote.markup}). They are verified before they become facts.</span>
           </p>
-          <form action={acceptImportQuote.bind(null, id, path)}><button className="btn small">Accept the quote</button></form>
+          <ActForm action={acceptImportQuote.bind(null, id, path)}><button className="btn small">Accept the quote</button></ActForm>
         </section>
       )}
       {b.quote_accepted && <p className="warn">Paid analysis ordered {b.quote_accepted.slice(0, 10)}: the held rows are verified before they become facts.</p>}

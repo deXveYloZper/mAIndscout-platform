@@ -106,19 +106,26 @@ def _seed() -> None:
 
 
 def _start_mailbox_clock(factory, every: int = 300) -> None:
-    """Every few minutes, queue a look at each connected mailbox (sent drafts, replies, follow-ups due)."""
+    """Every few minutes, queue a look at each connected mailbox (sent drafts, replies, follow-ups due), and at every
+    desk with a follow-up due even without a mailbox: a LinkedIn follow-up is a draft to copy (x-ray, 2026-10-13: with
+    no mailbox, no follow-up was ever drafted)."""
     import threading
     import time
+    from datetime import datetime, timezone
 
     from maindscout.api import tasks
-    from maindscout.db.models import Mailbox
+    from maindscout.db.models import Mailbox, Message
 
     def loop() -> None:
         while True:
             try:
                 with factory() as session:
-                    for box in session.scalars(select(Mailbox).where(Mailbox.status == "connected")):
-                        tasks.enqueue(session, box.org_id, "mailbox_sync", {}, priority=60, dedupe_key=f"mailsync:{box.org_id}")
+                    orgs = set(session.scalars(select(Mailbox.org_id).where(Mailbox.status == "connected")))
+                    orgs |= set(session.scalars(select(Message.org_id).where(
+                        Message.status == "sent", Message.follow_up_due.is_not(None),
+                        Message.follow_up_due <= datetime.now(timezone.utc)).distinct()))
+                    for org_id in orgs:
+                        tasks.enqueue(session, org_id, "mailbox_sync", {}, priority=60, dedupe_key=f"mailsync:{org_id}")
                     session.commit()
             except Exception:  # noqa: BLE001 - the clock must keep ticking
                 pass

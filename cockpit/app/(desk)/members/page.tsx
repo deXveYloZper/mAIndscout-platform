@@ -1,6 +1,7 @@
 import { inviteMember, removeMember, resetMember, setMemberRole } from "@/app/actions";
 import { InviteForm, ResetButton } from "@/components/AccessForms";
 import { api, type Me, type Member } from "@/lib/api";
+import { ActForm } from "@/components/ActForm";
 
 export const metadata = { title: "Members" };
 
@@ -37,13 +38,13 @@ export default async function Members() {
               <td>{m.email}</td>
               <td>
                 {m.id && m.id !== me.id ? (
-                  <form action={setMemberRole.bind(null, m.id)} className="row">
+                  <ActForm action={setMemberRole.bind(null, m.id)} className="row">
                     <select name="role" defaultValue={m.role} aria-label={`Role of ${m.email}`}>
                       <option value="recruiter">Recruiter</option>
                       <option value="owner">Owner</option>
                     </select>
                     <button className="btn small">Save</button>
-                  </form>
+                  </ActForm>
                 ) : m.role}
               </td>
               <td>{m.invited ? <span className="sub">until {m.expires_at?.slice(0, 10)}</span> : m.two_step ? "on" : "off"}</td>
@@ -51,9 +52,9 @@ export default async function Members() {
                 {m.id && m.id !== me.id && (
                   <div className="row">
                     <ResetButton action={resetMember.bind(null, m.id)} name={m.email} />
-                    <form action={removeMember.bind(null, m.id)}>
+                    <ActForm action={removeMember.bind(null, m.id)}>
                       <button className="btn small danger" aria-label={`Remove ${m.email} from the desk`}>Remove</button>
-                    </form>
+                    </ActForm>
                   </div>
                 )}
                 {m.id === me.id && <span className="sub">you</span>}

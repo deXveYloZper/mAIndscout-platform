@@ -232,9 +232,24 @@ def company_page(session: Session, org_id: uuid.UUID, company_id: uuid.UUID) -> 
         row = grouped.setdefault(st["candidate_id"], {"candidate_id": st["candidate_id"], "name": st["name"], "roles": [], "current": False})
         row["roles"].append({k: st[k] for k in ("title", "valid_from", "valid_to", "current")})
         row["current"] = row["current"] or st["current"]
-    from maindscout.api import freshness, relationship, research
+    from maindscout.api import company_profiles, freshness, relationship, research
+    from maindscout.db.models import Task
 
+    # What the last research attempt did: a failure (the shared research budget used up, the model unreachable) is said
+    # as it is, not as "not researched yet" (x-ray A4, 2026-10-13).
+    last = session.scalar(select(Task).where(Task.kind == "research_company", Task.payload["company_id"].astext.in_(_ids_for(session, company)))
+                          .order_by(Task.created_at.desc()).limit(1))
+    attempt = None
+    if last is not None and last.status in ("queued", "running", "failed"):
+        error = last.error or ""
+        attempt = {"status": last.status, "at": (last.finished_at or last.created_at).isoformat() if (last.finished_at or last.created_at) else None,
+                   "why": "budget" if "BudgetExceeded" in error else "model" if "LLMError" in error else ("other" if error else None),
+                   "error": error.split(": ", 1)[-1][:200] if error else None}
     return {"id": str(company.id), "name": company.name, "website": company.website, "hq_country": company.hq_country,
+            # Its keys (how Exa confirms it is this company) and its Exa profile (what the sourcing strategy reads).
+            "keys": {"domain": company.domain, "linkedin": company.linkedin, "exa": bool(company.exa_id)},
+            "profile": company_profiles.summary(company),
+            "research_attempt": attempt,
             "research_status": company.research_status,
             "researched_at": company.researched_at.isoformat() if company.researched_at else None,
             "facts": research.facts(session, company),

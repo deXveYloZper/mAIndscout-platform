@@ -127,6 +127,7 @@ export type JobPage = JobSummary & {
   rematching?: boolean;
   people: Record<Band, PersonOnJob[]>;
   suggestions_waiting: number;
+  found_only_here: number;
   archived: { candidate_id: string; name: string | null; reason: string | null }[];
   coverage: { desk: string[]; from_ad: string[]; opened: string[]; names: Record<string, string> };
   stages: Record<string, number>;

@@ -51,8 +51,8 @@ export function PlanWords({ action, variants, countries }: { action: Act; varian
         <textarea name="variants" rows={3} defaultValue={variants.join("\n")} aria-label="Titles to search for" />
       </label>
       <div className="row">
-        <label className="field grow">Countries (two-letter codes, e.g. DE, CH, GB)
-          <input name="countries" defaultValue={countries.join(", ")} aria-label="Countries to search in" />
+        <label className="field grow">Countries: where people must live (the hiring profile&apos;s, names or codes)
+          <input name="countries" defaultValue={countries.join(", ")} aria-label="Countries to search in" placeholder="e.g. Italy, Spain" />
         </label>
         <button className="btn small" disabled={pending}>{pending ? "Saving…" : "Save"}</button>
       </div>

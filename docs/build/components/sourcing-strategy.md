@@ -83,6 +83,16 @@ The owner (2026-10-13): "we should be aware that our initial list of companies w
 - The role's sourcing page carries `plan.dna`, `plan.rules`, `plan.open_tiers`, each target's `group`, `progress` and `profile`, plus `widening` and `building`.
 - Ledger purposes: `sourcing_talent_dna`, plus `sourcing_company_profile` for the profiles and peer searches.
 
+## In step with the hiring profile (x-ray, 2026-10-14)
+- **One place for a role's countries:** the hiring profile's "where people must live" (`hiring.set_residence`).
+  - The Sourcing tab's country box, the widening "add a country" option and the hiring profile all write to it. The plan follows it both ways (`sync`).
+  - Names are understood ("Italy"). An unknown name is refused.
+  - With nothing stated, the plan keeps what the strategy chose (the ad's places, or where the client's team works).
+- **"Not from"** (`not_from`):
+  - A company the hiring profile says not to recruit from is never searched, and its current people are refused (`not_from` in a run's report).
+  - A background it does not want (consultancy, agency, public sector, non-profit) keeps companies of that kind out of the peer list and the batches.
+- The old "Find peer companies on the web" button is gone: the strategy finds peers.
+
 ## Tests
 `core/tests/test_phase1b.py`:
 - the strategy reads the talent DNA and builds tiers: only the client's own people by exact ID, noise dropped, the hiring company never a target, countries from the team, peer searches phrased from the profile, micro companies left out, nobody at the client stored;
