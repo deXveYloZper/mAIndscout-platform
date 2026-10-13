@@ -176,7 +176,8 @@ def test_the_strategy_reads_the_talent_dna_and_builds_tiers(session, job):
         "nobody at the client is ever stored"
     assert all(c["query"].endswith("at Catalyst Geo") for c in fake_exa.calls if c["category"] == "people")
     peer_searches = [c["query"] for c in fake_exa.calls if c["category"] == "company"][1:]
-    assert peer_searches == ["earth observation companies in Germany and Canada", "earth observation startups, Series A to C"]
+    assert peer_searches == ["earth observation companies in Germany and Canada", "earth observation startups, Series A to C",
+                             "insar companies in Germany and Canada"], "who else does the role's specialist work, too"
     assert "Tiny Lookalike" not in tiers, "micro companies are left out"
 
 
@@ -311,9 +312,13 @@ def test_the_plan_follows_the_hiring_profile_and_suggests_only_the_roles_countri
     monkeypatch.setattr(coverage, "ad_countries", lambda session, job: {"DE"})
     monkeypatch.setattr(search, "job_filters", lambda session, job: (search.Filters(), [str(named.id)]))
     p = strategy.sync(session, job.org_id, job)
-    assert p.countries == ["DE"], "the hiring profile's 'must live in' sets the role's countries"
+    assert "DE" in p.countries, "the hiring profile's 'must live in' countries are the role's countries"
+    p = autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", countries=["DE"])
     assert p.targets[0]["name"] == "Named Testworks" and (strategy.group_of(p.targets[0]), p.targets[0]["pinned"]) == ("A", True)
     assert strategy.sync(session, job.org_id, job).version == p.version, "no new version when nothing changed"
+    widened = autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", countries=["DE", "AT"])
+    assert strategy.sync(session, job.org_id, job).countries == ["DE", "AT"], "a country the owner added is never taken away"
+    p = autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", countries=["DE"])
 
     ion = profile("ion-testperson-demo", "Ion Testperson", "InSAR Engineer", "Bucharest, Bucharest, Romania", "RO",
                   [("InSAR Engineer", "Danube Testworks", "Jan 2021", "Present", "2021-01-01", None)], skills=["insar"])
@@ -322,3 +327,32 @@ def test_the_plan_follows_the_hiring_profile_and_suggests_only_the_roles_countri
     assert row.report["refused"].get("outside_countries") == 1, "Romania is in the desk's coverage, but not this role's"
     names = {s["name"] for s in autosource.page(session, job.org_id, job.id)["suggestions"]}
     assert "Ada Testperson" in names and "Ion Testperson" not in names
+
+
+def test_a_company_with_no_team_in_the_roles_countries_or_shut_down_is_not_searched(session, job):
+    autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", role_variants=["InSAR engineer"], countries=["CA"])
+    uk, canada, gone = (autosource.add_target(session, job.org_id, job.id, n, "owner@desk.test") and
+                        companies.resolve(session, n, "test")[0] for n in ("Uk Testworks", "Maple Testworks", "Gone Testworks"))
+    for c, where in ((uk, "United Kingdom: 40 (95%)"), (canada, "Canada: 30 (60%), United Kingdom: 20 (40%)")):
+        found = exa.parse({"results": [page(c.name.split()[0].lower(), c.name, f"{c.name.split()[0].lower()}.example",
+                                            countries=where)]}, "", "contents").found[0]
+        company_profiles.apply(session, c, found)
+    research.write_facts(session, gone, [engine.Fact("status", "shut_down", "https://gone.example/news",
+                                                     "Gone Testworks has shut down its operations.")], datetime.now(timezone.utc))
+    p = autosource.current_plan(session, job.id)
+    for t in p.targets:
+        autosource.set_target(session, job.org_id, job.id, t["company_id"], "owner@desk.test", pinned=False)
+    p = autosource.current_plan(session, job.id)
+    searched = {q["target"] for q in strategy.next_searches(session, job, p, set(), {})}
+    assert searched == {"Maple Testworks"}, "a UK-only team gives a Canadian role nobody; a closed company nobody at all"
+    assert strategy.fit(session, uk, {"CA"})["why"].startswith("no team in the role's countries")
+    assert strategy.fit(session, gone, {"CA"}) == {"searched": False, "why": "shut down"}
+
+
+def test_peer_searches_also_ask_who_else_does_the_roles_specialist_work(session):
+    company, _ = companies.resolve(session, "Maple Radar Testworks", "test", keys={"domain": "maple-radar.example"})
+    found = exa.parse({"results": [page("mrt", "Maple Radar Testworks", "maple-radar.example")]}, "", "contents").found[0]
+    company_profiles.apply(session, company, found)
+    company.exa_profile = {**company.exa_profile, "domains": ["earth observation"], "offering": "earth observation solutions"}
+    assert strategy.peer_queries(company, ["CA"], ["insar"]) == [
+        "earth observation solutions companies in Canada", "earth observation startups, Series A to C", "insar companies in Canada"]

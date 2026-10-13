@@ -139,3 +139,8 @@ def test_the_radar_stays_inside_the_budget(session, job, blobs, monkeypatch):
     row = autosource.run(session, blobs, job.org_id, job.id, "manual", fake_exa)
     assert row.status == "stopped" and row.stop_reason == "budget"
     assert costs.sourcing_spent(session, job.org_id, job.id) <= 0.02
+
+
+def test_the_adviser_is_not_the_company_in_trouble():
+    text = "The administrators were appointed from insolvency firm Pricewaterhouse Testers after the lender acted."
+    assert release.read("", text, ["Pricewaterhouse Testers"]) == [], "the insolvency firm is the adviser, not the insolvent one"

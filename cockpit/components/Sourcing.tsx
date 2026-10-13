@@ -176,6 +176,7 @@ function TargetRow({ jobId, t }: { jobId: string; t: SourcingTarget }) {
         {t.off_limits && <span className="blocktag" title="Never sourced from">off-limits: {t.off_limits}</span>}
         {t.release && t.tier !== "release" && <span className="releasetag" title="Searched first while this is recent">releasing talent: {t.release.label}</span>}
         {pr && (pr.exhausted ? <span className="chip small">exhausted</span> : null)}
+        {t.fit && !t.fit.searched && <span className="blocktag" title={t.pinned ? "Pinned: searched anyway" : "Not searched"}>{t.pinned ? "searched though " : "not searched: "}{t.fit.why}</span>}
         {t.profile && <p className="hint">{facts(t.profile)}</p>}
         {t.why.filter((w) => w !== TARGET_TIER[t.tier]).length > 0 && <p className="hint">{t.why.filter((w) => w !== TARGET_TIER[t.tier]).join(" · ")}</p>}
         {pr && <p className="hint">{pr.searches} {pr.searches === 1 ? "search" : "searches"} · {pr.results} found · {pr.known} already known · {pr.relevant} relevant</p>}

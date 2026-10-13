@@ -28,7 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from maindscout.api import autosource, companies, company_profiles, costs
-from maindscout.db.models import Candidate, CandidateJob, Claim, Company, Job, SourcingPlan, SourcingQuery
+from maindscout.db.models import PUBLIC_ORG_ID, Candidate, CandidateJob, Claim, Company, Job, SourcingPlan, SourcingQuery
 from maindscout.domain import geo
 from maindscout.intelligence import company_profile, exa
 
@@ -160,7 +160,7 @@ STAGE_WORDS = {"pre seed": "pre-seed to Series A", "seed": "seed to Series B", "
 MIN_PEER_STAFF = 10  # smaller ones are mostly name look-alikes and one-person pages
 
 
-def peer_queries(company: Company) -> list[str]:
+def peer_queries(company: Company, countries: list[str] | None = None, skills: list[str] | None = None) -> list[str]:
     """Descriptive company searches from a company's own profile: what it does, where its team works, its stage.
     (Exa's find-similar on a website matched on names in the 2026-10-13 test, so it is not used.)"""
     p = company.exa_profile or {}
@@ -168,22 +168,26 @@ def peer_queries(company: Company) -> list[str]:
     if not what:
         return []
     market = (p.get("domains") or [what])[0]
-    where = [c["country"] for c in p.get("countries") or [] if (c.get("pct") or 0) >= 10][:2]
+    where = ([geo.name_of(c) for c in countries][:2] if countries
+             else [c["country"] for c in p.get("countries") or [] if (c.get("pct") or 0) >= 10][:2])
     out = [f"{what} companies in {' and '.join(where)}" if where else f"{what} companies"]
     stage = ((p.get("rounds") or [{}])[0].get("stage") or "").lower()
     if stage in STAGE_WORDS:
         out.append(f"{market} startups, {STAGE_WORDS[stage]}")
+    place = f" in {' and '.join(where)}" if where else ""
+    for skill in (skills or [])[:1]:  # who else does this specialist work: "insar companies in Canada"
+        out.append(f"{skill} companies{place}")
     return out
 
 
 def _peers(session: Session, org_id: uuid.UUID, job: Job, of: Company, caller, have: set[str], why: str, limit: int,
-           task_id=None) -> list[dict[str, Any]]:
+           task_id=None, countries: list[str] | None = None, skills: list[str] | None = None) -> list[dict[str, Any]]:
     """Companies like `of`, from descriptive company searches; each result is its own Exa profile (kept, no second
     call). The hiring company, companies already listed and micro companies are left out. Their domains are read in
     one call at the end."""
     out: list[dict[str, Any]] = []
     made: list[Company] = []
-    for query in peer_queries(of):
+    for query in peer_queries(of, countries, skills):
         results = exa.search(caller, query, "company", num_results=10, text_chars=8000)
         costs.record(session, org_id, company_profiles.PURPOSE, {"model": "exa", "usd": results.usd, "sources": len(results.found)},
                      subject_type="job", subject_id=job.id, task_id=task_id)
@@ -227,7 +231,17 @@ def build(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, caller, actor:
         why = [f"{row['n']} of {company.name}'s people came from here"]  # its facts show on their own line
         targets.append(_target(c, "feeder_large" if large else "feeder", why, "talent_dna"))
         have.add(row["company_id"])
-    targets += _peers(session, org_id, job, company, caller, have, f"like {company.name}", 15, task_id)
+    countries = list(p.countries)
+    derived = not countries or countries == ([company.hq_country] if company.hq_country else [])
+    team = [geo.country_in(c["country"]) for c in (dna["company"].get("team_countries") or []) if (c.get("pct") or 0) >= 15]
+    from maindscout.api import coverage
+
+    if derived and not role_countries(session, job) and [c for c in team if c]:  # the ad's own place always wins
+        countries = list(dict.fromkeys(c for c in team if c))[:3]
+    from maindscout.api.sourcing import query_tokens
+
+    targets += _peers(session, org_id, job, company, caller, have, f"like {company.name}", 15, task_id, countries,
+                      query_tokens(session, job))
     for t in targets:  # profile the rest we can confirm by a key, so every company shows its facts
         c = session.get(Company, uuid.UUID(t["company_id"])) if t.get("company_id") else None
         if c is not None and not company_profiles.fresh(c) and (c.exa_id or c.domain or c.linkedin) and not limits.get(str(c.id)):
@@ -240,11 +254,6 @@ def build(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, caller, actor:
         if (n >= 2 and title.lower() not in {v.lower() for v in variants} and not NOT_THE_ROLE.search(title)
                 and words & set(re.findall(r"[a-z]+", title.lower()))):
             variants.append(title)
-    countries = list(p.countries)
-    derived = not countries or countries == ([company.hq_country] if company.hq_country else [])
-    team = [geo.country_in(c["country"]) for c in (dna["company"].get("team_countries") or []) if (c.get("pct") or 0) >= 15]
-    if derived and [c for c in team if c]:
-        countries = list(dict.fromkeys(c for c in team if c))[:3]
     new = autosource.update_plan(session, org_id, job_id, actor, dna=dna, targets=targets, role_variants=variants[:5],
                                  countries=countries)
     return {"version": new.version, "people": dna["people"], "feeders": len(dna["feeders"]),
@@ -263,9 +272,9 @@ def sync(session: Session, org_id: uuid.UUID, job: Job, actor: str = "hiring pro
 
     p = autosource.plan(session, org_id, job.id, actor)
     changes: dict[str, Any] = {}
-    residence = sorted(coverage.ad_countries(session, job))
-    if residence and sorted(p.countries or []) != residence:
-        changes["countries"] = residence
+    wanted = role_countries(session, job)
+    if wanted - set(p.countries or []):  # only added: countries the owner added (widening) are never taken away
+        changes["countries"] = [*(p.countries or []), *sorted(wanted - set(p.countries or []))]
     _, named = search.job_filters(session, job)
     have = {t.get("company_id") for t in p.targets}
     new = []
@@ -277,6 +286,60 @@ def sync(session: Session, org_id: uuid.UUID, job: Job, actor: str = "hiring pro
     if new:
         changes["targets"] = [*new, *p.targets]
     return autosource.update_plan(session, org_id, job.id, actor, **changes) if changes else p
+
+
+def role_countries(session: Session, job: Job) -> set[str]:
+    """Where the role is, by its hiring profile: its "must live in" countries, else the places the ad names
+    ("LOCATION: Markham or Gatineau"): a place that names no country counts as the hiring company's home country."""
+    from maindscout.api import coverage
+
+    residence = set(coverage.ad_countries(session, job))
+    if residence:
+        return residence
+    out: set[str] = set()
+    for c in session.scalars(select(Claim).where(Claim.subject_id == job.id, Claim.claim_type == "JobRequirementClaim",
+                                                 Claim.status.in_(LIVE))):
+        p = c.approved_view or c.payload
+        if p.get("category") != "location" or not (p.get("text_raw") or "").strip():
+            continue
+        if re.search(r"remote", p["text_raw"], re.I):
+            continue
+        code = geo.country_in(p["text_raw"])
+        if code is None:
+            company = hiring_company(session, job)
+            code = company.hq_country if company is not None else None
+        if code:
+            out.add(code)
+    return out
+
+
+def team_in(company: Company | None, countries: set[str]) -> bool | None:
+    """Does the company have people in the role's countries (5% of its team or more)? None when its profile does
+    not say. A company whose team is all elsewhere only gives people the role would refuse."""
+    rows = ((company.exa_profile or {}).get("countries") or []) if company is not None else []
+    if not countries or not rows:
+        return None
+    return any(geo.country_in(r.get("country")) in countries and (r.get("pct") or 0) >= 5 for r in rows)
+
+
+def closed(session: Session, company: Company | None) -> bool:
+    """Shut down, by its public facts (a person may still approve or reject that fact)."""
+    if company is None:
+        return False
+    status = session.scalar(select(Claim).where(Claim.org_id == PUBLIC_ORG_ID, Claim.subject_id == company.id,
+                                                Claim.claim_type == "CompanyStatusClaim", Claim.status.in_(LIVE)))
+    return bool(status) and (status.approved_view or status.payload).get("status") == "shut_down"
+
+
+def fit(session: Session, company: Company | None, countries: set[str]) -> dict[str, Any]:
+    """Why a company is or is not searched for this role, for the map."""
+    if closed(session, company):
+        return {"searched": False, "why": "shut down"}
+    inside = team_in(company, countries)
+    if inside is False:
+        where = ", ".join(r["country"] for r in (company.exa_profile or {}).get("countries", [])[:2])
+        return {"searched": False, "why": f"no team in the role's countries (its team: {where})"}
+    return {"searched": True, "why": None}
 
 
 def outside_countries(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID, countries: set[str]) -> bool:
@@ -353,9 +416,12 @@ def next_searches(session: Session, job: Job, p: SourcingPlan, releasing: set[st
     now = _now()
     out: list[dict[str, Any]] = []
     used = 0
+    countries = set(p.countries or [])
     for t in targets:
         s = state.get(t["company_id"])
         company = session.get(Company, uuid.UUID(t["company_id"]))
+        if not t.get("pinned") and not fit(session, company, countries)["searched"]:
+            continue  # shut down, or its team works only outside the role's countries
         if s and s["exhausted"]:
             last = datetime.fromisoformat(s["last_run_at"]) if s["last_run_at"] else None
             if last and now - last < timedelta(days=r["recheck_days"]) and t["company_id"] not in releasing:
@@ -459,8 +525,10 @@ def widening(session: Session, org_id: uuid.UUID, job: Job, p: SourcingPlan) -> 
     limits = autosource.off_limits(session, org_id)
     open_groups = set(p.open_tiers or ["A", "B"])
     state = company_state(session, job.id, p)
+    countries = set(p.countries or [])
     live = [t for t in p.targets if not t.get("removed") and group_of(t) in open_groups and t.get("company_id")
-            and not limits.get(t["company_id"])]
+            and not limits.get(t["company_id"])
+            and (t.get("pinned") or fit(session, session.get(Company, uuid.UUID(t["company_id"])), countries)["searched"])]
     if autosource.strong_waiting(session, job.id) >= p.target:
         return None
     if not live:
@@ -486,9 +554,11 @@ def widening(session: Session, org_id: uuid.UUID, job: Job, p: SourcingPlan) -> 
                         "text": f"Open tier {closed[0]}: {n} {'company' if n == 1 else 'companies'}" + ("" if n else " (add some first)")})
     from maindscout.api.marketmap import FAMILY_TITLES
 
+    from maindscout.api.search import job_filters
+
     have = {v.lower() for v in p.role_variants}
-    extra = [t for titles in FAMILY_TITLES.values() for t in titles if t.lower() not in have
-             and set(re.findall(r"[a-z]+", t.lower())) & {w for v in have for w in re.findall(r"[a-z]+", v)}][:3]
+    family = job_filters(session, job)[0].family
+    extra = [t for t in FAMILY_TITLES.get(family or "", []) if t.lower() not in have][:3]  # the role's own field only
     if extra:
         options.append({"option": "titles", "value": extra, "text": "Widen the titles: " + ", ".join(extra)})
     team = [geo.country_in(c["country"]) for c in ((p.dna or {}).get("company") or {}).get("team_countries") or []]

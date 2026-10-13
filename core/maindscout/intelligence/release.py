@@ -68,6 +68,9 @@ _ACQUIRED = (
     r"übernahme\s+(?:von|der|des))\s+(?:\S+\s+){{0,3}}?{c}",
     r"{c}(?:'s|’s)?\s+(?:acquisition|takeover|sale)(?=\s+(?:by|to)\b)",
 )
+# The adviser, not the company in trouble: "insolvency firm PricewaterhouseCoopers" (a real false signal, 2026-10-13).
+_ADVISER = re.compile(r"\b(?:insolvency|restructuring|bankruptcy)\s+(?:firm|practitioners?|practice|administrators?|advis[eo]rs?|"
+                      r"specialists?|lawyers?|experts?|consultants?)\b", re.I)
 _ONE_PERSON = re.compile(r"\b(?:was|has\s+been|had\s+been|got)\s+(?:laid[\s-]off|let\s+go|fired)\b", re.I)
 _DENIED = re.compile(r"\b(?:no|not|never|denie[sd]|deny|denying|without|rul(?:e|es|ed)\s+out|avoid(?:s|ed)?|rather\s+than|"
                      r"kein|keine|keinen|nicht|nie)\b", re.I)
@@ -157,7 +160,8 @@ def read(title: str, text: str, names: list[str]) -> list[Signal]:
     acquired = [re.compile(p.format(c=either), re.I) for p in _ACQUIRED]
     found: dict[str, Signal] = {}
     for sentence in sentences(title, text):
-        if len(sentence) > MAX_SENTENCE or not company.search(sentence) or _DENIED.search(sentence) or _ONE_PERSON.search(sentence):
+        if (len(sentence) > MAX_SENTENCE or not company.search(sentence) or _DENIED.search(sentence) or _ONE_PERSON.search(sentence)
+                or _ADVISER.search(sentence)):
             continue
         for kind in KINDS:
             if kind in found:

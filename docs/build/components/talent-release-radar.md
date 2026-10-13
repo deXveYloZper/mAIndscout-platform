@@ -37,6 +37,7 @@ The plan's market map lists "companies releasing talent (layoffs, acquisitions, 
   - or has any run of two or more capitalised words, unless that run is the company's own name, a country, a known place, a month, or has a company word in it ("Big Holding", "Acme GmbH").
 
   That is strict on purpose: a missed signal costs little.
+- **Not the adviser:** a sentence about an "insolvency firm" or "restructuring practitioner" is never a signal (PwC as the administrator was taken for an insolvent company). Market news must be about the hiring company's own market (its domains appear in the article), so a diamond mine's receivership does not reach an earth-observation role.
 - **A name proposed by Exa** (market news) becomes a company record only when it looks like one: a single word ("Northvolt"), a company word or an acronym in brackets in it, or the article calls it a company ("the firm X", "X GmbH"); or the desk already knows it. "Jane Doe" never qualifies. One company met under several names in one pass ("Energiekonzepte Deutschland (EKD)", "… GmbH", "EKD") is one target.
 - **A signal** keeps the kind, the sentence, the page and its date. One per company, page and kind. It moves the company up for 6 months, ranking after pinned companies and before the rest.
 - **New targets** from market news are added as tier "release", with the sentence as their why, in one new plan version made by "talent-release radar". Never added: the hiring company, an off-limits company, or one already on the plan.

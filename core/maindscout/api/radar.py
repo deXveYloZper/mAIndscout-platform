@@ -190,6 +190,8 @@ def sweep(session: Session, org_id: uuid.UUID, job: Job, p: SourcingPlan, caller
             published = _day(found.published)
             if published is not None and published < since:
                 continue
+            if q["market"] and markets and not any(m.lower() in (found.title + " " + found.text).lower() for m in markets):
+                continue  # market news must be about the hiring company's market (a diamond mine is not earth observation)
             if q["market"]:
                 proposed = (found.summary or {}).get("companies") if isinstance(found.summary, dict) else None
                 names = [n.strip() for n in proposed or [] if isinstance(n, str) and n.strip()][:5]

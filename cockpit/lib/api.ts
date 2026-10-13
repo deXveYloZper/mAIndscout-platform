@@ -355,7 +355,8 @@ export type TargetProgress = { searches: number; results: number; known: number;
 
 export type SourcingTarget = { name: string; company_id: string; tier: string; why: string[]; source: string;
   people_on_desk: number; pinned: boolean; removed: boolean; country: string | null; website?: string; off_limits?: string | null;
-  release?: ReleaseSignal | null; group: "A" | "B" | "C"; progress?: TargetProgress | null; profile?: CompanyProfile | null };
+  release?: ReleaseSignal | null; group: "A" | "B" | "C"; progress?: TargetProgress | null; profile?: CompanyProfile | null;
+  fit?: { searched: boolean; why: string | null } };
 
 export type TalentDna = { at: string; people: number; cost_usd: number;
   company: { id: string; name: string; employees: number | null; team_countries: { country: string; pct: number | null }[] | null };
