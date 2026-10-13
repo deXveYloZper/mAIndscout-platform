@@ -267,6 +267,72 @@ Country-wide searches by title stop being part of every run. They are the last w
 - Employer profiles for sourced people: about 1 cent a person, falling as the knowledge base grows.
 - Grok depth only on the hiring company, the live targets, and employers of candidates about to be submitted.
 
+## 4c. Phase 1c (APPROVED 2026-10-13): from suggestion to conversation, fast
+
+Agreed with the owner on 2026-10-13, after the first real runs. The owner said: "we should also think about ease of use
+and fast workflows".
+
+**The problem.** Three questions were mixed on a role's pages:
+- how well does the evidence match (the machine's band);
+- do I want this person (the owner's decision, recorded nowhere);
+- where are we with them (the pipeline).
+
+A person found on the web got a band at once and showed as Priority on the role on a public profile's evidence, next
+to people whose CV the owner had read. The same person was also a "suggestion to contact", so the two lists looked
+contradictory.
+
+**F1. Suggestions stay suggestions until the owner decides.**
+- A person found by sourcing who has no CV, no call and no decision from the owner is not in the role's bands. They
+  are only on the Sourcing tab's suggestions.
+- The machine's view is a hint on the card ("looks strong" or "possible", with the requirements met and the level),
+  never "Priority".
+
+**F2. Fast triage on each card, without leaving the page.**
+- "Open profile" opens LinkedIn in a new tab, and the card is marked viewed.
+- Back on the desk, one click (or a key) decides:
+  - **Reach out**: the person goes to the to-contact list and becomes Priority, by the owner's hand.
+  - **Maybe later**: Review later, kept for this role.
+  - **Not for this role**: passed, with a one-tap reason (level, skills, location, domain, other). The reasons teach
+    the desk the owner's taste.
+- Undo is always there.
+- A counter: to review, to contact, waiting for a reply, replied.
+
+**F3. Priority means the owner's own choices,** and CV-backed people the machine rates strong. A public profile alone
+never puts anyone there.
+
+**F4. After reaching out, a short track:**
+1. **Contacted**: when, and how (a LinkedIn connection request, a LinkedIn message, InMail or Recruiter, email).
+   Follow-up reminder after **4 days** without a reply (owner: 3 to 5 days). On LinkedIn the follow-up is a draft to
+   copy.
+2. **Replied**: interested, not now (kept in the pool with a date to check back), not interested, or stop.
+3. **Call booked**, then **spoken** (the call's notes or transcript fill the Brief, as today).
+4. **CV received** and **permission recorded**, then **submitted** (the coversheet, phase 2).
+
+**F5. Level-aware suggestions.**
+- "All levels" means junior to senior individual contributors (owner); a Head of Engineering post has its own job
+  spec.
+- A head, director, VP, CTO or lead of a team is shown as **"possible, a reach"**, with the line "ask whether they
+  would go back to hands-on work". This is never a block.
+- The level is read from their titles at once, and from their career reading once it is built.
+
+**F6. LinkedIn notifications read from the owner's mailbox.**
+- LinkedIn emails the owner when an invitation is accepted or a message arrives. The desk reads only those emails:
+  sent by LinkedIn and naming someone the owner marked as contacted on LinkedIn.
+- Google does the search, so no other email is ever fetched. A match goes on the person's timeline ("accepted your
+  invitation"; the message text) and moves the track on. Two people with one name raise a card.
+- **Mailbox:** the owner's main mailbox at @maindscout.com, on Google Workspace, connected as an internal app
+  (owner, 2026-10-13: it can read the main mailbox; it can be changed to a forwarding mailbox later).
+- **Permission:** Google's read permission (`gmail.readonly`); the limit is ours, by sender and name.
+- **Not every reply arrives this way:** LinkedIn does not email what the owner has already seen in the app. The
+  one-click "replied" stays as the fallback.
+- **Until the mailbox is connected**, it is tested with a fake mailbox.
+
+**Gate (the owner declares):**
+- on a real role, the owner works a list of suggestions without leaving the page;
+- no web-found person is in Priority without the owner's choice;
+- a reach is shown as a reach;
+- once the mailbox is connected, an accepted invitation and a LinkedIn reply appear on their own.
+
 ## 5. Track C: the client desk
 
 **One truth, live.** The client desk is a window onto the same pipeline, never a copy. When the owner submits a
@@ -366,6 +432,7 @@ instead: **a monthly plan (e.g. $300) with a number of searches included, and cr
 |---|---|---|
 | **1. Find them, and know what works** | S1 market map; S2 the pool + Exa; S3 runs with modes and reports; S4 LinkedIn messages and permission; **S5 results and spend** | On a real role, over two weeks: suggestions the owner would contact, each with a why; no off-limits, blocked or "stop" person ever suggested; the results-and-spend page answers "what did $X buy?" per strategy |
 | **1b. Know the companies, search like a recruiter** (draft) | K1–K4 company knowledge; S7 staged search | On a real role: the owner agrees with the talent DNA and the starting list; sourced suggestions show their employers in facts; no company is researched twice; a widening proposal with numbers when a tier is exhausted |
+| **1c. From suggestion to conversation** | F1–F6 (section 4c) | Owner works a real list without leaving the page; no web-found person in Priority without the owner's choice; reaches shown as reaches; LinkedIn acceptances and replies arrive by themselves once the mailbox is connected |
 | **2. Submit beautifully** | C1 coversheet (salary confirmed, permission checked); PDF export | The owner sends real coversheets and they need little editing |
 | **3. Go live** | F1–F4; W1 | Security matrix green; a backup restored; a CV from the live site arrives in the platform |
 | **4. The client desk** | C2–C5 | A real client uses it for one role end to end |
