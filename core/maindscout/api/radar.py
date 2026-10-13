@@ -149,7 +149,13 @@ def sweep(session: Session, org_id: uuid.UUID, job: Job, p: SourcingPlan, caller
     new_targets: list[dict[str, Any]] = []
     seen: dict[str, Company] = {}  # names (and acronyms) met in this sweep -> their company
     made = 0
-    for q in queries(p, hiring.company_summary(session, hiring_company) or {}, limits):
+    from maindscout.api import company_profiles
+
+    summary = hiring.company_summary(session, hiring_company) or {}
+    markets = (company_profiles.summary(hiring_company) or {}).get("domains")
+    if markets:
+        summary = {**summary, "domains": markets}  # its markets, read from its own description (phase 1b)
+    for q in queries(p, summary, limits):
         if made >= MAX_NEWS_PER_RUN:
             break
         key = autosource._key("exa_news", q["text"], q["country"])
