@@ -27,7 +27,9 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 
 **Access** ([plan](../access/PLAN.md), approved 2026-10-05): built 2026-10-05 ([access](components/access.md)). Personal sign-in with optional two-step codes, desks and roles, members page; the shared operator token and `X-Actor` are gone. Hosting and HTTPS are a separate decision; until then everything listens on this machine only.
 
-**Calls** ([plan](../calls/PLAN.md), approved 2026-10-06): built 2026-10-06 ([calls](components/calls.md)). Call transcripts into one bulk-approved Call review; what people want in matching and sourcing; approve all from a CV. Reading a transcript needs model credits (tested with a scripted fake).
+**Calls** ([plan](../calls/PLAN.md), approved 2026-10-06): built 2026-10-06 ([calls](components/calls.md)). Call transcripts into one bulk-approved Call review; what people want in matching and sourcing; approve all from a CV. Reading a transcript needs model credits; first real-model run 2026-10-08 (three reader fixes followed).
+
+**Since Calls** (2026-10-06 to 10-08): fewer contact questions, merging two records of one person ([merge](components/merge.md)), "Same company?" asked on the call, company sizes read correctly, and the golden eval run on 43 real files: RED on two known cases (an image-only CV that needs a vision reader; Veljko's oracle, waiting on the owner) ([golden eval](components/golden-eval.md)).
 
 **Slice 4 (closed):** ATS core and import ([plan](../slice-4/PLAN.md)): rescoped by the owner (we are the source of truth; import 100 candidates / 25 clients free, more as paid analysis at compute cost + 90%, [decision](../decisions/2026-10-04-source-of-truth-and-imports.md)); plan approved 2026-10-04.
 
@@ -41,7 +43,16 @@ Single page: what exists, what is next. A–D sign-off and accepted holes: [../d
 
 All five Slice 4 steps built; gate declared GREEN 2026-10-05.
 
-**Next:** run live jobs on the desk (and, before it is reachable beyond this machine, per-desk logins). Slice 5 and I7 calibration follow from real use.
+**Next build** ([plan](../next/PLAN.md)): phase 1 approved by the owner 2026-10-12 ("go"); phases 2–6 are drafts.
+
+| Phase | What | State |
+|---|---|---|
+| 1 | Sourcing engine: market map, pool + Exa, runs with modes and budgets, LinkedIn first messages and permission, results and spend | built 2026-10-12 ([engine](components/sourcing-engine.md), [web discovery](components/web-discovery.md), [results](components/sourcing-results.md), [permission](components/permission-and-stop.md), [radar](components/talent-release-radar.md), [decision](../decisions/2026-10-12-sourcing-engine.md)); not yet run on a real role; gate: two weeks on a real role, declared by the owner |
+| 1b | Know the companies (identity keys, Exa profiles, Grok depth, cross-check) and search like a recruiter (talent DNA, tiers, batches, exhaustion, snowball, widening) | built 2026-10-13 ([company knowledge](components/company-knowledge.md), [strategy](components/sourcing-strategy.md), [decision](../decisions/2026-10-13-company-knowledge-and-strategy.md)); not yet built for a real role |
+| 1c | From suggestion to conversation: suggestions stay off Priority until the owner decides, one-click triage with undo, the contact track, reaches, LinkedIn's emails | built 2026-10-13 ([outreach](components/outreach.md)); LinkedIn email reading tested with a fake mailbox, switches on when the owner connects @maindscout.com |
+| 2–6 | Coversheet, going live, client desk, learn and widen, paid plan | drafts |
+
+**Next:** run live jobs on the desk, starting the sourcing engine on a real role (the owner reviews its market map, then presses "Search now"). Before it is reachable beyond this machine: hosting and HTTPS (a separate decision; sign-in itself is built). Slice 5 and I7 calibration follow from real use.
 
 Slice 3 (the Brief, closed): built 2026-10-04 ([brief](components/brief.md)).
 

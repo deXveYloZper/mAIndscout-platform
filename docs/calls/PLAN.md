@@ -1,6 +1,6 @@
 # Calls: feed a transcript, review once, everything updates (preferences included)
 
-**Status: APPROVED** 2026-10-06 by the owner (revised after their review), with the three recommendations; no consent step (the call tools already obtain it). The first version asked the recruiter to enter preferences by hand. The owner rejected that: a call already contains the answers, and the desk should read them and ask only for a final, bulk confirmation. **Built** 2026-10-06 ([calls](../build/components/calls.md)); stage is read as part of the kind of employer.
+**Status: BUILT** 2026-10-06 ([calls](../build/components/calls.md)). **APPROVED** 2026-10-06 by the owner (revised after their review), with the three recommendations; no consent step (the call tools already obtain it). The first version asked the recruiter to enter preferences by hand. The owner rejected that: a call already contains the answers, and the desk should read them and ask only for a final, bulk confirmation. **Built** 2026-10-06 ([calls](../build/components/calls.md)); stage is read as part of the kind of employer.
 
 Building needs no model credits (tested with recorded and fake answers); using it on a real transcript does.
 

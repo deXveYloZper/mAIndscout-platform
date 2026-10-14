@@ -32,15 +32,21 @@ export async function createJob(_: FormState, form: FormData): Promise<FormState
   redirect(`/jobs/${jobId}`);
 }
 
-export async function overrideBand(jobId: string, candidateId: string, form: FormData): Promise<void> {
-  await apiJson(`/v1/jobs/${jobId}/people/${candidateId}/triage`, {
-    band: form.get("band"),
-    reason: String(form.get("reason") || "") || null,
-  });
+export async function overrideBand(jobId: string, candidateId: string, form: FormData): Promise<FormState> {
+  try {
+    await apiJson(`/v1/jobs/${jobId}/people/${candidateId}/triage`, {
+      band: form.get("band"),
+      reason: String(form.get("reason") || "") || null,
+    });
+  } catch (e) {
+    return fail(e);
+  }
   revalidatePath(`/jobs/${jobId}`);
+  return {};
 }
 
-/** A repeated click (already approved, already resolved) is not an error worth a crash page: just refresh. */
+/** A repeated click (already approved, already resolved) is not an error worth a crash page: just refresh. Used only
+ *  where the cockpit cannot show a message (a button inside a client card). */
 async function idempotent(call: () => Promise<unknown>): Promise<void> {
   try {
     await call();
@@ -49,19 +55,38 @@ async function idempotent(call: () => Promise<unknown>): Promise<void> {
   }
 }
 
-export async function approveClaim(claimId: string, path: string): Promise<void> {
-  await idempotent(() => api(`/v1/claims/${claimId}/approve`, { method: "POST" }));
-  revalidatePath(path);
+/** For forms (ActForm): a repeated click (already done, already gone) is quiet; a refusal for a reason is said, never
+ *  swallowed (x-ray A7, 2026-10-13: an invalid strength or a refused answer used to do nothing on screen). */
+async function attempt(call: () => Promise<unknown>): Promise<FormState> {
+  try {
+    await call();
+    return {};
+  } catch (e) {
+    unstable_rethrow(e);
+    if (e instanceof ApiError && [404, 409].includes(e.status)) return {};
+    return fail(e);
+  }
 }
 
-export async function rejectClaim(claimId: string, path: string, code = "wrong"): Promise<void> {
-  await idempotent(() => apiJson(`/v1/claims/${claimId}/reject`, { code }));
+export async function approveClaim(claimId: string, path: string): Promise<FormState> {
+  const r = await attempt(() => api(`/v1/claims/${claimId}/approve`, { method: "POST" }));
+  if (r.error) return r;
   revalidatePath(path);
+  return {};
 }
 
-export async function resolveDecision(decisionId: string, action: string, claimId: string | null, path: string): Promise<void> {
-  await idempotent(() => apiJson(`/v1/decisions/${decisionId}/resolve`, { action, claim_id: claimId }));
+export async function rejectClaim(claimId: string, path: string, code = "wrong"): Promise<FormState> {
+  const r = await attempt(() => apiJson(`/v1/claims/${claimId}/reject`, { code }));
+  if (r.error) return r;
   revalidatePath(path);
+  return {};
+}
+
+export async function resolveDecision(decisionId: string, action: string, claimId: string | null, path: string): Promise<FormState> {
+  const r = await attempt(() => apiJson(`/v1/decisions/${decisionId}/resolve`, { action, claim_id: claimId }));
+  if (r.error) return r;
+  revalidatePath(path);
+  return {};
 }
 
 export async function refreshAfterUpload(jobId: string | null): Promise<void> {
@@ -70,13 +95,18 @@ export async function refreshAfterUpload(jobId: string | null): Promise<void> {
   revalidatePath("/jobs");
 }
 
-export async function putOnJob(candidateId: string, form: FormData): Promise<void> {
+export async function putOnJob(candidateId: string, form: FormData): Promise<FormState> {
   const jobId = String(form.get("job") || "");
-  if (!jobId) return;
-  await apiJson(`/v1/jobs/${jobId}/people/${candidateId}`, {});
+  if (!jobId) return {};
+  try {
+    await apiJson(`/v1/jobs/${jobId}/people/${candidateId}`, {});
+  } catch (e) {
+    return fail(e);
+  }
   revalidatePath(`/people/${candidateId}`);
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath("/people");
+  return {};
 }
 
 const FACT_KINDS = ["name", "email", "phone", "linkedin"] as const;
@@ -149,14 +179,19 @@ export async function eraseCandidate(candidateId: string, _: FormState, form: Fo
 
 /** The recruiter knows the person has a skill the file did not show: record it as an approved fact.
  *  Bands that depend on it are recomputed by the platform, and the change appears in the pair history. */
-export async function addSkill(candidateId: string, token: string, path: string): Promise<void> {
-  await apiJson("/v1/claims", {
-    subject_type: "candidate",
-    subject_id: candidateId,
-    claim_type: "SkillClaim",
-    payload: { raw_label: token, normalized_skill: token.toLowerCase() },
-  });
+export async function addSkill(candidateId: string, token: string, path: string): Promise<FormState> {
+  try {
+    await apiJson("/v1/claims", {
+      subject_type: "candidate",
+      subject_id: candidateId,
+      claim_type: "SkillClaim",
+      payload: { raw_label: token, normalized_skill: token.toLowerCase() },
+    });
+  } catch (e) {
+    return fail(e);
+  }
   revalidatePath(path);
+  return {};
 }
 
 
@@ -174,21 +209,6 @@ export async function setPairState(jobId: string, candidateId: string, path: str
   revalidatePath(path);
   revalidatePath(`/jobs/${jobId}`);
   return { message: "Saved." };
-}
-
-
-/** Refill a thin priority queue from the desk's own people. Everyone found goes through the ordinary triage. */
-export async function startCampaign(jobId: string, _: FormState, form: FormData): Promise<FormState> {
-  const cap = Number(form.get("cap") || 25);
-  let c: { added: number; priority_added: number; spent: number; status: string; stop_reason: string | null };
-  try {
-    c = await apiJson(`/v1/jobs/${jobId}/campaigns`, { source: "desk", cap });
-  } catch (e) {
-    return fail(e);
-  }
-  revalidatePath(`/jobs/${jobId}`);
-  const why = c.stop_reason === "cap" ? "stopped at the cap" : c.stop_reason === "target_reached" ? "priority target reached" : "no one else on the desk matches";
-  return { message: `Looked at ${c.spent}, added ${c.added} (${c.priority_added} priority); ${why}.` };
 }
 
 
@@ -225,20 +245,40 @@ export async function checkTasks(ids: string[]): Promise<TaskView[]> {
   return rows;
 }
 
-/** Queue fresh public research for a company (even if its facts are still fresh); the workers do the rest. */
-export async function researchCompany(companyId: string): Promise<void> {
-  await idempotent(() => api(`/v1/companies/${companyId}/research`, { method: "POST" }));
+/** A company's website or LinkedIn page, typed: how Exa confirms it (and so how a role's talent DNA is learned). */
+export async function setCompanyKeys(companyId: string, _: FormState, form: FormData): Promise<FormState> {
+  const body = { website: String(form.get("website") || "").trim() || null, linkedin: String(form.get("linkedin") || "").trim() || null };
+  if (!body.website && !body.linkedin) return { error: "Type its website or its LinkedIn page." };
+  let out: { clash: { id: string; name: string } | null };
+  try {
+    out = await apiSend(`/v1/companies/${companyId}/keys`, "PUT", body);
+  } catch (e) {
+    return fail(e);
+  }
   revalidatePath(`/companies/${companyId}`);
+  return out.clash
+    ? { message: `${out.clash.name} already has that website or page: the inbox asks whether they are the same company.` }
+    : { message: "Saved. A role with this hiring company can now learn its talent DNA (Build the strategy)." };
+}
+
+/** Queue fresh public research for a company (even if its facts are still fresh); the workers do the rest. */
+export async function researchCompany(companyId: string): Promise<FormState> {
+  const r = await attempt(() => api(`/v1/companies/${companyId}/research`, { method: "POST" }));
+  if (r.error) return r;
+  revalidatePath(`/companies/${companyId}`);
+  return {};
 }
 
 /** Un-archive a person the coverage rule archived; the rule then leaves them be. */
-export async function bringBack(candidateId: string, path: string): Promise<void> {
-  await idempotent(() => apiJson(`/v1/candidates/${candidateId}/bring-back`, {}));
+export async function bringBack(candidateId: string, path: string): Promise<FormState> {
+  const r = await attempt(() => apiJson(`/v1/candidates/${candidateId}/bring-back`, {}));
+  if (r.error) return r;
   revalidatePath(path);
   revalidatePath("/people");
+  return {};
 }
 
-/** Open a job to countries beyond the desk's coverage (names or codes, comma separated). */
+/** Where people must live for the role (names or codes, comma separated): the one place its countries are kept. */
 export async function setJobCountries(jobId: string, _: FormState, form: FormData): Promise<FormState> {
   const countries = String(form.get("countries") ?? "").split(",").map((c) => c.trim()).filter(Boolean);
   try {
@@ -247,7 +287,7 @@ export async function setJobCountries(jobId: string, _: FormState, form: FormDat
     return fail(e);
   }
   revalidatePath(`/jobs/${jobId}`);
-  return { message: countries.length ? "Saved. People on this job were checked again." : "Cleared. People on this job were checked again." };
+  return { message: countries.length ? "Saved. Sourcing follows it; people on this role were checked again." : "Cleared: no country limit for this role." };
 }
 
 /** Correct how one career step was read (kind of work, level). Saved as approved; it replaces the machine's reading. */
@@ -272,14 +312,53 @@ export async function correctStep(candidateId: string, path: string, careerClaim
 export async function addIntake(jobId: string, _: FormState, form: FormData): Promise<FormState> {
   const text = String(form.get("text") ?? "").trim();
   try {
-    const r = await apiJson<{ written: number; replaced: number; seen: number; rejected: { item: string; reason: string }[] }>(
-      `/v1/jobs/${jobId}/intake`, { text });
+    const r = await apiJson<{ written: number; replaced: number; seen: number; hiring_company: string | null;
+      rejected: { item: string; reason: string }[] }>(`/v1/jobs/${jobId}/intake`, { text });
     revalidatePath(`/jobs/${jobId}`);
     const left = r.rejected.length ? ` Left out ${r.rejected.length}: ${r.rejected.map((x) => `${x.item} (${x.reason})`).join("; ")}.` : "";
-    return { message: `Read ${r.written} requirement${r.written === 1 ? "" : "s"} (${r.replaced} replacing what the ad said, ${r.seen} already there).${left}` };
+    const who = r.hiring_company ? ` Hiring company: ${r.hiring_company}.` : "";
+    return { message: `Read ${r.written} requirement${r.written === 1 ? "" : "s"} (${r.replaced} replacing what the ad said, ${r.seen} already there).${who}${left}` };
   } catch (e) {
     return fail(e);
   }
+}
+
+/** Close a role (on hold, filled, cancelled) or open it again. */
+export async function setJobState(jobId: string, _: FormState, form: FormData): Promise<FormState> {
+  try {
+    await apiSend(`/v1/jobs/${jobId}/state`, "PUT", { state: String(form.get("state") || ""), note: String(form.get("note") || "").trim() || null });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath("/jobs");
+  revalidatePath("/");
+  return {};
+}
+
+/** Delete a role added by mistake (optionally with the people only its sourcing found). */
+export async function deleteJob(jobId: string, _: FormState, form: FormData): Promise<FormState> {
+  try {
+    await apiSend(`/v1/jobs/${jobId}?remove_people=${form.get("remove_people") === "on"}`, "DELETE");
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath("/jobs");
+  revalidatePath("/");
+  redirect("/jobs?deleted=1");
+}
+
+/** Who is hiring, typed by a person (an anonymised ad names nobody). */
+export async function setHiringCompany(jobId: string, _: FormState, form: FormData): Promise<FormState> {
+  const name = String(form.get("name") ?? "").trim();
+  if (!name) return { error: "Type the hiring company's name." };
+  try {
+    await apiSend(`/v1/jobs/${jobId}/hiring-company`, "PUT", { name });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return { message: `${name} is the hiring company. Build the strategy on the Sourcing tab to use it.` };
 }
 
 /** A requirement the recruiter types: saved as approved. */
@@ -306,27 +385,35 @@ export async function addRequirement(jobId: string, _: FormState, form: FormData
 }
 
 /** Change how much a requirement matters. */
-export async function setStrength(claimId: string, path: string, form: FormData): Promise<void> {
-  await idempotent(() => apiJson(`/v1/requirements/${claimId}/strength`, { strength: String(form.get("strength")) }));
+export async function setStrength(claimId: string, path: string, form: FormData): Promise<FormState> {
+  const r = await attempt(() => apiJson(`/v1/requirements/${claimId}/strength`, { strength: String(form.get("strength")) }));
+  if (r.error) return r;
   revalidatePath(path);
+  return {};
 }
 
 /** Capture an answer from the call (the outcome comes from the button pressed). */
-export async function answerBrief(itemId: string, path: string, form: FormData): Promise<void> {
+export async function answerBrief(itemId: string, path: string, form: FormData): Promise<FormState> {
   const outcome = String(form.get("outcome") || "noted");
   const answer = String(form.get("answer") || "").trim();
-  await idempotent(() => apiJson(`/v1/brief/${itemId}/answer`, { outcome, answer: answer || null }));
+  const r = await attempt(() => apiJson(`/v1/brief/${itemId}/answer`, { outcome, answer: answer || null }));
+  if (r.error) return r;
   revalidatePath(path);
+  return {};
 }
 
-export async function briefAsked(itemId: string, path: string): Promise<void> {
-  await idempotent(() => apiJson(`/v1/brief/${itemId}/asked`, {}));
+export async function briefAsked(itemId: string, path: string): Promise<FormState> {
+  const r = await attempt(() => apiJson(`/v1/brief/${itemId}/asked`, {}));
+  if (r.error) return r;
   revalidatePath(path);
+  return {};
 }
 
-export async function briefDismiss(itemId: string, path: string): Promise<void> {
-  await idempotent(() => apiJson(`/v1/brief/${itemId}/dismiss`, {}));
+export async function briefDismiss(itemId: string, path: string): Promise<FormState> {
+  const r = await attempt(() => apiJson(`/v1/brief/${itemId}/dismiss`, {}));
+  if (r.error) return r;
   revalidatePath(path);
+  return {};
 }
 
 // --- relationship memory (Slice 4) ---
@@ -350,23 +437,29 @@ export async function logActivity(subject: "candidates" | "companies", subjectId
   return { message: "Logged." };
 }
 
-export async function removeActivity(activityId: string, path: string): Promise<void> {
-  await idempotent(() => api(`/v1/activities/${activityId}`, { method: "DELETE" }));
+export async function removeActivity(activityId: string, path: string): Promise<FormState> {
+  const r = await attempt(() => api(`/v1/activities/${activityId}`, { method: "DELETE" }));
+  if (r.error) return r;
   revalidatePath(path);
+  return {};
 }
 
-export async function tagPerson(candidateId: string, path: string, form: FormData): Promise<void> {
+export async function tagPerson(candidateId: string, path: string, form: FormData): Promise<FormState> {
   const tag = String(form.get("tag") || "").trim();
-  if (!tag) return;
-  await idempotent(() => apiJson(`/v1/candidates/${candidateId}/tags`, { tag }));
+  if (!tag) return {};
+  const r = await attempt(() => apiJson(`/v1/candidates/${candidateId}/tags`, { tag }));
+  if (r.error) return r;
   revalidatePath(path);
   revalidatePath("/people");
+  return {};
 }
 
-export async function untagPerson(candidateId: string, tag: string, path: string): Promise<void> {
-  await idempotent(() => api(`/v1/candidates/${candidateId}/tags/${encodeURIComponent(tag)}`, { method: "DELETE" }));
+export async function untagPerson(candidateId: string, tag: string, path: string): Promise<FormState> {
+  const r = await attempt(() => api(`/v1/candidates/${candidateId}/tags/${encodeURIComponent(tag)}`, { method: "DELETE" }));
+  if (r.error) return r;
   revalidatePath(path);
   revalidatePath("/people");
+  return {};
 }
 
 export async function addContact(companyId: string, path: string, _: FormState, form: FormData): Promise<FormState> {
@@ -381,17 +474,21 @@ export async function addContact(companyId: string, path: string, _: FormState, 
   return { message: "Contact added." };
 }
 
-export async function removeContact(contactId: string, path: string): Promise<void> {
-  await idempotent(() => api(`/v1/contacts/${contactId}`, { method: "DELETE" }));
+export async function removeContact(contactId: string, path: string): Promise<FormState> {
+  const r = await attempt(() => api(`/v1/contacts/${contactId}`, { method: "DELETE" }));
+  if (r.error) return r;
   revalidatePath(path);
+  return {};
 }
 
 /** Lift a client's block, with a note saying why. */
-export async function liftBlock(blockId: string, path: string, form: FormData): Promise<void> {
+export async function liftBlock(blockId: string, path: string, form: FormData): Promise<FormState> {
   const note = String(form.get("note") || "").trim();
-  if (!note) return;
-  await idempotent(() => apiJson(`/v1/blocks/${blockId}/lift`, { note }));
+  if (!note) return {};
+  const r = await attempt(() => apiJson(`/v1/blocks/${blockId}/lift`, { note }));
+  if (r.error) return r;
   revalidatePath(path);
+  return {};
 }
 
 // --- import (Slice 4, step 4) ---
@@ -406,17 +503,24 @@ export async function uploadImport(form: FormData): Promise<void> {
   redirect(`/import/${batch.id}`);
 }
 
-export async function importRows(batchId: string, path: string, form: FormData): Promise<void> {
+export async function importRows(batchId: string, path: string, form: FormData): Promise<FormState> {
   const row_ids = form.getAll("row").map(String);
-  if (!row_ids.length) return;
-  await apiJson(`/v1/imports/${batchId}/import`, { row_ids });
+  if (!row_ids.length) return {};
+  try {
+    await apiJson(`/v1/imports/${batchId}/import`, { row_ids });
+  } catch (e) {
+    return fail(e);
+  }
   revalidatePath(path);
   revalidatePath("/people");
+  return {};
 }
 
-export async function acceptImportQuote(batchId: string, path: string): Promise<void> {
-  await idempotent(() => apiJson(`/v1/imports/${batchId}/quote/accept`, {}));
+export async function acceptImportQuote(batchId: string, path: string): Promise<FormState> {
+  const r = await attempt(() => apiJson(`/v1/imports/${batchId}/quote/accept`, {}));
+  if (r.error) return r;
   revalidatePath(path);
+  return {};
 }
 
 // --- messages and mailbox (Slice 4, step 5): drafts only; you send from your own mailbox ---
@@ -424,13 +528,16 @@ export async function acceptImportQuote(batchId: string, path: string): Promise<
 export type MessageState = FormState & { link?: string };
 
 export async function draftMessage(candidateId: string, path: string, _: FormState, form: FormData): Promise<FormState> {
-  const kind = String(form.get("kind") || "candidate_outreach");
+  const chosen = String(form.get("kind") || "candidate_outreach");
+  const linkedin = chosen === "linkedin_outreach";
+  const kind = linkedin ? "candidate_outreach" : chosen;
   const contact = String(form.get("contact_id") || "");
   const [contactId, contactJob] = contact ? contact.split("|") : [null, null];
   const body = {
     kind, candidate_id: candidateId, contact_id: contactId,
     job_id: contactJob || String(form.get("job_id") || "") || null,
     note: String(form.get("note") || "").trim() || null,
+    channel: linkedin ? "linkedin" : "email",
   };
   if (kind === "client_submission" && !contactId) return { error: "Choose who at the client it goes to." };
   try {
@@ -476,14 +583,18 @@ export async function connectMailbox(provider: "google" | "microsoft"): Promise<
   redirect(url);
 }
 
-export async function disconnectMailbox(): Promise<void> {
-  await idempotent(() => api("/v1/mailbox", { method: "DELETE" }));
+export async function disconnectMailbox(): Promise<FormState> {
+  const r = await attempt(() => api("/v1/mailbox", { method: "DELETE" }));
+  if (r.error) return r;
   revalidatePath("/mailbox");
+  return {};
 }
 
-export async function syncMailbox(path: string): Promise<void> {
-  await idempotent(() => apiJson("/v1/mailbox/sync", {}));
+export async function syncMailbox(path: string): Promise<FormState> {
+  const r = await attempt(() => apiJson("/v1/mailbox/sync", {}));
+  if (r.error) return r;
   revalidatePath(path);
+  return {};
 }
 
 // --- access: sign in, account, members ---
@@ -622,16 +733,26 @@ export async function resetMember(userId: string, _: LinkState): Promise<LinkSta
   }
 }
 
-export async function setMemberRole(userId: string, form: FormData): Promise<void> {
+export async function setMemberRole(userId: string, form: FormData): Promise<FormState> {
   // Not idempotent(): "a desk needs at least one owner" must be shown, not swallowed.
-  await apiRaw(`/v1/members/${userId}`, { method: "PATCH", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ role: String(form.get("role") || "recruiter") }) });
+  try {
+    await apiRaw(`/v1/members/${userId}`, { method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role: String(form.get("role") || "recruiter") }) });
+  } catch (e) {
+    return fail(e);
+  }
   revalidatePath("/members");
+  return {};
 }
 
-export async function removeMember(userId: string): Promise<void> {
-  await apiRaw(`/v1/members/${userId}`, { method: "DELETE" });
+export async function removeMember(userId: string): Promise<FormState> {
+  try {
+    await apiRaw(`/v1/members/${userId}`, { method: "DELETE" });
+  } catch (e) {
+    return fail(e);
+  }
   revalidatePath("/members");
+  return {};
 }
 
 // --- calls -------------------------------------------------------------------------------------
@@ -654,37 +775,211 @@ export async function addTranscript(candidateId: string, path: string, _: FormSt
 }
 
 /** Approve the ticked lines of a Call review in one go; unticked lines are dropped. */
-export async function applyCallReview(reviewId: string, path: string, form: FormData): Promise<void> {
+export async function applyCallReview(reviewId: string, path: string, form: FormData): Promise<FormState> {
   const ticked = form.getAll("tick").map(String);
-  await idempotent(() => apiJson(`/v1/call-reviews/${reviewId}/apply`, { ticked }));
+  const r = await attempt(() => apiJson(`/v1/call-reviews/${reviewId}/apply`, { ticked }));
+  if (r.error) return r;
   revalidatePath(path);
+  return {};
 }
 
-export async function dismissCallReview(reviewId: string, path: string): Promise<void> {
-  await idempotent(() => api(`/v1/call-reviews/${reviewId}/dismiss`, { method: "POST" }));
+export async function dismissCallReview(reviewId: string, path: string): Promise<FormState> {
+  const r = await attempt(() => api(`/v1/call-reviews/${reviewId}/dismiss`, { method: "POST" }));
+  if (r.error) return r;
   revalidatePath(path);
+  return {};
 }
 
-export async function retryCallReview(reviewId: string, path: string): Promise<void> {
-  await idempotent(() => api(`/v1/call-reviews/${reviewId}/retry`, { method: "POST" }));
+export async function retryCallReview(reviewId: string, path: string): Promise<FormState> {
+  const r = await attempt(() => api(`/v1/call-reviews/${reviewId}/retry`, { method: "POST" }));
+  if (r.error) return r;
   revalidatePath(path);
+  return {};
 }
 
 /** Every proposed fact read from this CV, approved at once; questions stay one by one. */
-export async function approveAllFromDocument(candidateId: string, documentId: string, path: string): Promise<void> {
-  await idempotent(() => api(`/v1/candidates/${candidateId}/documents/${documentId}/approve-all`, { method: "POST" }));
+export async function approveAllFromDocument(candidateId: string, documentId: string, path: string): Promise<FormState> {
+  const r = await attempt(() => api(`/v1/candidates/${candidateId}/documents/${documentId}/approve-all`, { method: "POST" }));
+  if (r.error) return r;
   revalidatePath(path);
+  return {};
 }
 
 // --- same person -------------------------------------------------------------------------------
 
 /** Two records of one person made one (the older is kept); the "Who is this?" question is answered with it. */
-export async function mergePeople(candidateId: string, otherId: string, path: string): Promise<void> {
-  await idempotent(() => apiJson(`/v1/candidates/${candidateId}/merge`, { other_id: otherId }));
+export async function mergePeople(candidateId: string, otherId: string, path: string): Promise<FormState> {
+  const r = await attempt(() => apiJson(`/v1/candidates/${candidateId}/merge`, { other_id: otherId }));
+  if (r.error) return r;
   revalidatePath(path);
+  return {};
 }
 
-export async function undoMerge(mergeId: string, path: string): Promise<void> {
-  await idempotent(() => api(`/v1/merges/${mergeId}/undo`, { method: "POST" }));
+export async function undoMerge(mergeId: string, path: string): Promise<FormState> {
+  const r = await attempt(() => api(`/v1/merges/${mergeId}/undo`, { method: "POST" }));
+  if (r.error) return r;
   revalidatePath(path);
+  return {};
+}
+
+
+// --- the sourcing engine (docs/next/PLAN.md, phase 1) --------------------------------------------------------------
+
+async function apiSend<T>(path: string, method: "PATCH" | "PUT" | "DELETE" | "POST", body?: unknown): Promise<T> {
+  return api<T>(path, { method, body: body === undefined ? undefined : JSON.stringify(body),
+    headers: body === undefined ? undefined : { "Content-Type": "application/json" } });
+}
+
+const words = (v: FormDataEntryValue | null) => String(v || "").split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
+
+export async function setSourcingPlan(jobId: string, _: FormState, form: FormData): Promise<FormState> {
+  const body: Record<string, unknown> = {};
+  if (form.has("mode")) body.mode = String(form.get("mode"));
+  if (form.get("target")) body.target = Number(form.get("target"));
+  if (form.get("budget")) body.monthly_budget_usd = Number(form.get("budget"));
+  if (form.has("variants")) body.role_variants = words(form.get("variants"));
+  if (form.has("countries")) body.countries = words(form.get("countries")); // names or codes; written to the hiring profile
+  try {
+    await apiSend(`/v1/jobs/${jobId}/sourcing/plan`, "PATCH", body);
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return { message: "Saved: a new version of the plan." };
+}
+
+export async function setSourcingMode(jobId: string, mode: string, _: FormState): Promise<FormState> {
+  try {
+    await apiSend(`/v1/jobs/${jobId}/sourcing/plan`, "PATCH", { mode });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return {};
+}
+
+export async function addSourcingTarget(jobId: string, _: FormState, form: FormData): Promise<FormState> {
+  const name = String(form.get("name") || "").trim();
+  if (!name) return { error: "Type a company name." };
+  try {
+    await apiJson(`/v1/jobs/${jobId}/sourcing/targets`, { name });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return { message: `${name} added, pinned to the top.` };
+}
+
+export async function changeSourcingTarget(jobId: string, companyId: string, change: "pin" | "unpin" | "remove" | "restore"): Promise<void> {
+  const body = change === "pin" ? { pinned: true } : change === "unpin" ? { pinned: false } : { removed: change === "remove" };
+  await idempotent(() => apiSend(`/v1/jobs/${jobId}/sourcing/targets/${companyId}`, "PATCH", body));
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+export async function runSourcingNow(jobId: string, _: FormState): Promise<FormState> {
+  try {
+    await apiJson(`/v1/jobs/${jobId}/sourcing/run`, {});
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return { message: "Searching: your own desk first, then the web within the budgets. This page updates by itself." };
+}
+
+export async function buildStrategy(jobId: string, _: FormState): Promise<FormState> {
+  try {
+    await apiJson(`/v1/jobs/${jobId}/sourcing/strategy`, {});
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return { message: "Building: the hiring company's people, where they came from, and similar companies. This page updates by itself." };
+}
+
+export async function widenSourcing(jobId: string, option: string, value: string | string[] | null): Promise<void> {
+  await idempotent(() => apiSend(`/v1/jobs/${jobId}/sourcing/widen`, "POST", { option, value }));
+  revalidatePath(`/jobs/${jobId}`);
+}
+
+/** One step of the owner's workflow on a role's suggestion (phase 1c): viewed, decide, undo, contacted, replied,
+ *  call-booked, or settling which person a LinkedIn email is about. */
+export async function outreachStep(jobId: string, candidateId: string, step: string, body: Record<string, unknown>): Promise<FormState> {
+  try {
+    await apiJson(`/v1/jobs/${jobId}/people/${candidateId}/${step}`, body);
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return {};
+}
+
+export async function draftLinkedIn(jobId: string, candidateId: string): Promise<FormState> {
+  try {
+    await apiJson("/v1/messages", { kind: "candidate_outreach", candidate_id: candidateId, job_id: jobId, channel: "linkedin" });
+  } catch (e) {
+    return fail(e);
+  }
+  redirect(`/people/${candidateId}?tab=messages`);
+}
+
+export async function recordPermission(candidateId: string, path: string, _: FormState, form: FormData): Promise<FormState> {
+  const body = { job_id: String(form.get("job_id") || "") || null, this_role: form.get("this_role") === "on",
+    other_roles: form.get("other_roles") === "on", how: String(form.get("how") || "") || null,
+    note: String(form.get("note") || "").trim() || null };
+  if (!body.this_role && !body.other_roles) return { error: "Tick what they said yes to." };
+  if (body.this_role && !body.job_id) return { error: "Choose the role they said yes to." };
+  try {
+    await apiJson(`/v1/candidates/${candidateId}/permission`, body);
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  return { message: "Recorded." };
+}
+
+export async function stopContact(candidateId: string, path: string, form: FormData): Promise<FormState> {
+  try {
+    await apiJson(`/v1/candidates/${candidateId}/stop`, { note: String(form.get("note") || "").trim() || null });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  return {};
+}
+
+export async function liftStopContact(candidateId: string, path: string, _: FormState, form: FormData): Promise<FormState> {
+  try {
+    await apiJson(`/v1/candidates/${candidateId}/stop/lift`, { note: String(form.get("note") || "").trim() });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  return { message: "They may be contacted again." };
+}
+
+export async function setDeskSourcingBudget(_: FormState, form: FormData): Promise<FormState> {
+  try {
+    await apiSend("/v1/sourcing/settings", "PUT", { sourcing_budget_usd: Number(form.get("budget")) });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath("/sourcing");
+  return { message: "Saved." };
+}
+
+export async function addOffLimits(_: FormState, form: FormData): Promise<FormState> {
+  const name = String(form.get("name") || "").trim();
+  if (!name) return { error: "Type a company name." };
+  try {
+    await apiJson("/v1/off-limits", { name, until: String(form.get("until") || "") || null, note: String(form.get("note") || "").trim() || null });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath("/sourcing");
+  return { message: `${name} is off-limits.` };
+}
+
+export async function removeOffLimits(rowId: string): Promise<void> {
+  await idempotent(() => apiSend(`/v1/off-limits/${rowId}`, "DELETE"));
+  revalidatePath("/sourcing");
 }

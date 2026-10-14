@@ -107,6 +107,27 @@ def test_recheck_rejects_stored_facts_that_fail_newer_checks(session, company):
     assert status.status == "rejected" and "does not say" in status.rejection_reason["note"]
 
 
+def test_recheck_rereads_an_approved_size_and_keeps_its_hash_in_step(session, company):
+    """Decision 2026-10-12: an approved head count is re-read from its own words; nothing else about it changes."""
+    from maindscout.api import review
+    from maindscout.domain import stints
+
+    data = answer(headcount={"value": "over 8.8 thousand employees", "source_url": "https://uk.linkedin.com/company/procureai",
+                             "quote": "Company size over 8.8 thousand employees", "as_of": "2026-10-02"})
+    research.apply(session, company, engine.ResearchOutcome(True, OWN, engine.check(data, VISITED)[0], [], VISITED, {"usd": 0}))
+    size = session.scalars(select(Claim).where(Claim.subject_id == company.id, Claim.claim_type == "TeamSizeClaim")).one()
+    size.payload = {**size.payload, "min": 8, "max": None}  # as the parser read it before 2026-10-08
+    review.approve_claim(session, PUBLIC_ORG_ID, size.id, "owner@example.com")
+    approved_at, old_hash = size.approved_at, size.approved_view_hash
+
+    changed = research.recheck(session)
+    assert [d["claim_type"] for d in changed] == ["TeamSizeClaim"]
+    assert size.status == "approved" and size.approved_by == "owner@example.com" and size.approved_at == approved_at
+    assert (size.approved_view["min"], size.approved_view["raw"]) == (8800, "over 8.8 thousand employees")
+    assert size.approved_view_hash == stints.reconcile.view_hash(size.approved_view) != old_hash
+    assert research.recheck(session) == [], "a second run changes nothing"
+
+
 def test_an_unidentified_company_writes_nothing():
     out = engine.research_company("Acme", "", FakeSearch(answer(identified=False)))
     assert not out.identified and out.facts == []
@@ -115,6 +136,10 @@ def test_an_unidentified_company_writes_nothing():
 def test_amount_and_size_parsing():
     assert research._usd("$13M") == 13e6 and research._usd("$1.2 billion") == 1.2e9 and research._usd("EUR 5M") is None
     assert research._team("51-200 employees") == (51, 200) and research._team("more than 800 people") == (800, None)
+    # 2026-10-08, live: Wise's "over 8.8 thousand employees" was read as 8 people.
+    assert research._team("over 8.8 thousand employees") == (8800, None)
+    assert research._team("1.2k+") == (1200, None) and research._team("10,000+ employees") == (10000, None)
+    assert research._team("5,001-10,000") == (5001, 10000) and research._team("about 6,000 staff") == (6000, 6000)
 
 
 # --- storing and scheduling -------------------------------------------------------------------------
@@ -164,12 +189,15 @@ def test_shared_research_has_its_own_budget(session, company, monkeypatch):
 def test_reading_a_cv_queues_research_for_companies_that_matter_without_naming_the_person(client, fake, session):
     job = make_job(client)
     drop_cv(client, job)
-    queued = list(session.scalars(select(Task).where(Task.kind == "research_company")))
-    contexts = " ".join(t.payload.get("context", "") for t in queued)
-    names = {session.get(Company, uuid.UUID(t.payload["company_id"])).name for t in queued}
-    # current job, a 7-month contract (Jun-Dec 2020 inclusive), a 3-year job in the last decade, and the hiring company
-    assert names == {"Acme Space", "Gamma Labs", "Beta Web", "Catalyst Geo"}, names
-    assert "Jane" not in contexts and "Engineer" not in contexts
+    grok = list(session.scalars(select(Task).where(Task.kind == "research_company")))
+    exa = list(session.scalars(select(Task).where(Task.kind == "profile_company")))
+    name = lambda rows: {session.get(Company, uuid.UUID(t.payload["company_id"])).name for t in rows}  # noqa: E731
+    # Grok research for the hiring company; an Exa profile for the CV's companies that matter: the current job, a
+    # 7-month contract (Jun-Dec 2020 inclusive), a 3-year job in the last decade (x-ray C, 2026-10-14).
+    assert name(grok) == {"Catalyst Geo"} and name(exa) == {"Acme Space", "Gamma Labs", "Beta Web"}, (name(grok), name(exa))
+    payloads = " ".join(str(t.payload) for t in grok + exa)
+    assert "Jane" not in payloads and "Engineer" not in payloads, "never the person"
+    queued = grok + exa
     assert all(t.org_id is None for t in queued) and len({t.dedupe_key for t in queued}) == len(queued)
 
 

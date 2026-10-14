@@ -1,4 +1,7 @@
-# Local development infrastructure. Postgres only for now (Slice 0).
+# Local development infrastructure. `docker compose up -d` starts Postgres only.
+# The Python core can run here too (profile `core`), for when the host Python cannot load the database driver:
+#   docker compose run --rm core python -m pytest        tests (throwaway maindscout_test database)
+#   docker compose --profile core up -d core             the API on http://127.0.0.1:8765, with background workers
 services:
   postgres:
     image: postgres:16
@@ -14,5 +17,22 @@ services:
       test: ["CMD-SHELL", "pg_isready -U maindscout"]
       interval: 3s
       retries: 20
+  core:
+    profiles: ["core"]
+    build: ./core
+    image: maindscout-core:dev
+    working_dir: /repo/core
+    volumes:
+      - .:/repo  # live code, slice0/ contracts, core/.env and core/.blobs
+    environment:
+      DATABASE_URL: postgresql+psycopg://maindscout:maindscout_dev@postgres:5432/maindscout
+      TEST_ADMIN_URL: postgresql+psycopg://maindscout:maindscout_dev@postgres:5432/maindscout  # tests make maindscout_test from it
+      API_HOST: 0.0.0.0  # inside the container; the port below is published to this machine only
+    ports:
+      - "127.0.0.1:8765:8765"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["python", "-m", "maindscout", "serve"]
 volumes:
   pgdata:

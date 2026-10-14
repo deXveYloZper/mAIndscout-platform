@@ -1,9 +1,12 @@
 import Link from "next/link";
-import { addContact, logActivity, removeContact, researchCompany } from "@/app/actions";
+import { addContact, logActivity, removeContact, researchCompany, setCompanyKeys } from "@/app/actions";
 import { AddContact } from "@/components/AddContact";
+import { CompanyKeysForm } from "@/components/CompanyKeysForm";
+import type { CompanyProfile } from "@/lib/api";
 import { Dates, LogActivity, Timeline, type TimelineRow } from "@/components/Relationship";
 import { apiOr404 } from "@/lib/api";
 import { period } from "@/lib/format";
+import { ActForm } from "@/components/ActForm";
 
 export const metadata = { title: "Company" };
 
@@ -16,6 +19,9 @@ type CompanyPage = {
   website: string | null;
   research_status: string | null;
   researched_at: string | null;
+  keys: { domain: string | null; linkedin: string | null; exa: boolean };
+  profile: CompanyProfile | null;
+  research_attempt: { status: string; at: string | null; why: "budget" | "model" | "other" | null; error: string | null } | null;
   facts: Fact[];
   aliases: string[];
   people_count: number;
@@ -58,7 +64,11 @@ const AUTHORITY: Record<string, string> = {
 };
 
 function researchLine(c: CompanyPage): string {
-  if (!c.researched_at) return "Not researched yet. Research runs on its own when someone on the desk worked here recently.";
+  const a = c.research_attempt;
+  if (a?.status === "queued" || a?.status === "running") return "Research is queued: the facts appear here in a minute or two.";
+  if (a?.status === "failed" && a.why === "budget") return "Research could not run: the shared company-research budget for this month is used up (see Costs).";
+  if (a?.status === "failed") return `Research could not run${a.error ? `: ${a.error}` : ""}. Try again with Research now.`;
+  if (!c.researched_at) return "Not researched yet. Research runs on its own for hiring companies and companies named on a role; Research now runs it here.";
   const when = c.researched_at.slice(0, 10);
   if (c.research_status === "not_identified") return `Researched ${when}: no public record found that is surely this company.`;
   if (c.research_status === "failed") return `Research on ${when} did not finish. It will be tried again.`;
@@ -93,9 +103,9 @@ export default async function Company({ params }: { params: Promise<{ id: string
                   {k.linkedin && <> · <a href={k.linkedin.startsWith("http") ? k.linkedin : `https://${k.linkedin}`} target="_blank" rel="noreferrer">LinkedIn</a></>}
                   {" "}· last contacted {k.last_contacted ? new Date(k.last_contacted).toISOString().slice(0, 10) : "never"}
                 </span>
-                <form action={removeContact.bind(null, k.id, `/companies/${c.id}`)} className="inline">
+                <ActForm action={removeContact.bind(null, k.id, `/companies/${c.id}`)} className="inline">
                   <button className="btn small ghost" aria-label={`Forget contact ${k.name}`}>forget</button>
-                </form>
+                </ActForm>
               </li>
             ))}
           </ul>
@@ -110,10 +120,24 @@ export default async function Company({ params }: { params: Promise<{ id: string
         </details>
       </section>
 
+      <section className="panel">
+        <h3>Website and LinkedIn page</h3>
+        <p className="sub">{c.keys.domain || c.keys.linkedin
+          ? <>Known by {[c.keys.domain, c.keys.linkedin && `linkedin.com/company/${c.keys.linkedin}`].filter(Boolean).join(" and ")}{c.keys.exa ? " · confirmed by Exa" : ""}.</>
+          : "None on file: Exa is never asked by a name alone (a similar name is not the same company), so add one to let it confirm this company."}</p>
+        <CompanyKeysForm action={setCompanyKeys.bind(null, c.id)} website={c.keys.domain} linkedin={c.keys.linkedin} />
+        {c.profile && (
+          <p className="hint">From Exa: {[c.profile.domains?.length ? c.profile.domains.join(", ") : c.profile.industry, c.profile.kind,
+            c.profile.employees ? `${c.profile.employees.toLocaleString()} staff` : null, c.profile.hq, c.profile.latest_round,
+            c.profile.team_countries?.length ? `team in ${c.profile.team_countries.map((t) => `${t.country} ${t.pct}%`).join(", ")}` : null]
+            .filter(Boolean).join(" · ")}</p>
+        )}
+      </section>
+
       <h2>What we know about the company</h2>
       <div className="research-bar">
         <span className="hint" style={{ width: "auto", marginTop: 0 }}>{researchLine(c)}</span>
-        <form action={researchCompany.bind(null, c.id)}><button className="btn small">Research now</button></form>
+        <ActForm action={researchCompany.bind(null, c.id)}><button className="btn small">Research now</button></ActForm>
       </div>
       {facts.length > 0 && (
         <ul className="facts">

@@ -411,3 +411,27 @@ def test_approve_all_from_a_cv_leaves_open_questions_alone(client, session, jane
     assert out["approved"] + out["left"] == proposed
     left = session.scalar(select(func.count()).select_from(Claim).where(Claim.subject_id == person, Claim.status == "proposed"))
     assert left == out["left"]
+
+
+def test_what_the_real_model_got_wrong_on_the_first_live_run():
+    """2026-10-08, first run on the real model: a move said as "Berlin" while the model wrote "Berlin, Germany"; an
+    earlier job filed as a correction of the current one; Brief questions repeated as "ask next time"."""
+    text = ("Recruiter: Where are you based now?\nAna Silva: I moved to Berlin in the summer.\n"
+            "Ana Silva: I was a software engineer at Lumen Analytics from 2019 to 2021.\n"
+            "Ana Silva: My title at Consult.Red was actually Lead Engineer.\n")
+    facts = [{"ref": "F1", "kind": "location", "text": "lives in Munich, Germany"},
+             {"ref": "F2", "kind": "career", "text": "Engineer at Consult.Red (2021–2023)"}]
+    questions = [{"ref": "B1", "question": "When could they start? Notice period and availability."}]
+    data = {"candidate_speaker": None, "findings": [
+        finding("correct", "moved", "I moved to Berlin in the summer.", ref="F1", value="Berlin, Germany", fact_type="location"),
+        finding("correct", "earlier job", "I was a software engineer at Lumen Analytics from 2019 to 2021.", ref="F2",
+                company="Lumen Analytics", title="Software Engineer", start_year=2019, end_year=2021),
+        finding("correct", "title", "My title at Consult.Red was actually Lead Engineer.", ref="F2", company="Consult.Red",
+                value="Lead Engineer"),
+        finding("ask", "When could they start? What notice period?", ""),
+        finding("ask", "Which industries interest them most?", "")]}
+    out = reader.read(text, FakeClient(data), name="Ana Silva", facts=facts, questions=questions, preferences=[])
+    got = [(f.kind, f.ref, f.fields.get("value") or f.fields.get("company") or f.text) for f in out.findings]
+    assert got == [("correct", "F1", "Berlin, Germany"), ("new_fact", None, "Lumen Analytics"), ("correct", "F2", "Lead Engineer"),
+                   ("ask", None, "Which industries interest them most?")]
+    assert out.rejected == [{"item": "When could they start? What notice period?", "reason": "already in the Brief"}]

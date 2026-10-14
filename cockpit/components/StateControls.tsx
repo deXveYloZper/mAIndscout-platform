@@ -12,7 +12,8 @@ const NEEDS: Record<string, string> = {
 const ENDINGS = ["placed", "we_passed", "withdrawn", "client_rejected"];
 
 /** The pair's place in the pipeline. Every move is recorded; nothing is ever deleted. */
-export function StateControls({ state, action }: { state: string; action: (s: FormState, f: FormData) => Promise<FormState> }) {
+export function StateControls({ state, action, permission, personPath }: { state: string; action: (s: FormState, f: FormData) => Promise<FormState>;
+  permission?: { this_role: boolean; other_roles: boolean }; personPath?: string }) {
   const [result, formAction, pending] = useActionState(action, {});
   const [target, setTarget] = useState("");
   const reopening = ENDINGS.includes(state) && target && !ENDINGS.includes(target);
@@ -36,6 +37,10 @@ export function StateControls({ state, action }: { state: string; action: (s: Fo
         <button className="btn small primary" disabled={pending || !target}>{pending ? "Saving…" : "Move"}</button>
       </form>
       {target === "client_rejected" && <p className="hint">A client rejection blocks this person at this client (every job there) until someone lifts it.</p>}
+      {target === "submitted" && permission && !permission.this_role && (
+        <p className="warn" role="alert">No permission recorded to put them forward for this role{permission.other_roles ? " (only for other roles)" : ""}.
+          Submit only if they said yes, and record it on <a href={`${personPath ?? ""}`}>their page</a> (Permission).</p>
+      )}
       {result.error && <p className="err" role="alert">{result.error}</p>}
     </div>
   );

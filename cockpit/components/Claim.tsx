@@ -1,6 +1,7 @@
 import { approveClaim, rejectClaim } from "@/app/actions";
 import type { ClaimView, Evidence } from "@/lib/api";
 import { flagWords, period, summary } from "@/lib/format";
+import { ActForm } from "@/components/ActForm";
 
 export function Snippet({ ev }: { ev?: Evidence | null }) {
   if (!ev) return null;
@@ -39,12 +40,12 @@ export function ClaimRow({ claim, path }: { claim: ClaimView; path: string }) {
         <Status status={claim.status} />
         {claim.status === "proposed" && (
           <span className="acts">
-            <form action={approveClaim.bind(null, claim.id, path)}>
+            <ActForm action={approveClaim.bind(null, claim.id, path)}>
               <button className="btn small">Approve</button>
-            </form>
-            <form action={rejectClaim.bind(null, claim.id, path, "wrong")}>
+            </ActForm>
+            <ActForm action={rejectClaim.bind(null, claim.id, path, "wrong")}>
               <button className="btn small ghost">Reject</button>
-            </form>
+            </ActForm>
           </span>
         )}
       </div>

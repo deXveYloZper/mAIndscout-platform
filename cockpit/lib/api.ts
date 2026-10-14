@@ -108,6 +108,7 @@ export type JobSummary = {
 export type PersonOnJob = {
   match_tier?: string | null;
   blocked?: boolean;
+  stopped?: boolean;
   candidate_id: string;
   name: string | null;
   band: Band;
@@ -125,6 +126,8 @@ export type JobPage = JobSummary & {
   process_stale: boolean;
   rematching?: boolean;
   people: Record<Band, PersonOnJob[]>;
+  suggestions_waiting: number;
+  found_only_here: number;
   archived: { candidate_id: string; name: string | null; reason: string | null }[];
   coverage: { desk: string[]; from_ad: string[]; opened: string[]; names: Record<string, string> };
   stages: Record<string, number>;
@@ -141,7 +144,7 @@ export type PersonPage = {
   name: string | null;
   claims: Record<string, ClaimView[]>;
   jobs: { job_id: string; title: string; band: Band; reason: string | null; state?: string }[];
-  documents: { id: string; filename: string | null; doc_type: "cv" | "jd" | "transcript" | "other"; needs_vision: boolean; as_of: string | null }[];
+  documents: { id: string; filename: string | null; doc_type: "cv" | "jd" | "transcript" | "web_profile" | "other"; needs_vision: boolean; as_of: string | null }[];
   open_decisions: string[];
   archived: { at: string; reason: string | null } | null;
   coverage_override: boolean;
@@ -157,7 +160,13 @@ export type PersonPage = {
   client_contacts: { id: string; name: string; role: string | null; job_id: string; job: string }[];
   merged_into: string | null;
   merges: { id: string; drop_id: string; merged_by: string; merged_at: string | null; facts: number; documents: number; jobs: number }[];
+  do_not_contact: { at: string | null; note: string | null } | null;
+  permissions: Permission[];
+  found_by: { job_id: string; job: string; channel: string; target: string | null; query: string | null; at: string | null }[];
 };
+
+export type Permission = { id: string; scope: "this_role" | "other_roles"; job_id: string | null; job: string | null;
+  how: string | null; note: string | null; by: string; at: string | null };
 
 /** Calls: one line of a Call review (what the transcript said), ticked by default. */
 export type CallLine = {
@@ -330,3 +339,78 @@ export async function apiOptional<T>(path: string): Promise<T | null> {
     return null;
   }
 }
+
+
+// --- the sourcing engine (docs/next/PLAN.md, phase 1) --------------------------------------------------------------
+
+export type SourcingMode = "daily" | "weekly" | "continuous" | "paused";
+
+export type ReleaseSignal = { kind: string; label: string; quote: string; url: string; source: string; published: string | null };
+
+export type CompanyProfile = { domains: string[]; offering: string | null; industry: string | null; kind: string | null;
+  employees: number | null; hq: string | null;
+  founded: number | null; latest_round: string | null; team_countries: { country: string; n: number | null; pct: number | null }[];
+  categories: string[] };
+
+export type TargetProgress = { searches: number; results: number; known: number; relevant: number; exhausted: boolean;
+  last_run_at: string | null };
+
+export type SourcingTarget = { name: string; company_id: string; tier: string; why: string[]; source: string;
+  people_on_desk: number; pinned: boolean; removed: boolean; country: string | null; website?: string; off_limits?: string | null;
+  release?: ReleaseSignal | null; group: "A" | "B" | "C"; progress?: TargetProgress | null; profile?: CompanyProfile | null;
+  fit?: { searched: boolean; why: string | null } };
+
+export type TalentDna = { at: string; people: number; cost_usd: number;
+  company: { id: string; name: string; employees: number | null; team_countries: { country: string; pct: number | null }[] | null };
+  searches: { text: string; results: number; theirs: number }[]; titles: [string, number][]; before: [string, number][];
+  feeders: { company_id: string; name: string; n: number; employees: number; kind: string | null; industry: string | null; hq: string | null }[];
+  pattern: { kinds: [string, number][]; sizes: [string, number][]; domains: [string, number][] };
+  talent_sources: { name: string; n: number | null }[]; departments: { department: string; n: number | null; pct: number | null }[] };
+
+export type Widening = { why: string; empty?: boolean; options: { option: string; value: string | string[] | null; text: string }[] };
+
+export type SourcingRunView = { id: string; trigger: string; status: string; stop_reason: string | null; found: number; new: number;
+  known: number; refused: number; strong: number; cost_usd: number; error: string | null; started_at: string | null; ended_at: string | null;
+  report: { pool?: { looked: number; added: number; strong: number }; refused?: Record<string, number>; plan_version?: number;
+    web?: { people: number; off_target?: number;
+      queries: { text: string; target: string | null; results: number; new: number; strong: number; off_target?: number }[] };
+    radar?: { queries: { text: string; results: number; signals: number; companies: string[] }[]; flagged: string[]; added: string[];
+      stopped: string | null }; profiles?: { companies: number; people: number }; snowball?: string[] } };
+
+/** Where a person is in the owner's workflow on a role (phase 1c, api/outreach.py stage()). */
+export type OutreachStage = "to_review" | "to_contact" | "later" | "contacted" | "replied" | "call_booked" | "passed";
+export type ContactChannel = "linkedin_invite" | "linkedin_message" | "inmail" | "email";
+export type ReplyOutcome = "interested" | "not_now" | "not_interested" | "stop";
+export type ContactTrack = {
+  stage?: string; viewed_at?: string; decided_at?: string; passed_for?: string; channel?: ContactChannel; contacted_at?: string;
+  follow_up_due?: string | null; accepted_at?: string; call_at?: string | null;
+  reply?: { outcome: ReplyOutcome | null; at: string; note?: string | null; text?: string | null; check_back?: string | null; source?: string };
+  unclear?: { kind: "accepted" | "message"; at: string; subject: string; snippet: string; others: number };
+};
+
+export type Suggestion = { candidate_id: string; name: string | null; band: Band; reason: string | null; match_tier: string | null;
+  stage: OutreachStage; hint: "looks strong" | "possible"; reach: string | null; contact: ContactTrack | null; follow_up_due: boolean;
+  state: string; current: string | null; location: string | null; profile: string | null; employer: CompanyProfile | null;
+  gaps?: PersonOnJob["gaps"]; coverage?: PersonOnJob["coverage"];
+  found_by: { channel: string; target: string | null; tier: string | null; query: string | null; at: string | null; new_to_desk: boolean;
+    at_target?: "now" | "before" | null } };
+
+export type SourcingPage = {
+  job_id: string; title: string; state: string;
+  plan: { version: number; mode: SourcingMode; target: number; monthly_budget_usd: number; role_variants: string[]; countries: string[];
+    targets: SourcingTarget[]; changed_by: string; changed_at: string | null; dna: TalentDna | null;
+    rules: Record<string, number>; open_tiers: string[] };
+  hiring: { name: string; stage?: string | null; domains?: string[]; kind?: string | null; team?: string; hq?: string } | null;
+  budget: { role_spent_usd: number; role_budget_usd: number; desk_spent_usd: number; desk_budget_usd: number };
+  strong_waiting: number; web_ready: boolean; running: boolean; building: boolean; widening: Widening | null;
+  strategy_note: { level: "error" | "info"; text: string; at: string | null } | null;
+  runs: SourcingRunView[]; suggestions: Suggestion[]; suggestions_total: number;
+  lists: Record<Exclude<OutreachStage, "to_review">, Suggestion[]>; counts: Record<OutreachStage, number>; follow_ups_due: number;
+};
+
+export type FunnelCounts = { found: number; new_to_desk: number; relevant: number; possible: number; contacted: number; replied: number;
+  interested: number; cv: number; submitted: number; interviewed: number; offered: number; placed: number; spend_usd: number;
+  cost_per_relevant: number | null; cost_per_interview: number | null; cost_per_placement: number | null };
+
+export type SourcingStats = { job_id: string | null; since: string | null; group: string; totals: FunnelCounts;
+  groups: (FunnelCounts & { key: string; label: string })[]; flags: { level: "warn" | "info" | "good"; key: string; text: string }[] };

@@ -1,6 +1,7 @@
 import { removeActivity } from "@/app/actions";
 import { LogActivity } from "@/components/LogActivity";
 import { ago } from "@/lib/format";
+import { ActForm } from "@/components/ActForm";
 
 export type TimelineRow = { at: string | null; type: string; text: string; direction?: string | null; job?: string | null;
   contact?: string | null; by?: string | null; id?: string; removable?: boolean };
@@ -24,7 +25,7 @@ export function Timeline({ rows, path }: { rows: TimelineRow[]; path: string }) 
             {r.by && r.by !== "system" && <span className="sub"> · {r.by}</span>}
           </span>
           {r.removable && r.id && (
-            <form action={removeActivity.bind(null, r.id, path)}><button className="btn small ghost" aria-label="Remove this entry">×</button></form>
+            <ActForm action={removeActivity.bind(null, r.id, path)}><button className="btn small ghost" aria-label="Remove this entry">×</button></ActForm>
           )}
         </li>
       ))}

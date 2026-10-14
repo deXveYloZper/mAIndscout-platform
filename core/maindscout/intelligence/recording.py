@@ -135,6 +135,46 @@ class RecordingSearchClient:
         return data, urls, cost
 
 
+class RecordingExaClient:
+    """The same for Exa (search and contents): keyed by the endpoint and the exact request body. Only what
+    the reader uses is kept (`exa.slim`: never a photo, never the people parts of a company page), and recorded or
+    replayed, the answer is the same."""
+
+    def __init__(self, make_real: Callable[[], Any], how: str, root: Path | None = None):
+        self.make_real, self.how, self.root, self.model = make_real, how, root or folder(), "exa"
+        self._real = None
+
+    def call(self, body: dict[str, Any]) -> dict[str, Any]:
+        return self._answer("search", body)
+
+    def contents(self, body: dict[str, Any]) -> dict[str, Any]:
+        return self._answer("contents", body)
+
+    def _answer(self, endpoint: str, body: dict[str, Any]) -> dict[str, Any]:
+        name = "exa_search" if endpoint == "search" else f"exa_{endpoint}"
+        key = request_key("exa", "exa", "", json.dumps(body, sort_keys=True, ensure_ascii=False), {}, name)
+        store = _Store(self.root, "exa", endpoint)
+        if self.how in ("replay", "auto"):
+            saved = store.load(key)
+            if saved is not None:
+                return saved["raw"]
+            if self.how == "replay":
+                raise NotRecorded(f"No recorded Exa answer for this {endpoint} request ({key[:12]}). Record it once with "
+                                  "LLM_REPLAY=auto (or record).")
+        from maindscout.intelligence.exa import slim
+
+        if self._real is None:
+            self._real = self.make_real()
+        raw = slim(getattr(self._real, {"search": "call", "contents": "contents"}[endpoint])(body))
+        store.save(key, {"raw": raw, "recorded_at": datetime.now(timezone.utc).isoformat()})
+        return raw
+
+
+def wrap_exa(make_real: Callable[[], Any]):
+    how = mode()
+    return make_real() if how == "off" else RecordingExaClient(make_real, how)
+
+
 def wrap_chat(make_real: Callable[[], Any]):
     """The client to use: the real one (mode off), or a recording/replaying one."""
     how = mode()

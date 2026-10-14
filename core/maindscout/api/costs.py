@@ -39,9 +39,24 @@ def _month_start() -> datetime:
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
+# Sourcing (web search for people and companies) has its own budgets, per role and per desk (autosource.py), so a
+# busy search month never stops the desk reading CVs: its spend is left out of the desk's model budget.
+SOURCING = "sourcing_"
+
+
 def month_spent(session: Session, org_id: uuid.UUID | None) -> float:
-    q = select(func.coalesce(func.sum(CostEntry.usd), 0)).where(CostEntry.created_at >= _month_start())
+    q = select(func.coalesce(func.sum(CostEntry.usd), 0)).where(CostEntry.created_at >= _month_start(),
+                                                                 ~CostEntry.purpose.startswith(SOURCING))
     q = q.where(CostEntry.org_id == org_id) if org_id else q.where(CostEntry.org_id.is_(None))
+    return float(session.scalar(q) or 0)
+
+
+def sourcing_spent(session: Session, org_id: uuid.UUID, job_id: uuid.UUID | None = None, since: datetime | None = None) -> float:
+    """This month's sourcing spend for the desk, or for one role."""
+    q = select(func.coalesce(func.sum(CostEntry.usd), 0)).where(
+        CostEntry.org_id == org_id, CostEntry.purpose.startswith(SOURCING), CostEntry.created_at >= (since or _month_start()))
+    if job_id is not None:
+        q = q.where(CostEntry.subject_type == "job", CostEntry.subject_id == job_id)
     return float(session.scalar(q) or 0)
 
 
@@ -77,10 +92,13 @@ def summary(session: Session, org_id: uuid.UUID) -> dict[str, Any]:
     days = session.execute(select(day, func.sum(CostEntry.usd))
                            .where(CostEntry.org_id == org_id, CostEntry.created_at >= start)
                            .group_by(day).order_by(day)).all()
+    from maindscout.api import autosource
+
     spent = month_spent(session, org_id)
     return {
         "month": start.strftime("%Y-%m"), "spent_usd": round(spent, 4), "budget_usd": monthly_budget(),
         "shared_research_usd": round(month_spent(session, None), 4), "research_budget_usd": monthly_budget(shared=True),
+        "sourcing_usd": round(sourcing_spent(session, org_id), 4), "sourcing_budget_usd": autosource.desk_budget(session, org_id),
         "by_purpose": [{"purpose": p, "calls": n, "usd": round(float(u or 0), 4), "input_tokens": int(i or 0),
                         "output_tokens": int(o or 0), "sources": int(src or 0)} for p, n, u, i, o, src in rows],
         "by_day": [{"day": d.date().isoformat(), "usd": round(float(u or 0), 4)} for d, u in days],

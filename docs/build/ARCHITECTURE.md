@@ -26,6 +26,15 @@ Local setup: [core/README.md](../../core/README.md).
 
 | Component | Status | Page |
 |---|---|---|
+| Roles: close (on hold, filled, cancelled), reopen, delete a role added by mistake (x-ray B6) | built | [roles.md](components/roles.md) |
+| Outreach workflow: suggestions until the owner decides, one-click triage with undo, the contact track (contacted, follow-up, reply, call), reaches, LinkedIn's emails read for contacted people only (next build, phase 1c) | built; the email reading waits for the owner's mailbox | [outreach.md](components/outreach.md) |
+| Sourcing strategy: talent DNA, tiered target list, batches until exhausted, snowball, widening the owner decides (next build, phase 1b) | built | [sourcing-strategy.md](components/sourcing-strategy.md) |
+| Company knowledge: identity keys, Exa profiles for breadth, Grok research for depth, cross-check (next build, phase 1b) | built | [company-knowledge.md](components/company-knowledge.md) |
+| Sourcing results and spend: funnel per strategy, cost per relevant / interview / placement, flags (next build, phase 1) | built | [sourcing-results.md](components/sourcing-results.md) |
+| Sourcing engine: per-role plans (market map, modes, target, budgets), runs pool-first then web, off-limits and "stop" gates, the clock (next build, phase 1) | built, not yet run on a real role | [sourcing-engine.md](components/sourcing-engine.md) |
+| Talent-release radar: news that companies are releasing talent, quoted, never a person's name (next build, phase 1) | built, not yet run on real news | [talent-release-radar.md](components/talent-release-radar.md) |
+| Web discovery: Exa people search read into public-data people through the CV path, no model (next build, phase 1) | built | [web-discovery.md](components/web-discovery.md) |
+| Permission and "stop": what a person said yes to; never contacted again (next build, phase 1) | built | [permission-and-stop.md](components/permission-and-stop.md) |
 | Background tasks + cost ledger (I1) | built | [tasks-and-costs.md](components/tasks-and-costs.md) |
 | Companies: shared records, who we know there (I1) | built | [companies.md](components/companies.md) |
 | Company research: targeted public facts with sources (I2) | built | [company-research.md](components/company-research.md) |
@@ -40,6 +49,8 @@ Local setup: [core/README.md](../../core/README.md).
 | Freshness: stale people and clients, re-contact list by value with reasons (Slice 4) | built | [freshness.md](components/freshness.md) |
 | Import (CSV; 100 / 25 free, vouched; quote beyond) and free export (Slice 4) | built | [imports.md](components/imports.md) |
 | Messages: drafts, Gmail / Outlook drafts, sent / reply detection, follow-ups (Slice 4) | built | [messages.md](components/messages.md) |
+| Calls: transcripts read into one bulk-approved Call review; what people want, in matching and sourcing | built | [calls.md](components/calls.md) |
+| Same person: merge two records of one person, undoable; "different people" remembered | built | [merge.md](components/merge.md) |
 | Access: sign-in, two-step codes, desks, roles, members | built | [access.md](components/access.md) |
 | Model recordings: record once, replay free (tests, e2e, eval) | built | [model-recordings.md](components/model-recordings.md) |
 | Performance check: 3,000-person benchmark desk, timings and query counts | built | [performance.md](components/performance.md) |
@@ -54,11 +65,11 @@ Local setup: [core/README.md](../../core/README.md).
 | Process document: commit proposed claims | built | [process.md](components/process.md) |
 | Intelligence: extract, span check, triage | built | [intelligence.md](components/intelligence.md) |
 | Ingestion: upload + text layer | built | [ingestion.md](components/ingestion.md) |
-| Writer: `api/` + registries | in progress | [writer.md](components/writer.md) |
+| Writer: `api/` + registries | built | [writer.md](components/writer.md) |
 | Persistence: tables + migrations | built | [persistence.md](components/persistence.md) |
 | Contracts (vendored `slice0/`) | built | [contracts.md](components/contracts.md) |
 
-Vendored contracts (from the blueprint, not yet implemented against): `slice0/schemas`, `slice0/registry`, `slice0/domain/reconcile.py`, `slice0/api/openapi.yaml`. See [components/contracts.md](components/contracts.md).
+Vendored contracts (from the blueprint; every claim write is checked against the schemas and registries, which have grown with each slice): `slice0/schemas`, `slice0/registry`, `slice0/domain/reconcile.py`, `slice0/api/openapi.yaml` (the original Slice 0 target; the live API is FastAPI's own). See [components/contracts.md](components/contracts.md).
 
 ## Dependency rules
 

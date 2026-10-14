@@ -19,7 +19,7 @@ from maindscout.intelligence.hiring import EMPLOYER_KINDS, NOT_CRITERIA
 from maindscout.intelligence.llm import LLMClient
 from maindscout.intelligence.spans import locate
 
-CALLS_PROMPT_VERSION = "2026-10-06.1"
+CALLS_PROMPT_VERSION = "2026-10-08.1"
 KINDS = ["brief_answer", "confirm", "correct", "dispute", "new_fact", "preference", "ask"]
 FACT_TYPES = ["skill", "location", "contact", "career_step"]
 CONTACT_KINDS = ["email", "phone", "linkedin"]
@@ -64,7 +64,8 @@ SYSTEM = (
     "CANDIDATE said about themselves, one finding per point:\n"
     "- brief_answer: a question Bn was answered. outcome confirmed (yes / meets it), not_met (no / does not meet it) or "
     "noted (an answer that is neither).\n"
-    "- confirm: they confirmed fact Fn. correct: they said fact Fn is different; give the new value (and fact_type). "
+    "- confirm: they confirmed fact Fn. correct: they said fact Fn itself is different (e.g. they moved: the new place); "
+    "give the new value (and fact_type). A job, school or skill that is not in FACTS is never a correction: it is a new_fact. "
     "dispute: they said fact Fn is wrong, with no new value.\n"
     "- new_fact: a fact not in FACTS. fact_type skill (value = the skill), location (value = where they live now), "
     "contact (contact_kind and value), career_step (company, title, start_year, end_year if said).\n"
@@ -73,7 +74,8 @@ SYSTEM = (
     "country codes), work (want / avoid role families from the list, level), employment (want from: permanent, "
     "contract). strength must when they will not consider anything else ('only', 'never', 'won't', 'nothing under'), "
     "prefer when they would rather ('ideally', 'prefer', 'tired of').\n"
-    "- ask: something still worth asking next time (text = the question; quote may be empty).\n"
+    "- ask: something new the call raised that is still worth asking next time (text = the question; quote may be "
+    "empty). Never repeat a question already in QUESTIONS.\n"
     "Every finding except ask quotes the candidate's own words exactly. Never anything the recruiter said, never "
     "anything about other people (colleagues, managers, other candidates), never personality, attitude, culture or "
     "fit, never salary guesses. Never guess: leave out what was not said. Role families: " + ", ".join(ROLE_FAMILIES) + "."
@@ -157,6 +159,7 @@ def read(text: str, client: LLMClient, *, name: str | None, facts: list[dict[str
     result = client.complete_json(SYSTEM, context, SCHEMA, "call_findings")
     speaker = _candidate_speaker(text, name, result.data.get("candidate_speaker"))
     fact_refs = {f["ref"] for f in facts}
+    fact_text = {f["ref"]: f["text"].lower() for f in facts}
     question_refs = {q["ref"] for q in questions}
     findings, rejected = [], []
     for raw in result.data.get("findings", []):
@@ -185,6 +188,9 @@ def read(text: str, client: LLMClient, *, name: str | None, facts: list[dict[str
         elif not words:
             no("an empty question")
             continue
+        elif any(_same_question(words, q["question"]) for q in questions):
+            no("already in the Brief")
+            continue
         fields: dict[str, Any] = {}
         ref = raw.get("ref")
         if kind == "brief_answer":
@@ -192,13 +198,17 @@ def read(text: str, client: LLMClient, *, name: str | None, facts: list[dict[str
                 no("no such question, or no outcome")
                 continue
             fields = {"outcome": raw["outcome"]}
+        elif (kind == "correct" and (raw.get("company") or "").strip().lower() not in fact_text.get(ref, "")
+              and not isinstance(step := _new_fact({**raw, "fact_type": "career_step"}, quote), str)):
+            # A job "corrected" with its company named in their words is a job they had besides: a new career step.
+            kind, ref, fields = "new_fact", None, step
         elif kind in ("confirm", "correct", "dispute"):
             if ref not in fact_refs:
                 no("no such fact")
                 continue
             if kind == "correct":
                 value = (raw.get("value") or "").strip()
-                if not value or value.lower() not in quote.lower():
+                if not value or not _said(value, quote):
                     no("the corrected value is not in their words")
                     continue
                 fields = {"value": value}
@@ -225,7 +235,7 @@ def _new_fact(raw: dict[str, Any], quote: str) -> dict[str, Any] | str:
     if ft == "skill":
         return {"fact_type": ft, "value": value} if value and value.lower() in q else "the skill is not in their words"
     if ft == "location":
-        return {"fact_type": ft, "value": value} if value and value.lower() in q else "the place is not in their words"
+        return {"fact_type": ft, "value": value} if value and _said(value, quote) else "the place is not in their words"
     if ft == "contact":
         kind = raw.get("contact_kind")
         if kind not in CONTACT_KINDS or not value:
@@ -266,3 +276,17 @@ def _preference(raw: dict[str, Any], quote: str) -> dict[str, Any] | str:
     if not want and not avoid and not level:
         return "nothing usable from the lists"
     return {**out, "want": want, "avoid": avoid, **({"level": level} if level else {})}
+
+
+def _said(value: str, quote: str) -> bool:
+    """The value is in their words, or its first part is ("Berlin, Germany" when they said "Berlin")."""
+    q = quote.lower()
+    head = value.split(",")[0].strip().lower()
+    return value.lower() in q or (len(head) >= 3 and re.search(rf"\b{re.escape(head)}\b", q) is not None)
+
+
+def _same_question(a: str, b: str) -> bool:
+    """Two questions that ask the same thing (most of the longer words of the shorter one are in the other)."""
+    wa, wb = (set(re.findall(r"[a-z]{4,}", x.lower())) for x in (a, b))
+    short, other = (wa, wb) if len(wa) <= len(wb) else (wb, wa)
+    return bool(short) and len(short & other) >= 0.6 * len(short)

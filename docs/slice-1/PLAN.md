@@ -1,6 +1,6 @@
 # Slice 1 — Defendable match
 
-**Status: OPEN** since 2026-10-02 (Slice 0 gate green, [decision](../decisions/2026-10-02-slice-0-gate.md)).
+**Status: BUILT, gate green 2026-10-03** ([decision](../decisions/2026-10-03-slice-1-gate.md)). Opened 2026-10-02 (Slice 0 gate green, [decision](../decisions/2026-10-02-slice-0-gate.md)).
 
 Slice 0 already bands people. This slice makes the band explainable and the pair durable.
 

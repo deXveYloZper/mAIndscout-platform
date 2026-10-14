@@ -1,6 +1,6 @@
 # Intelligence track: candidate strength, company intelligence, real matching
 
-**Status:** accepted 2026-10-03 ([decisions](../decisions/2026-10-03-intelligence-track.md)); building from I1. Replaces the next slices in priority: no Slice 3 work until this track's first gate.
+**Status:** I1–I6 built, gates green 2026-10-03 to 10-04; I7 (calibration) waits for about 50 real decisions. Accepted 2026-10-03 ([decisions](../decisions/2026-10-03-intelligence-track.md)). Replaces the next slices in priority: no Slice 3 work until this track's first gate.
 **Why this exists:** keyword matching (Slice 0-2) says *whether a CV mentions* what a job lists. It does not know who the person is, where they worked, or what makes someone great for *this* company. The owner's brief (2026-10-03) sets the bar: understand every candidate's career strength first, understand every company and its jobs first, then match.
 
 ---

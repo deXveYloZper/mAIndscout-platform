@@ -1,5 +1,6 @@
 import { connectMailbox, disconnectMailbox, syncMailbox } from "@/app/actions";
 import { api, currentUser, type MailboxStatus } from "@/lib/api";
+import { ActForm } from "@/components/ActForm";
 
 export const metadata = { title: "Mailbox" };
 
@@ -27,8 +28,8 @@ export default async function Mailbox({ searchParams }: { searchParams: Promise<
             {box.last_sync_at ? ` · last looked ${box.last_sync_at.slice(0, 16).replace("T", " ")}` : " · not looked yet"}
           </p>
           <div className="row">
-            <form action={syncMailbox.bind(null, "/mailbox")}><button className="btn small">Look now</button></form>
-            {owner && <form action={disconnectMailbox}><button className="btn small">Disconnect</button></form>}
+            <ActForm action={syncMailbox.bind(null, "/mailbox")}><button className="btn small">Look now</button></ActForm>
+            {owner && <ActForm action={disconnectMailbox}><button className="btn small">Disconnect</button></ActForm>}
           </div>
           <p className="hint">Disconnecting deletes the stored sign-in. Drafts already in your mailbox stay there.</p>
         </section>

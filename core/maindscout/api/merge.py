@@ -28,8 +28,10 @@ from maindscout.db.models import (
     Message,
     NotSame,
     PairEvent,
+    Permission,
     PersonMerge,
     Score,
+    SourcingHit,
 )
 
 LIVE = ("proposed", "approved")
@@ -161,6 +163,15 @@ def merge(session: Session, org_id, a_id: uuid.UUID, b_id: uuid.UUID, actor: str
     move(ImportRow, "candidate_id", "import_rows")
     move(Score, "candidate_id", "scores")
     move(Decision, "subject_id", "decisions")
+    move(Permission, "candidate_id", "permissions")
+    found_for = set(session.scalars(select(SourcingHit.job_id).where(SourcingHit.candidate_id == keep.id)))
+    hits = [h for h in session.scalars(select(SourcingHit).where(SourcingHit.candidate_id == drop.id)) if h.job_id not in found_for]
+    for h in hits:
+        h.candidate_id = keep.id
+    moved["sourcing_hits"] = _ids(hits)
+    if drop.do_not_contact_at is not None and keep.do_not_contact_at is None:
+        keep.do_not_contact_at, keep.do_not_contact_note = drop.do_not_contact_at, drop.do_not_contact_note
+        moved["stop_from_merged"] = True
 
     # The question that asked who this is: answered.
     sealed = []
@@ -243,7 +254,8 @@ def undo(session: Session, org_id, merge_id: uuid.UUID, actor: str) -> PersonMer
     for name, model, column in (("activities", Activity, "subject_id"), ("client_blocks", ClientBlock, "candidate_id"),
                                 ("messages", Message, "candidate_id"), ("messages_about", Message, "about_candidate_id"),
                                 ("call_reviews", CallReview, "candidate_id"), ("import_rows", ImportRow, "candidate_id"),
-                                ("scores", Score, "candidate_id"), ("decisions", Decision, "subject_id")):
+                                ("scores", Score, "candidate_id"), ("decisions", Decision, "subject_id"),
+                                ("permissions", Permission, "candidate_id"), ("sourcing_hits", SourcingHit, "candidate_id")):
         for rid in m.get(name, []):
             r = session.get(model, U(rid))
             if r is not None:
@@ -253,6 +265,8 @@ def undo(session: Session, org_id, merge_id: uuid.UUID, actor: str) -> PersonMer
         if d is not None:
             d.sealed_at, d.resolution = None, None
 
+    if m.get("stop_from_merged"):
+        keep.do_not_contact_at, keep.do_not_contact_note = None, None
     keep.name_variants = [n for n in keep.name_variants or [] if n not in m.get("name_variants", [])] or keep.name_variants
     drop.merged_into_id = None
     row.undone_by, row.undone_at = actor, _now()

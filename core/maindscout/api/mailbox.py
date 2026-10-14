@@ -27,7 +27,9 @@ from sqlalchemy.orm import Session
 from maindscout.db.models import Mailbox
 from maindscout.settings import env
 
-GOOGLE_SCOPES = "openid email https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.metadata"
+# gmail.readonly (phase 1c) lets the desk search for LinkedIn's notifications about people contacted on LinkedIn; the
+# search itself limits what is fetched (outreach.read_linkedin). gmail.metadata cannot search.
+GOOGLE_SCOPES = "openid email https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.readonly"
 MS_SCOPES = "offline_access User.Read Mail.ReadWrite"
 
 
@@ -40,6 +42,7 @@ class Provider(Protocol):
     def draft_state(self, draft_id: str, thread_id: str | None) -> dict[str, Any]: ...
     def replies_since(self, thread_id: str, since: datetime | None, own: str | None) -> list[datetime]: ...
     def delete_draft(self, draft_id: str) -> None: ...
+    def linkedin_mail(self, names: list[str], since: datetime) -> list[dict[str, Any]]: ...
 
 
 # Tests replace this to use a fake mailbox: (session, mailbox row) -> Provider
@@ -264,6 +267,20 @@ class GmailProvider(_Http):
     def delete_draft(self, draft_id):
         self.call("DELETE", f"drafts/{draft_id}")
 
+    def linkedin_mail(self, names, since):
+        """Mail from LinkedIn since `since` that names one of `names`: Gmail does the search, nothing else is fetched."""
+        quoted = " OR ".join('"' + n.replace('"', "") + '"' for n in names)
+        q = urllib.parse.quote(f"from:linkedin.com after:{int(since.timestamp())} ({quoted})")
+        out = []
+        for row in (self.call("GET", f"messages?q={q}&maxResults=100") or {}).get("messages") or []:
+            m = self.call("GET", f"messages/{row['id']}?format=metadata&metadataHeaders=Subject&metadataHeaders=From")
+            if not m:
+                continue
+            head = {h["name"].lower(): h["value"] for h in (m.get("payload") or {}).get("headers") or []}
+            out.append({"id": m["id"], "from": head.get("from"), "subject": head.get("subject"), "snippet": m.get("snippet"),
+                        "at": datetime.fromtimestamp(int(m.get("internalDate", "0")) / 1000, tz=timezone.utc)})
+        return out
+
 
 class GraphProvider(_Http):
     base = "https://graph.microsoft.com/v1.0/me/"
@@ -304,6 +321,19 @@ class GraphProvider(_Http):
 
     def delete_draft(self, draft_id):
         self.call("DELETE", f"messages/{draft_id}")
+
+    def linkedin_mail(self, names, since):
+        quoted = " OR ".join("\\\"" + n.replace('"', "") + "\\\"" for n in names)
+        q = urllib.parse.quote(f'"from:linkedin.com AND ({quoted})"')
+        rows = (self.call("GET", f"messages?$search={q}&$select=from,subject,bodyPreview,receivedDateTime&$top=100") or {}).get("value") or []
+        out = []
+        for m in rows:
+            at = _ms_time(m.get("receivedDateTime"))
+            if at is None or at < since:
+                continue
+            out.append({"id": m["id"], "from": ((m.get("from") or {}).get("emailAddress") or {}).get("address"),
+                        "subject": m.get("subject"), "snippet": m.get("bodyPreview"), "at": at})
+        return out
 
 
 def _ms_time(text: str | None) -> datetime | None:

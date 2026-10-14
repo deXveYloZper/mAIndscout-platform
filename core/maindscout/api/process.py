@@ -146,9 +146,12 @@ def _write_claim(session: Session, doc: Document, run: IntelligenceRun, subject_
             writer.set_flags(session, claim, {**claim.flags, "possible_ocr_identifier": True})
     evidence = Evidence(
         org_id=doc.org_id, claim_id=claim.id, evidence_type="document_span", document_id=doc.id,
-        locator={k: span[k] for k in ("artifact_id", "page", "char_start", "char_end", "annotation_id") if k in span} if span else None,
+        locator={k: span[k] for k in ("artifact_id", "page", "char_start", "char_end", "annotation_id", "parts") if k in span} if span else None,
         snippet=span["snippet"] if span else None,
-        span_validation={"tier": "typed", "result": "pass", "metric_bucket": "hallucination_rate", "detail": note},
+        span_validation={"tier": "assembled" if span and span.get("parts") else "typed", "result": "pass",
+                         "metric_bucket": "hallucination_rate",
+                         "detail": (f"pieced together from {len(span['parts'])} places in the file" + (f"; {note}" if note else ""))
+                         if span and span.get("parts") else note},
         source_authority=authority, origin=origin, observed_as_of=doc.as_of,
     )
     session.add(evidence)
@@ -452,6 +455,9 @@ def retriage_pair(session: Session, pair: CandidateJob, cause: dict, actor: str 
         result = triage.Triage(coarse.band, coarse.reason)
     else:
         result = triage.Triage(m.band, m.reason)
+    if result.band == "do_not_submit" and _unreadable(session, pair.candidate_id, inputs[1]):
+        # Nothing could be read (an image of a page): no evidence is not evidence of a miss. A person opens the file.
+        result = triage.Triage("review_later", "cv_unreadable")
     if (pair.triage_band, pair.triage_reason) == (result.band, result.reason):
         session.flush()
         return None
@@ -464,6 +470,16 @@ def retriage_pair(session: Session, pair: CandidateJob, cause: dict, actor: str 
     session.add(event)
     session.flush()
     return event
+
+
+def _unreadable(session: Session, candidate_id, mine: list[Claim]) -> bool:
+    """Nothing of their career or skills was read, and one of their files has no text layer to read."""
+    if any(c.claim_type in ("CareerStepClaim", "SkillClaim") for c in mine):
+        return False
+    from maindscout.db.models import DocumentSubject
+
+    return bool(session.scalar(select(Document.id).join(DocumentSubject, DocumentSubject.document_id == Document.id).where(
+        DocumentSubject.subject_id == candidate_id, Document.needs_vision.is_(True)).limit(1)))
 
 
 def retriage_candidate(session: Session, org_id, candidate_id, cause: dict, actor: str) -> list[PairEvent]:
@@ -541,14 +557,16 @@ def process_document(session: Session, blobs: BlobStore, client: LLMClient, *, o
 
     from maindscout.api import costs
 
-    costs.ensure_budget(session, org_id)
+    if not getattr(client, "free", False):
+        costs.ensure_budget(session, org_id)
     run = IntelligenceRun(org_id=org_id, document_id=doc.id, version_manifest=_manifest(client), status="running")
     session.add(run)
     session.flush()
 
     if doc.doc_type == "jd":
         result = _process_jd(session, doc, artifact, run, client, job, forced=force and prior is not None)
-    elif doc.doc_type == "cv":
+    elif doc.doc_type in ("cv", "web_profile"):
+        # A public profile found by sourcing is read like a short CV (by `webprofile.EntityReader`, no model).
         result = _process_cv(session, blobs, doc, artifact, run, client, job, forced=force and prior is not None)
         if result.status == "suppressed":
             session.flush()
@@ -560,7 +578,7 @@ def process_document(session: Session, blobs: BlobStore, client: LLMClient, *, o
         session.flush()
         return ProcessResult(run.id, doc.id, "needs_human")
 
-    if result.cost:
+    if result.cost and doc.doc_type != "web_profile":  # a found profile is read without a model: nothing to record
         costs.record(session, org_id, "read_jd" if doc.doc_type == "jd" else "read_cv", result.cost,
                      subject_type="document", subject_id=doc.id)
     run.status, run.committed_at = "committed", datetime.now(timezone.utc)
@@ -607,10 +625,13 @@ def _retire_earlier_reading(session: Session, doc: Document, run: IntelligenceRu
 
 
 def _queue_research(session: Session, candidate_id, org_id) -> int:
-    """Queue company research for the stints that matter: the last 10 years, at least 6 months or still current.
-    Shared public work (no org); deduplicated per company; skipped while a company's facts are fresh."""
-    from maindscout.api import research, tasks
+    """Queue what is known about the companies of the stints that matter (the last 10 years, at least 6 months or still
+    current): their Exa profile, about a cent each, confirmed by exact name and the job's country (x-ray C, owner
+    2026-10-13). Grok research (about $0.09) is kept for hiring companies, companies named on a role and "Research
+    now". Shared public work (no org); deduplicated per company; skipped while a company is fresh."""
+    from maindscout.api import company_profiles, research, tasks
     from maindscout.db.models import Company
+    from maindscout.domain import geo
     from maindscout.settings import env
 
     if (env("RESEARCH_AUTO", "true") or "").lower() in ("0", "false", "no", "off"):
@@ -626,12 +647,11 @@ def _queue_research(session: Session, candidate_id, org_id) -> int:
         if end < horizon or not long_enough:
             continue
         company = session.get(Company, uuid.UUID(company_id))
-        if company is None or not research.due(company):
+        if company is None or company_profiles.fresh(company) or not research.due(company):
             continue
-        tasks.enqueue(session, None, "research_company",
-                      {"company_id": company_id,
-                       "context": research.context_for_step(c.payload["company"]["raw_name"], c.payload.get("location_raw"))},
-                      priority=150, dedupe_key=f"research:{company_id}")
+        tasks.enqueue(session, None, "profile_company",
+                      {"company_id": company_id, "country": geo.country_in(c.payload.get("location_raw"))},
+                      priority=150, dedupe_key=f"profile:{company_id}")
         queued += 1
     return queued
 
@@ -659,6 +679,9 @@ def _discard_suppressed(session: Session, blobs: BlobStore, doc: Document, run: 
 def _process_cv(session: Session, blobs: BlobStore, doc: Document, artifact: ExtractionArtifact, run: IntelligenceRun,
                 client: LLMClient, job: Job | None, forced: bool = False) -> ProcessResult:
     outcome = extract.extract_cv(artifact.content, artifact.id, artifact.annotations or [], client)
+    if doc.doc_type == "web_profile":
+        for s in outcome.staged:
+            s.origin = "independent_web"  # what they published, as a public page shows it: a guide, not their CV
     # Suppression first: a person who was erased is not ingested again. Nothing about them is kept.
     identifiers = [(c.payload["kind"], c.payload["normalized"]) for c in outcome.staged if c.claim_type == "ContactClaim"]
     entry = erasure.is_suppressed(session, doc.org_id, identifiers)

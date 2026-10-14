@@ -1,5 +1,6 @@
 import { Link2, Mail, Phone } from "lucide-react";
 import { answerBrief, briefAsked, briefDismiss } from "@/app/actions";
+import { ActForm } from "@/components/ActForm";
 
 export type BriefItem = { id: string; scope: "person" | "job"; kind: string; question: string; why: string | null; status: string;
   outcome: string | null; answer: string | null; answered_by: string | null };
@@ -42,15 +43,15 @@ function Open({ item, path }: { item: BriefItem; path: string }) {
     <li className={`brief-item ${item.status}`}>
       <div className="q">{item.question}</div>
       {item.why && <div className="why-line">Why: {item.why}</div>}
-      <form action={answerBrief.bind(null, item.id, path)} className="row answer">
+      <ActForm action={answerBrief.bind(null, item.id, path)} className="row answer">
         <input name="answer" aria-label={`Answer: ${item.question}`} placeholder="what they said" className="grow" />
         <button className="btn small" name="outcome" value="confirmed">Confirmed</button>
         <button className="btn small" name="outcome" value="not_met">Not met</button>
         <button className="btn small ghost" name="outcome" value="noted">Note it</button>
-      </form>
+      </ActForm>
       <div className="row">
-        {item.status === "open" && <form action={briefAsked.bind(null, item.id, path)}><button className="btn small ghost">Asked, waiting</button></form>}
-        <form action={briefDismiss.bind(null, item.id, path)}><button className="btn small ghost">Not needed</button></form>
+        {item.status === "open" && <ActForm action={briefAsked.bind(null, item.id, path)}><button className="btn small ghost">Asked, waiting</button></ActForm>}
+        <ActForm action={briefDismiss.bind(null, item.id, path)}><button className="btn small ghost">Not needed</button></ActForm>
         {item.status === "asked" && <span className="sub">asked, waiting for the answer</span>}
       </div>
     </li>

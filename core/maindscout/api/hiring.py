@@ -23,9 +23,10 @@ from maindscout.intelligence import hiring as engine
 from maindscout.intelligence.llm import LLMClient
 
 LIVE = ("proposed", "approved")
-VALUE_FIELDS = ("role_family", "level", "min_years", "employer_kinds", "domains", "employment", "normalized_token")
+VALUE_FIELDS = ("role_family", "level", "min_years", "employer_kinds", "domains", "employment", "normalized_token", "mobility",
+                "cities", "relocation")
 CATEGORY = {"role": "role", "employer": "employer", "domain": "domain", "target_company": "target_company",
-            "employment": "employment", "skill": "skill", "other": "other"}
+            "employment": "employment", "skill": "skill", "other": "other", "location": "location"}
 
 
 def _norm(text: str) -> str:
@@ -45,6 +46,8 @@ def key_for(job_id, p: dict[str, Any]) -> str:
         part = ",".join(sorted(_norm(c["name"]) for c in p.get("companies") or [])) + f"|{'anti' if p['strength'] == 'anti' else 'want'}"
     elif cat == "employment":
         part = "employment"
+    elif cat == "location" and (p.get("mobility") or {}).get("facet") == "residence":
+        part = "residence"  # one "must live in" per job: the hiring manager's word replaces the ad's
     elif cat == "skill":
         part = p.get("normalized_token") or _norm(p["text_raw"])
     else:
@@ -58,11 +61,20 @@ def _payload(session: Session, item: engine.Item, source: str) -> dict[str, Any]
     f = dict(item.fields)
     if item.kind == "skill":
         p["normalized_token"] = f.pop("skill_token", None)
+    if item.kind == "location":  # the same shape as the ad's "live in or work from", so coverage and sourcing read it
+        p["mobility"] = {"facet": "residence", "countries": f.pop("countries")}
+        p["normalized_token"] = "residence"
+        if not f.get("cities"):
+            f.pop("cities", None)
+        if not f.get("relocation"):
+            f.pop("relocation", None)
     if item.kind == "target_company":
         out = []
         for name in f.pop("companies", []):
             company, _ = companies.resolve(session, name, "intake")
             out.append({"name": name, "company_id": str(company.id) if company else None})
+            if company is not None and item.strength != "anti":
+                _research(session, company, "named on a role as a company to source from")
         p["companies"] = out
     p.update({k: v for k, v in f.items() if v is not None})
     return p
@@ -144,9 +156,109 @@ def add_intake(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, text: str
     session.flush()
     outcome = engine.read(intake.text, client, "intake")
     costs.record(session, org_id, "hiring_intake", outcome.cost, subject_type="job", subject_id=job.id)
-    result = _write(session, job, outcome.items, "intake", {
+    # Who is hiring is a fact about the job, not a requirement: an anonymised ad names nobody, the notes do.
+    hiring_company = None
+    for item in [i for i in outcome.items if i.kind == "hiring_company"]:
+        hiring_company = set_hiring_company(session, org_id, job.id, item.fields["companies"][0], actor, source="intake").name
+    items = [i for i in outcome.items if i.kind != "hiring_company"]
+    result = _write(session, job, items, "intake", {
         "type": "intake_note", "locator": {"intake_id": str(intake.id)}, "authority": "human_assertion", "origin": "relayed"})
-    return {"intake_id": str(intake.id), **result, "rejected": outcome.rejected, "usd": outcome.cost.get("usd", 0)}
+    return {"intake_id": str(intake.id), **result, "hiring_company": hiring_company, "rejected": outcome.rejected,
+            "usd": outcome.cost.get("usd", 0)}
+
+
+def residence(session: Session, job: Job) -> list[Claim]:
+    """The role's live "must live in" requirements (normally one)."""
+    return [c for c in session.scalars(select(Claim).where(Claim.subject_id == job.id, Claim.claim_type == "JobRequirementClaim",
+                                                          Claim.status.in_(LIVE)).order_by(Claim.created_at.desc()))
+            if ((c.approved_view or c.payload).get("mobility") or {}).get("facet") == "residence"]
+
+
+def country_codes(countries: list[str]) -> list[str]:
+    """Two-letter codes from codes or names ("IT", "Italy", "italia"); an unknown one is refused, never dropped
+    (x-ray A1: "Italy" used to vanish, leaving the role with no country limit)."""
+    import re as _re
+
+    from maindscout.domain import geo
+
+    codes: list[str] = []
+    for raw in countries:
+        raw = (raw or "").strip()
+        if not raw:
+            continue
+        code = raw.upper() if _re.fullmatch(r"[A-Za-z]{2}", raw) and raw.upper() in geo.NAMES else geo.country_in(raw)
+        if not code:
+            raise ValueError(f"Not a country the desk recognises: {raw!r}. Use its name or two-letter code (IT, DE, GB).")
+        if code not in codes:
+            codes.append(code)
+    return codes
+
+
+def set_residence(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, countries: list[str], actor: str) -> list[str]:
+    """Where people must live for this role: the one place the role's countries are kept (x-ray B1, 2026-10-13). The
+    hiring profile shows it, sourcing searches and suggests there, and the coverage gate accepts it. An empty list
+    means no limit (sourcing then uses the ad's places, or where the client's team works)."""
+    from maindscout.api import coverage, review
+    from maindscout.domain import geo
+
+    job = session.get(Job, job_id)
+    if job is None or job.org_id != org_id:
+        raise LookupError(f"No job {job_id}")
+    codes = country_codes(countries)
+    live = residence(session, job)
+    current = [x for c in live[:1] for x in ((c.approved_view or c.payload)["mobility"].get("countries") or [])]
+    if codes == current and len(live) <= 1:
+        return codes
+    old = (live[0].approved_view or live[0].payload) if live else {}
+    # The city and "relocation welcome" (from the intake) stay while their country does.
+    keep = {k: old[k] for k in ("cities", "relocation") if k in old and set(current) <= set(codes)}
+    if codes:
+        claim = review.assert_claim(session, org_id, actor, subject_type="job", subject_id=job.id, claim_type="JobRequirementClaim",
+                                    payload={"category": "location", "strength": "must", "distinctive": False, "source": "recruiter",
+                                             "text_raw": f"Live in or work from: {', '.join(geo.name_of(c) for c in codes)}",
+                                             "mobility": {"facet": "residence", "countries": codes},
+                                             "normalized_token": "residence", **keep},
+                                    replaces=live[0].id if live else None)
+        for c in live[1:]:
+            c.status, c.superseded_by = "superseded", claim.id
+    else:
+        for c in live:
+            review.reject_claim(session, org_id, c.id, actor, "outdated", "no country limit for this role")
+    session.flush()
+    coverage.reevaluate_job(session, job, {"act": "job_countries", "job_id": str(job.id)}, actor)
+    from maindscout.api import strategy
+
+    strategy.sync(session, org_id, job, actor)
+    return codes
+
+
+def set_hiring_company(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, name: str, actor: str, source: str = "recruiter") -> Company:
+    """The company that is hiring, named by a person (intake notes or typed): the role's company from now on, for its
+    hiring profile, its strategy (talent DNA, peers) and its off-limits. The ad's own reading never overrides it."""
+    job = session.get(Job, job_id)
+    if job is None or job.org_id != org_id:
+        raise LookupError(f"No job {job_id}")
+    name = " ".join((name or "").split())
+    if len(name) < 2:
+        raise ValueError("Type the hiring company's name.")
+    company, _ = companies.resolve(session, name, source)
+    company = companies.canonical(session, company) if company is not None else None
+    if company is None:
+        raise ValueError(f'"{name}" is not a company name the desk can use.')
+    job.hiring_company, job.hiring_company_id = name, company.id
+    session.flush()
+    _research(session, company, f"hiring for '{job.title}' (named by a person)")
+    return company
+
+
+def _research(session: Session, company: Company, context: str) -> None:
+    """Grok research (about $0.09) for the companies that matter most: hiring companies and companies named on a role."""
+    from maindscout.api import research, tasks
+    from maindscout.settings import env
+
+    if research.due(company) and (env("RESEARCH_AUTO", "true") or "").lower() not in ("0", "false", "no", "off"):
+        tasks.enqueue(session, None, "research_company", {"company_id": str(company.id), "context": context},
+                      priority=80, dedupe_key=f"research:{company.id}")
 
 
 def company_summary(session: Session, company: Company | None) -> dict[str, Any] | None:
@@ -204,6 +316,10 @@ def add_requirement(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, fiel
     from maindscout.api import review
 
     p = {k: v for k, v in fields.items() if v not in (None, "", [])}
+    if p.get("category") == "employer" and not p.get("employer_kinds"):
+        raise ValueError("Tick a background (start-up, agency, …). For an industry such as luxury, choose Industry instead.")
+    if p.get("category") == "domain" and not p.get("domains"):
+        raise ValueError("Choose the industry from the list.")
     p.setdefault("distinctive", False)
     p["source"] = "recruiter"
     if p.get("category") == "target_company":
@@ -212,6 +328,8 @@ def add_requirement(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, fiel
             name = c["name"] if isinstance(c, dict) else str(c)
             company, _ = companies.resolve(session, name, "recruiter")
             out.append({"name": name, "company_id": str(company.id) if company else None})
+            if company is not None and p.get("strength") != "anti":
+                _research(session, company, "named on a role as a company to source from")
         p["companies"] = out
     return review.assert_claim(session, org_id, actor, subject_type="job", subject_id=job_id,
                                claim_type="JobRequirementClaim", payload=p)

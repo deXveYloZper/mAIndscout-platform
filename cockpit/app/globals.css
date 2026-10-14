@@ -371,7 +371,7 @@ tr.rowlink { cursor: pointer; }
 /* ---------------------------------------------------------------------------------------------------------------
    Badges: bands, states, statuses, tags (all one shape, colour carries the meaning)
    --------------------------------------------------------------------------------------------------------------- */
-.pill, .tag, .status, .bandtag, .statetag, .tiertag, .thintag, .blocktag, .stale-tag, .verdict, .gapstatus, .chip {
+.pill, .tag, .status, .bandtag, .statetag, .tiertag, .thintag, .blocktag, .releasetag, .stale-tag, .verdict, .gapstatus, .chip {
   display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px; border-radius: 999px;
   font-size: 11px; font-weight: 500; line-height: 1; white-space: nowrap; vertical-align: middle;
   background: var(--bg-raise-3); color: var(--cream-dim); border: 1px solid transparent;
@@ -389,6 +389,16 @@ tr.rowlink { cursor: pointer; }
 .statetag.seen { color: var(--cream); }
 .tiertag, .thintag, .stale-tag { background: transparent; border: 1px dashed var(--line-strong); }
 .thintag, .stale-tag, .blocktag { border-color: var(--amber-line); color: var(--amber-text); }
+.releasetag { border-color: var(--amber-line); color: var(--amber-text); border-style: dashed; }
+.tier + .tier { margin-top: var(--space-4, 16px); }
+.tierhead { margin: var(--space-2, 8px) 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.dna { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+.widening { border-color: var(--amber-line); }
+.pill.accent { background: var(--amber-soft); border-color: var(--amber-line); color: var(--amber-text); }
+.live { display: inline-flex; align-items: center; gap: 8px; }
+.live .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--amber, #c4852a); animation: live-pulse 1.2s ease-in-out infinite; }
+@keyframes live-pulse { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .live .dot { animation: none; } }
 .blocktag { background: var(--amber-soft); border-style: solid; }
 .verdict.gap, .verdict.against { color: var(--cream-faint); text-decoration: line-through; }
 .chip { height: 24px; padding: 0 10px; font-size: 12px; margin: 2px 4px 2px 0; }
@@ -719,6 +729,12 @@ a.pc-name { font-weight: 600; font-size: 15px; color: var(--cream); text-decorat
 a.pc-name:hover { color: var(--amber-text); }
 .personcard .reason { margin: 0; color: var(--cream-dim); font-size: 13px; }
 .pc-side { display: flex; gap: 6px; align-items: flex-start; flex: none; }
+/* Phase 1c: the owner's one-click workflow on a suggestion card */
+.triage { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.triage .row { flex-wrap: wrap; gap: 6px; align-items: center; }
+.triage .warn { margin: 0; }
+.triage button.chip { cursor: pointer; }
+.people li.personcard.due { border-left: 3px solid var(--amber); }
 .gapbar { display: flex; align-items: center; gap: 10px; }
 .gapbar .track { display: flex; width: 120px; height: 6px; border-radius: 3px; overflow: hidden; background: var(--bg-raise-3); flex: none; }
 .gapbar .ev { background: var(--green); }
@@ -731,6 +747,9 @@ details.move > summary::before { content: none; }
   background: var(--bg-raise-2); border-radius: var(--r); box-shadow: var(--shadow-pop); animation: pop var(--med) var(--ease);
 }
 details.addcvs > summary { color: var(--cream); font-size: 14px; }
+/* Close or delete a role (x-ray B6) */
+.rolecontrols .movebox { width: min(440px, calc(100vw - 48px)); }
+.rolecontrols .danger-zone { border-top: 1px solid var(--line); padding-top: 10px; }
 details.addcvs[open] > summary { margin-bottom: 12px; }
 @media (max-width: 900px) {
   .bandtiles { grid-template-columns: repeat(2, 1fr); }
@@ -838,3 +857,35 @@ q.cl-quote { quotes: none; }
   .wantlist .strength { grid-column: 1; grid-row: auto; }
   .wantlist form { grid-column: 2; grid-row: 1; }
 }
+
+/* ---------------------------------------------------------------------------------------------------------------
+   Sourcing engine (docs/next/PLAN.md, phase 1): the role's Sourcing tab and the desk's results and spend
+   --------------------------------------------------------------------------------------------------------------- */
+.row.spread { justify-content: space-between; }
+.h-icon { width: 16px; height: 16px; vertical-align: -2px; margin-right: 6px; color: var(--amber-text); }
+label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--cream-dim); }
+label.field.grow { flex: 1; min-width: 220px; }
+label.field textarea { width: 100%; font-family: var(--mono); font-size: 13px; }
+label.check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--cream-dim); }
+.tiertag.possible { color: var(--cream-dim); }
+.funnel { font-size: 14px; line-height: 1.9; margin: 4px 0; }
+.funnel strong { font-family: var(--mono); color: var(--cream); font-weight: 500; }
+.flags { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.flag { padding: 8px 12px; border-radius: var(--r-sm); font-size: 13px; border: 1px solid var(--line); }
+.flag.warn { background: var(--red-soft); border-color: rgba(220, 122, 99, 0.35); color: var(--cream); }
+.flag.info { background: var(--slate-soft); border-color: rgba(154, 167, 184, 0.3); }
+.flag.good { background: var(--green-soft); border-color: rgba(147, 182, 125, 0.35); }
+.targets, .runs { list-style: none; margin: 4px 0 10px; padding: 0; }
+.targets li, .runs li { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 10px 0;
+  border-bottom: 1px solid var(--line); }
+.runs li { flex-direction: column; gap: 4px; }
+.targets li:last-child, .runs li:last-child { border-bottom: 0; }
+.targets li.off strong { text-decoration: line-through; color: var(--cream-faint); }
+.targets .hint, .runs .hint { margin-top: 2px; }
+.groupnav { display: flex; gap: 4px; flex-wrap: wrap; margin: 4px 0 12px; }
+.groupnav a { padding: 4px 10px; border-radius: var(--r-sm); font-size: 12px; color: var(--cream-dim); text-decoration: none;
+  border: 1px solid var(--line); }
+.groupnav a[aria-current="page"] { color: var(--amber-text); border-color: var(--amber-line); background: var(--amber-soft); }
+table.results td.num, table.results th.num { width: 72px; font-family: var(--mono); }
+table.results td:first-child { max-width: 320px; }
+.stopnote { border-color: rgba(220, 122, 99, 0.45); }

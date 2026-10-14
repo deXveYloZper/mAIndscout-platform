@@ -1,0 +1,10 @@
+# Only pyproject.toml and maindscout/ are copied into the image; keep secrets and real data out of the build context.
+.env
+.blobs
+.blobs-e2e
+.llm-recordings
+eval-reports
+.pytest_cache
+.venv
+**/__pycache__
+*.egg-info

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Briefcase, Building2, ChevronsLeft, ChevronsRight, Coins, Inbox, LayoutDashboard, LogOut, Mail, Menu, RefreshCw,
+  Briefcase, Building2, ChevronsLeft, ChevronsRight, Coins, Inbox, LayoutDashboard, LogOut, Mail, Menu, Radar, RefreshCw,
   Search, Settings, Upload, UserCog, Users,
 } from "lucide-react";
 import { signOut, switchDesk } from "@/app/actions";
@@ -26,6 +26,7 @@ function groups(inbox: number): { label: string; items: Item[] }[] {
     { label: "Find", items: [
       { href: "/search", label: "Search", icon: Search },
       { href: "/refresh", label: "Refresh", icon: RefreshCw },
+      { href: "/sourcing", label: "Sourcing", icon: Radar },
     ] },
     { label: "Desk", items: [
       { href: "/import", label: "Import", icon: Upload },

@@ -36,6 +36,22 @@ def _search_client():
 search_factory: Callable[[], Any] = _search_client
 
 
+def _exa_client():
+    """Exa for sourcing, recorded and replayed like the model; None when no key is set (the pool only)."""
+    from maindscout.intelligence.exa import ExaClient, ExaKeyMissing
+    from maindscout.intelligence.recording import mode, wrap_exa
+
+    if mode() != "replay" and not env("EXA_API_KEY"):
+        return None
+    try:
+        return wrap_exa(ExaClient)
+    except ExaKeyMissing:
+        return None
+
+
+exa_factory: Callable[[], Any] = _exa_client
+
+
 @handler("process_document")
 def process_document(session: Session, task: Task) -> dict[str, Any]:
     p = task.payload
@@ -48,6 +64,20 @@ def process_document(session: Session, task: Task) -> dict[str, Any]:
             "span_failures": len(result.span_failures), "usd": result.cost.get("usd", 0) if result.cost else 0}
 
 
+@handler("profile_company")
+def profile_company(session: Session, task: Task) -> dict[str, Any]:
+    """A company from a CV: its Exa profile, confirmed by its exact name and the job's country (x-ray C)."""
+    from maindscout.api import company_profiles
+    from maindscout.db.models import Company
+
+    caller = exa_factory()
+    company = session.get(Company, uuid.UUID(task.payload["company_id"]))
+    if caller is None or company is None:
+        return {"status": "skipped", "reason": "no web search (EXA_API_KEY)" if caller is None else "no such company"}
+    ok = company_profiles.by_name_and_place(session, company, task.payload.get("country"), caller, task_id=task.id)
+    return {"status": "profiled" if ok else "not_confirmed"}
+
+
 @handler("research_company")
 def research_company(session: Session, task: Task) -> dict[str, Any]:
     p = task.payload
@@ -57,8 +87,12 @@ def research_company(session: Session, task: Task) -> dict[str, Any]:
 
 @handler("profile_candidate")
 def profile_candidate(session: Session, task: Task) -> dict[str, Any]:
-    return profiles.run(session, task.org_id, uuid.UUID(task.payload["candidate_id"]), llm_factory, task_id=task.id,
-                        search_factory=search_factory)
+    from maindscout.api.coverage import discovered_only
+
+    cid = uuid.UUID(task.payload["candidate_id"])
+    # Someone known only from a public profile: their career reading, but no paid university research (phase 1b).
+    return profiles.run(session, task.org_id, cid, llm_factory, task_id=task.id,
+                        search_factory=None if discovered_only(session, cid) else search_factory)
 
 
 @handler("profile_job")
@@ -90,6 +124,36 @@ def read_transcript(session: Session, task: Task) -> dict[str, Any]:
     except LLMError as error:
         calls.fail(session, review_id, f"The model could not be reached ({error}): try again later.")
     return {"status": "failed"}
+
+
+@handler("sourcing_strategy")
+def sourcing_strategy(session: Session, task: Task) -> dict[str, Any]:
+    """Build a role's strategy: talent DNA and the tiered target list (needs Exa)."""
+    from maindscout.api import autosource, strategy
+
+    caller = exa_factory()
+    if caller is None:
+        return {"status": "skipped", "reason": "Web search is not set up (no EXA_API_KEY)"}
+    try:
+        return strategy.build(session, task.org_id, uuid.UUID(task.payload["job_id"]), caller, task.payload.get("actor") or "system",
+                              task_id=task.id)
+    except autosource.SourcingEngineError as error:
+        return {"status": "skipped", "reason": str(error)}
+
+
+@handler("sourcing_run")
+def sourcing_run(session: Session, task: Task) -> dict[str, Any]:
+    """One run of a role's sourcing plan (scheduled by the clock, or "Search now")."""
+    from maindscout.api import autosource
+
+    p = task.payload
+    try:
+        row = autosource.run(session, blob_factory(), task.org_id, uuid.UUID(p["job_id"]), p.get("trigger", "schedule"),
+                             exa_factory(), actor=p.get("actor") or "system", task_id=task.id)
+    except autosource.SourcingEngineError as error:
+        return {"status": "skipped", "reason": str(error)}
+    return {"status": row.status, "stop_reason": row.stop_reason, "found": row.found, "new": row.new, "strong": row.strong,
+            "cost_usd": float(row.cost_usd or 0)}
 
 
 @handler("mailbox_sync")

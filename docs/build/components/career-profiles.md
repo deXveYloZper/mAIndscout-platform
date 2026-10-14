@@ -54,6 +54,8 @@ Plan section 4.3 and the owner's brief (2026-10-03): understand a candidate's ca
    - `PROFILE_AUTO=false` turns the task off.
 7. **Erasure** deletes the person's profiles; verify checks they're gone.
 
+**Since phase 1b** ([company knowledge](company-knowledge.md)): people found by Exa who pass a role's gates get a career reading too, from their public profile text, once their employers are profiled by Exa id; no paid university research for them.
+
 ## Depends on
 [process.md](process.md) (career and education facts), [company-research.md](company-research.md) (employer kind, stage, founding date), [coverage-gate.md](coverage-gate.md) (only people in coverage), [tasks-and-costs.md](tasks-and-costs.md), [review.md](review.md).
 

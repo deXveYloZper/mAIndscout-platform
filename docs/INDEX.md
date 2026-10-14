@@ -6,10 +6,12 @@ Read this first. Everything else has a job. Do not mix them.
 |---|---|---|
 | **[VISION.md](VISION.md)** | The complete platform. What we are building toward. Never a sprint. | Anyone who needs the product in their head |
 | **[ROADMAP.md](ROADMAP.md)** | Slices, gates, what is allowed to start when | Product + engineering lead |
-| **[slice-0/HANDOFF.md](slice-0/HANDOFF.md)** | The only specification a developer implements **now** (ingest + job-first triage) | Every engineer and coding agent on Slice 0 |
-| **[slice-0/GATES.md](slice-0/GATES.md)** | Critical goalposts. Slice 1 stays closed until these are green | Same |
+| **[build/](build/README.md)** | What is actually built: status, architecture, one page per component, log | Anyone working on the code now |
+| **[slice-0/HANDOFF.md](slice-0/HANDOFF.md)** | Slice 0 specification (ingest + job-first triage); gate green 2026-10-02 | History; the base every later slice builds on |
+| **[slice-0/GATES.md](slice-0/GATES.md)** | Slice 0 goalposts (all green) | Same |
 | **[STAGES-AND-BUYER-BRIEF.md](STAGES-AND-BUYER-BRIEF.md)** | Stages in plain language + buyer pitch | Founder / sales / new team |
-| **slice-1…5 `/PLAN.md`** | Next plans. Readable now. **Not started** until the prior gate. Order: match → source → brief → live desk → depth | Leads planning ahead |
+| **slice-1…5 `/PLAN.md`** | Slice plans. Slices 1–4 built and green (2026-10-03 to 10-05); Slice 5 locked until a desk runs live jobs. Order: match → source → brief → live desk → depth | Leads planning ahead |
+| **intelligence/, access/, calls/, design/ `PLAN.md`** | Plans approved alongside the slices (intelligence track I1–I7, sign-in, call transcripts, desk design), all built except I7 | Same |
 | **[decisions/2026-09-06-job-first-attention.md](decisions/2026-09-06-job-first-attention.md)** | Why review is job-first | Anyone who still thinks Slice 0 is a library |
 | **`../slice0/`** | Executable contracts: schemas, registries, reconcile tests, OpenAPI, golden oracles | Implementers, CI |
 | **`../00`–`05`** | Constitution and history. Principles, data model, features, eval catalogue, amendment logs | Architects when a mechanism is disputed |

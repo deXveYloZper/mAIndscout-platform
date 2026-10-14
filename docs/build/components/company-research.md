@@ -33,6 +33,8 @@ Matching and sourcing need to know what kind of company someone worked at (plan 
 - **Light research** for large consultancies and outsourcers (kind and head office only, yearly), and only for people in coverage ([coverage-gate.md](coverage-gate.md)).
 - **Budget:** shared research has its own monthly budget, `RESEARCH_MONTHLY_BUDGET_USD` (default $10). Its cost is recorded without an org.
 
+**Since phase 1b** ([company knowledge](company-knowledge.md)): Grok research is the depth level, for hiring companies, live targets and employers of candidates about to be submitted; Exa profiles ($0.001 by id) are the middle level. Both store facts through `write_facts`; `cross_check` clears `single_source_web` when two sources agree and flags `sources_disagree` when they do not. A status quote about an agreement or a pending deal is stored as active ("agreed to be acquired, not completed"). The research website becomes the company's domain key.
+
 ## Depends on
 [companies.md](companies.md) (who the company is), [tasks-and-costs.md](tasks-and-costs.md) (queue, ledger, budget), [writer.md](writer.md) (guarded claim write; schemas and registry).
 
@@ -59,4 +61,4 @@ Matching and sourcing need to know what kind of company someone worked at (plan 
 - We store the URL and the quote, not a snapshot of the page. If a page changes or disappears, the quote remains as the record.
 - Amounts are converted to dollars only when written in dollars. Other currencies keep the raw text.
 - Whether a domain is an industry or a technology isn't checked mechanically. The prompt forbids technologies, and the owner's spot-check catches any that slip through.
-- Headcount comes from whatever page states it, usually LinkedIn's size band, and is dated.
+- Headcount comes from whatever page states it, usually LinkedIn's size band, and is dated. Sizes are read as written ("51-200", "over 8.8 thousand", "1.2k+", "10,000+"); before 2026-10-08 "8.8 thousand" was read as 8 people. `research-recheck` re-reads every stored size from its own words and corrects the numbers, **including on approved facts** (the words are unchanged; only the parsed min / max and the stored hash), a named exception to pinned approved views ([decision](../../decisions/2026-10-12-approved-size-reparse.md)).

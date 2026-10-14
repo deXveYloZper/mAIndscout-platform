@@ -1,6 +1,6 @@
 # Slice 4 — ATS core and import
 
-**Status: UNLOCKED** 2026-10-04 (Slice 3 gate green). **Rescoped** 2026-10-04 by the owner: mAIndscout is the source of truth, not an accessory to an ATS ([decision](../decisions/2026-10-04-source-of-truth-and-imports.md)). Waiting for the owner to approve this plan.
+**Status: BUILT, gate green 2026-10-05** ([decision](../decisions/2026-10-05-slice-4-gate.md)); plan approved 2026-10-04. Unlocked 2026-10-04 (Slice 3 gate green). **Rescoped** 2026-10-04 by the owner: mAIndscout is the source of truth, not an accessory to an ATS ([decision](../decisions/2026-10-04-source-of-truth-and-imports.md)).
 
 ---
 

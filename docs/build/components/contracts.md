@@ -1,6 +1,6 @@
 # Contracts (vendored from the blueprint)
 
-**Status:** built (vendored); 8 reconcile tests pass; not yet implemented against
+**Status:** built; every claim write is checked against `slice0/schemas` and the registries; 8 reconcile tests pass
 **Slice / milestone:** Slice 0 / Milestone A
 **Code:** `slice0/`
 
@@ -24,6 +24,10 @@ Every later component: persistence, `intelligence/`, `api/`, cockpit.
 
 ## Changes since vendoring
 - 2026-10-02: `job_requirement_claim.schema.json` extended with optional `mobility`, `min_years`, `education_level`, `language` and category `language` ([ADR](../../decisions/2026-10-02-richer-requirements.md)). All Slice 0 payloads stay valid.
+- 2026-10-03: company claims for research (`company_domain`, `company_type`, `company_founded`, `funding_round`, `team_size`, `company_status`, `company_location`; [company-research](company-research.md)) and `step_classification` ([career-profiles](career-profiles.md)); later the same day, hiring-profile fields on job requirements ([hiring-profiles](hiring-profiles.md)).
+- 2026-10-04: `brief_answer` ([brief](brief.md)).
+- 2026-10-06: `preference` ([calls](calls.md)).
+- `slice0/api/openapi.yaml` is kept as the original Slice 0 target; the live API is FastAPI's own (served at `/docs`, see [http-api](http-api.md)).
 
 ## Known limits
 Golden files describe expected output for CVs and JDs we do not have yet.

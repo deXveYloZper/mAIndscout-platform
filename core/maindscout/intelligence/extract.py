@@ -277,6 +277,11 @@ class _Run:
     def span_for(self, quote: str, key: str) -> dict[str, Any] | None:
         found = spans.locate(self.text, quote)
         if not found:
+            parts = spans.locate_parts(self.text, quote)
+            if parts:  # a multi-column page: every piece is in the text, the model joined them
+                return {"artifact_id": str(self.artifact_id), "page": parts[0].page, "char_start": parts[0].char_start,
+                        "char_end": parts[0].char_end, "snippet": " … ".join(x.snippet for x in parts),
+                        "parts": [[x.char_start, x.char_end] for x in parts]}
             self.results.append(SpanResult(key, "fail", "quote is not in the document text"))
             return None
         return {

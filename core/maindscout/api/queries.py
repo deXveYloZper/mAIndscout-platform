@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import String, func, select
 from sqlalchemy.orm import Session
 
-from maindscout.api import coverage, freshness, hiring, messages, pipeline, profiles, relationship
+from maindscout.api import consent, coverage, freshness, hiring, messages, pipeline, profiles, relationship
 from maindscout.db.models import (
     Company,
     Candidate,
@@ -83,6 +83,17 @@ def list_jobs(session: Session, org_id: uuid.UUID) -> list[dict[str, Any]]:
             archived[job_id] += n
         elif band in BANDS:
             counts[job_id][band] += n
+    from maindscout.api import outreach
+
+    # Suggestions nobody has decided on yet are on each role's Sourcing tab, not in its bands (phase 1c).
+    suggested = outreach.undecided_pairs(session, org_id)
+    if suggested:
+        for job_id, cid, band in session.execute(select(CandidateJob.job_id, CandidateJob.candidate_id, CandidateJob.triage_band).join(
+                Candidate, Candidate.id == CandidateJob.candidate_id).where(
+                CandidateJob.org_id == org_id, CandidateJob.candidate_id.in_({c for _, c in suggested}),
+                Candidate.archived_at.is_(None))):  # an archived one is counted as archived, not in a band
+            if (job_id, cid) in suggested and band in BANDS:
+                counts[job_id][band] -= 1
     jobs = list(session.scalars(select(Job).where(Job.org_id == org_id).order_by(Job.created_at.desc())))
     # "To review" per job = the job's priority inbox. Built once for the desk and counted per job, not once per job.
     priority: dict[uuid.UUID, set[str]] = defaultdict(set)
@@ -90,10 +101,12 @@ def list_jobs(session: Session, org_id: uuid.UUID) -> list[dict[str, Any]]:
                                        .join(Candidate, Candidate.id == CandidateJob.candidate_id)
                                        .where(CandidateJob.org_id == org_id, CandidateJob.triage_band == "priority",
                                               Candidate.archived_at.is_(None))):
-        priority[job_id].add(str(cid))
+        if (job_id, cid) not in suggested:
+            priority[job_id].add(str(cid))
     items = inbox(session, org_id, None, "all") if priority else []
     return [{"id": str(j.id), "title": j.title, "hiring_company": j.hiring_company, "state": j.state,
              "created_at": _iso(j.created_at), "bands": counts[j.id], "archived": archived[j.id],
+             "suggestions": sum(1 for job_id, _ in suggested if job_id == j.id),
              "to_review": sum(1 for i in items if (i.get("subject") or {}).get("id") in priority[j.id])} for j in jobs]
 
 
@@ -119,7 +132,14 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
     blocked = pipeline.blocked_ids_for_job(session, org_id, job)
     gone = {c.id: c.archived_reason for c in session.scalars(select(Candidate).where(
         Candidate.id.in_([p.candidate_id for p in pairs] or [None]), Candidate.archived_at.is_not(None)))}
+    stopped = set(session.scalars(select(Candidate.id).where(
+        Candidate.id.in_([p.candidate_id for p in pairs] or [None]), Candidate.do_not_contact_at.is_not(None))))
     archived = []
+    from maindscout.api import outreach, roles
+
+    # Phase 1c: people found by sourcing stay on the Sourcing tab until the owner decides; only a count shows here.
+    suggested = outreach.undecided(session, org_id, job.id)
+    pairs = [p for p in pairs if p.candidate_id not in suggested]
     gap_rows = _gap_rows_many(session, org_id, job, [p.candidate_id for p in pairs if p.candidate_id not in gone])
     for p in pairs:
         if p.candidate_id in gone:
@@ -131,6 +151,7 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
             "reason": p.triage_reason, "overridden_by": p.band_overridden_by, "open_decisions": open_counts.get(p.candidate_id, 0),
             **_gap_summary(gap_rows[p.candidate_id]),
             "state": p.pair_state, "outcome": p.outcome, "match_tier": p.match_tier, "blocked": p.candidate_id in blocked,
+            "stopped": p.candidate_id in stopped,
         })
     return {
         "id": str(job.id), "title": job.title, "hiring_company": job.hiring_company, "state": job.state,
@@ -139,6 +160,8 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
         "process_stale": any(c.flags.get("job_process_stale") for c in reqs),
         "rematching": _rematching(session, job.id),
         "people": people,
+        "suggestions_waiting": len(suggested),
+        "found_only_here": len(roles.found_only_here(session, org_id, job.id)),
         "archived": archived,
         "stages": pipeline.stage_counts(session, job.id),
         "coverage": coverage.summary(session, job),
@@ -188,7 +211,21 @@ def person_page(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID) ->
             Decision.subject_id == person.id, Decision.sealed_at.is_(None)))],
         "merged_into": str(person.merged_into_id) if person.merged_into_id else None,
         "merges": [merge.as_dict(m) for m in merge.merges_of(session, org_id, person.id)],
+        "do_not_contact": {"at": _iso(person.do_not_contact_at), "note": person.do_not_contact_note} if person.do_not_contact_at else None,
+        "permissions": consent.of(session, org_id, person.id),
+        "found_by": _found_by(session, org_id, person.id),
     }
+
+
+def _found_by(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID) -> list[dict[str, Any]]:
+    """Which sourcing searches found this person, per role (the first finder)."""
+    from maindscout.db.models import SourcingHit, SourcingQuery
+
+    rows = session.execute(select(SourcingHit, Job.title, SourcingQuery.text).join(Job, Job.id == SourcingHit.job_id)
+                           .outerjoin(SourcingQuery, SourcingQuery.id == SourcingHit.query_id)
+                           .where(SourcingHit.org_id == org_id, SourcingHit.candidate_id == candidate_id)).all()
+    return [{"job_id": str(h.job_id), "job": title, "channel": h.channel, "target": h.target, "query": text,
+             "at": _iso(h.created_at)} for h, title, text in rows]
 
 
 def _side(claim: Claim, evidence: list[dict[str, Any]]) -> dict[str, Any]:
@@ -345,8 +382,13 @@ def gap_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, candidate_i
     if pair is None:
         raise LookupError("This person is not on this job")
     rows = _gap_rows(session, org_id, job, person.id)
+    from maindscout.db.models import Permission
+
+    granted = list(session.scalars(select(Permission).where(Permission.org_id == org_id, Permission.candidate_id == person.id)))
     return {
         "job": {"id": str(job.id), "title": job.title, "hiring_company": job.hiring_company},
+        # Permission to put them forward: a warning on Submitted when none is recorded for this role (owner, 2026-10-13).
+        "permission": {"this_role": any(g.job_id == job.id for g in granted), "other_roles": any(g.scope == "other_roles" for g in granted)},
         "person": {"id": str(person.id), "name": names(session, [person.id])[person.id]},
         "band": pair.triage_band, "reason": pair.triage_reason, "overridden_by": pair.band_overridden_by,
         "state": pair.pair_state, "outcome": pair.outcome, "match": pair.match,

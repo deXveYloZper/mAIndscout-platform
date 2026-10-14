@@ -17,12 +17,15 @@ The intelligence track adds many model and search calls per CV (plan section 4.8
 - **Ledger:** `cost_ledger` rows per call (org, purpose, model, tokens, sources, USD, subject, task). Shared company research (I2) is recorded without an org.
 - **Budget:** `MONTHLY_BUDGET_USD` in `core/.env` (default 25). Before paid work, this month's spend is checked; at the budget, work stops with a clear message (HTTP 402 in synchronous calls, a failed task in the background).
 - **Erasure:** cost rows keep their numbers (accounting) but lose their link to the person and their documents; verify checks no link remains.
+- **Sourcing has its own budget** (next build, phase 1). Purposes starting `sourcing_` (`sourcing_exa_people`, `sourcing_company_search`, `sourcing_exa_news`, `sourcing_company_profile`, `sourcing_talent_dna`) are left out of the monthly model budget, so a busy search month never stops the desk reading CVs. They are checked against the role's and the desk's sourcing budgets instead (`costs.sourcing_spent`, [sourcing engine](sourcing-engine.md)). `GET /v1/costs` adds `sourcing_usd` and `sourcing_budget_usd`. The Costs page shows them as one line and labels the sourcing rows.
+- **`sourcing_strategy`** builds a role's strategy in the background (one per role at a time, no retries).
+- **The sourcing clock** queues `sourcing_run` tasks (one per role at a time, no retries) every 10 minutes for plans that are due; `SOURCING_AUTO=false` turns it off.
 
 ## Depends on
 [process.md](process.md), [persistence.md](persistence.md), [intelligence.md](intelligence.md) (the model client reports cost).
 
 ## Used by
-[http-api.md](http-api.md), [cockpit.md](cockpit.md), and every later intelligence task (I2-I6).
+[http-api.md](http-api.md), [cockpit.md](cockpit.md), every later intelligence task (I2-I6), [sourcing-engine.md](sourcing-engine.md) and [sourcing-results.md](sourcing-results.md).
 
 ## Tests
 `core/tests/test_tasks.py` (9): runs once and keeps its result; retries with backoff then stops with the error; dedupe; two workers never take the same task; a background upload is read by a task; every read is in the ledger; the budget stops paid work; erasure unlinks cost rows; a paid call stays in the ledger when its task fails. e2e: uploads progress in the background; Costs page.

@@ -44,6 +44,8 @@ export function reasonWords(reason: string | null): string {
       return `evidence of ${rest.replaceAll(",", ", ")}`;
     case "no_distinctive_requirements":
       return "job has no distinctive must-haves yet";
+    case "cv_unreadable":
+      return "the CV has no readable text (an image of a page): open the file";
     case "human_override":
       return `set by hand: ${rest}`;
     case "match": {
@@ -149,7 +151,7 @@ export const DOMAINS = [
   "automotive / mobility", "logistics / supply chain", "procurement", "construction / property", "public sector",
   "education", "travel / hospitality", "marketing / advertising", "it services / consulting", "enterprise software",
   "cybersecurity", "ai / data", "agriculture / food", "manufacturing / industrial", "hr / recruiting", "legal",
-  "research / academia", "non-profit", "other",
+  "research / academia", "non-profit", "luxury / fashion / beauty", "other",
 ];
 
 // Matching v2 (I5)
@@ -179,3 +181,8 @@ export function ago(iso: string | null | undefined): string {
 export function jobsWorthShowing<T extends { band: string; state?: string }>(jobs: T[]): T[] {
   return jobs.filter((j) => j.band !== "do_not_submit" || !["new", "seen", undefined].includes(j.state));
 }
+
+/** How often a role's sourcing plan searches (docs/next/PLAN.md, phase 1). */
+export const MODE_LABEL: Record<"paused" | "daily" | "weekly" | "continuous", string> = {
+  paused: "Paused", daily: "Daily", weekly: "Weekly", continuous: "Until the target",
+};

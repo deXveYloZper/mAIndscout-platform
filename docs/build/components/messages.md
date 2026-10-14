@@ -1,6 +1,6 @@
 # Messages and mailbox
 
-**Status:** built (Slice 4, step 5)
+**Status:** built (Slice 4, step 5); LinkedIn first messages added in the next build, phase 1
 **Code:**
 - `core/maindscout/intelligence/drafts.py` (the writer, no database)
 - `core/maindscout/api/messages.py` (projection, lifecycle, follow-ups, sync)
@@ -14,6 +14,8 @@
 - **Sent and replied are noticed.** Every 5 minutes (or with "Look now"), the desk checks each draft it placed. A draft that has gone to Sent is marked sent and logged as an email out on the timeline, which counts as contact for [freshness](freshness.md). A reply in the thread is marked replied and logged as an email in.
 - **Follow-ups that a reply stops.** 4 days after a first contact or a client introduction goes unanswered, a short follow-up is drafted and placed in the mailbox drafts, never sent. Any reply in the thread cancels open follow-ups and deletes their drafts from the mailbox.
 - A client introduction is refused while the client has said no to that person ([pipeline](pipeline.md) block).
+- **LinkedIn first messages** (next build, phase 1). These are for people found by sourcing: a profile link, no email. The desk drafts the message and the owner sends it on LinkedIn ("Open their LinkedIn", then "I sent it myself"). It is short, with no privacy line: the desk holds only what their public profile shows (owner, 2026-10-13). Marking it sent moves the person to "contacted" on the role. A LinkedIn follow-up stays a draft on the desk; it never goes to a mailbox.
+- **"Stop" wins** ([permission and stop](permission-and-stop.md)). Nothing is drafted to someone who asked not to be contacted, and they are never introduced to a client. Saying stop cancels their open drafts and follow-ups.
 
 ## Why
 The [Slice 4 plan](../../slice-4/PLAN.md) says drafts come from approved facts only and any reply stops follow-ups. The owner chose Gmail and Outlook. Keeping send in the recruiter's hands is stricter than the plan's "first send of each kind is done by a person": nothing the machine writes reaches anyone without a person pressing send.
@@ -26,7 +28,7 @@ The [Slice 4 plan](../../slice-4/PLAN.md) says drafts come from approved facts o
   - the earlier messages in the thread;
   - the recruiter's own line.
 
-  Bands, match tiers, flags, reasons and other people are never given to it.
+  For a LinkedIn message to someone known only from a public profile, the writer sees only what that profile says: up to two current roles and up to four of the role's skills. Bands, match tiers, flags, reasons and other people are never given to it.
 - **A last mechanical check.** Words like tier, score, band, flag, "do not submit", "review later", coverage or a percentage refuse the model's draft, and the plain template is used instead. The same check refuses an edit that adds them.
 - **Lifecycle:** `draft` → `in_mailbox` → `sent` → `replied`; follow-ups can be `cancelled`. Drafting uses the model (cost recorded as `draft_message`, inside the budget). Without a model, or if it fails, the template is used.
 - **Mailbox.** One per desk, connected by OAuth.
@@ -45,13 +47,16 @@ Settings (all in `core/.env`):
 - `RECRUITER_NAME` (sign-off).
 
 ## Depends on
-[relationship-memory.md](relationship-memory.md), [pipeline.md](pipeline.md), [brief.md](brief.md), [review.md](review.md), [tasks-and-costs.md](tasks-and-costs.md), [erasure.md](erasure.md).
+[relationship-memory.md](relationship-memory.md), [pipeline.md](pipeline.md), [brief.md](brief.md), [review.md](review.md), [tasks-and-costs.md](tasks-and-costs.md), [erasure.md](erasure.md), [permission-and-stop.md](permission-and-stop.md), [coverage-gate.md](coverage-gate.md) (`discovered_only`).
+
+## Used by
+[sourcing-results.md](sourcing-results.md) (contacted and replied), [cockpit.md](cockpit.md).
 
 ## Contracts
 - `GET /v1/mailbox`, `POST /v1/mailbox/connect/{google|microsoft}` (returns the sign-in URL).
 - `GET /v1/mailbox/callback/{provider}` (public; the signed state proves who started it; redirects to the cockpit).
 - `DELETE /v1/mailbox`, `POST /v1/mailbox/sync`.
-- `POST /v1/messages {kind, candidate_id, contact_id?, job_id?, note?}`, `PATCH /v1/messages/{id} {subject, body}`.
+- `POST /v1/messages {kind, candidate_id, contact_id?, job_id?, note?, channel?}`, where `channel` is `email` (the default) or `linkedin`, the latter for a first contact only. `PATCH /v1/messages/{id} {subject, body}`.
 - `POST /v1/messages/{id}/mailbox` (returns `open`, the link to the draft), `POST /v1/messages/{id}/sent`, `POST /v1/messages/{id}/replied`.
 - The person page carries `messages` and `client_contacts`.
 
@@ -67,7 +72,7 @@ Settings (all in `core/.env`):
 - connecting needs the provider's app set up;
 - erasure removes messages.
 
-`test_sourcing.py` checks that no route or connector can send.
+`test_sourcing.py` checks that no route or connector can send. `test_autosource.py` checks the LinkedIn first message (public facts only, no privacy line, "contacted" when sent, no mailbox) and that "stop" refuses drafts and introductions.
 
 e2e: draft a first contact, edit, mark it sent; the timeline shows the email.
 

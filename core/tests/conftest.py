@@ -71,3 +71,24 @@ def owner(session, org, monkeypatch):
     monkeypatch.setenv("AUTH_KEY", "test-auth-key")
     user, _ = auth.create_user(session, OWNER, "Desk Owner", org.id, "owner", password=PASSWORD, totp_secret=TOTP)
     return user
+
+
+@pytest.fixture(autouse=True)
+def no_paid_calls(monkeypatch):
+    """Tests never reach a paid API: in Docker the repo (and core/.env with real keys) is mounted. Background work
+    that would build a real model, research or Exa client gets one that refuses; a test that needs one sets its own."""
+    from maindscout.api import task_handlers
+    from maindscout.intelligence.llm import LLMError
+
+    class NoPaidCalls:
+        model = "no-paid-calls"
+
+        def complete_json(self, *args, **kwargs):
+            raise LLMError("tests never call the real model")
+
+        def search_json(self, *args, **kwargs):
+            raise LLMError("tests never call the real research search")
+
+    monkeypatch.setattr(task_handlers, "llm_factory", lambda: NoPaidCalls())
+    monkeypatch.setattr(task_handlers, "search_factory", lambda: NoPaidCalls())
+    monkeypatch.setattr(task_handlers, "exa_factory", lambda: None)

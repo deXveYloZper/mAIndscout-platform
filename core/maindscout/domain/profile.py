@@ -38,8 +38,34 @@ DOMAINS = [
     "automotive / mobility", "logistics / supply chain", "procurement", "construction / property", "public sector",
     "education", "travel / hospitality", "marketing / advertising", "it services / consulting", "enterprise software",
     "cybersecurity", "ai / data", "agriculture / food", "manufacturing / industrial", "hr / recruiting", "legal",
-    "research / academia", "non-profit", "other",
+    "research / academia", "non-profit", "luxury / fashion / beauty", "other",
 ]
+# Words that name an industry in an ad or a note, for when the model leaves the industry empty ("Experience in luxury,
+# premium fashion, accessories, beauty…" came back with none, 2026-10-13). Only specific words: never "software" or "digital".
+DOMAIN_WORDS: dict[str, str] = {
+    "luxury / fashion / beauty": r"luxury|fashion|beauty|cosmetics?|jewell?e?ry|haute couture|premium brands?",
+    "travel / hospitality": r"hospitality|hotels?|travel industry",
+    "procurement": r"procurement", "fintech": r"fintech", "payments": r"payments", "banking": r"banking",
+    "insurance": r"insurance", "e-commerce": r"e-?commerce", "gaming / gambling": r"gaming|gambling|igaming",
+    "space / earth observation": r"earth observation|satellites?|space industry", "aerospace / defence": r"aerospace|defen[cs]e",
+    "automotive / mobility": r"automotive", "pharma / biotech": r"pharma(ceutical)?s?|biotech", "healthcare": r"healthcare",
+    "logistics / supply chain": r"logistics|supply chain", "energy / utilities": r"energy sector|utilities",
+    "media / entertainment": r"entertainment|broadcast", "agriculture / food": r"agri(culture|tech)|food industry",
+}
+
+
+def domains_in(text: str) -> list[str]:
+    """The industries a sentence names, in the order it names them."""
+    import re as _re
+
+    hits = []
+    for domain, words in DOMAIN_WORDS.items():
+        m = _re.search(rf"\b({words})\b", text or "", _re.I)
+        if m:
+            hits.append((m.start(), domain))
+    return [d for _, d in sorted(hits)]
+
+
 # Kinds of work that build on each other count together as relevant experience (a GIS data scientist who becomes a
 # data scientist, an engineer who becomes a team lead). A restaurant job never counts towards software.
 GROUPS = {

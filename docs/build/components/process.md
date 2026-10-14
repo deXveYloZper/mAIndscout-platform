@@ -18,6 +18,8 @@
 - **A job ad** (`doc_type=jd`): creates a job (title, hiring company) and `JobRequirementClaim`s; process dates already passed (against the file's date) get `job_process_stale`. Contact details in the ad are never filed as a person.
 - **Rerun:** a processed document is not read again; passing a different job just (re)triages the pair. `force=True` reads it again: a job ad updates the job it created (never a second job), and the machine's earlier *proposed* facts that rest only on this document and were not found again are marked `superseded`. Approved facts, and facts also supported by another source, are never touched.
 - **Bands with history:** `retriage_pair` / `retriage_candidate` / `retriage_job` recompute bands from live facts and append a `pair_event` only when the band or reason changes (the first banding is recorded as cause `document_processed`).
+- **An unreadable CV is not a miss** (2026-10-08): when nothing of a person's career or skills was read and one of their files has no text layer (`needs_vision`, e.g. an image of a page), a `do_not_submit` becomes `review_later` with reason `cv_unreadable` ("open the file").
+- **Pieced quotes:** evidence the span check assembled from separate places on a multi-column page keeps every piece's offsets (`locator.parts`) and is marked `tier: assembled` ([intelligence.md](intelligence.md)).
 - **Contradictions:** two current locations in different countries from the same date open a `contradiction` card.
 - Why a flag was raised (e.g. which link disagreed) is kept on the evidence row, not in the payload.
 - A document that is neither cv nor jd ends as `needs_human`. Span failures, cost and the model/prompt versions are kept on the run.
@@ -35,5 +37,5 @@
 `core/tests/test_process.py` (fake model, real Postgres). Live: `RUN_LIVE=1 python -m pytest tests/test_live_artifacts.py`. On 2026-10-02 all 11 CVs and 2 job ads passed it for about $0.07 in total.
 
 ## Known limits
-- No queue: it runs inside the HTTP request.
+- Runs inside the HTTP request, except uploads sent with `background=true` (to the pool or onto a job), which run as a `process_document` [background task](tasks-and-costs.md).
 - Span failures live in the run's manifest, not their own table.

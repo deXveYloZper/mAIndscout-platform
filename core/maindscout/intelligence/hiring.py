@@ -11,20 +11,22 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from maindscout.domain.profile import DOMAINS, LEVELS, ROLE_FAMILIES
+from maindscout.domain.profile import DOMAINS, LEVELS, ROLE_FAMILIES, domains_in
 from maindscout.intelligence.llm import LLMClient
 
-HIRING_PROMPT_VERSION = "2026-10-04.3"
+HIRING_PROMPT_VERSION = "2026-10-13.1"
 EMPLOYER_KINDS = ["startup", "scaleup", "large", "consultancy", "agency", "public_sector", "non_profit"]
 STRENGTHS = ["must", "strong_plus", "nice", "anti"]
-KINDS = ["role", "employer", "domain", "target_company", "employment", "skill", "other"]
+KINDS = ["role", "employer", "domain", "target_company", "employment", "skill", "other", "hiring_company", "location"]
+# Read from intake notes only: who is hiring (an anonymised ad names nobody), and where the person must be.
+INTAKE_ONLY = ("hiring_company", "location")
 
 SCHEMA = {
     "type": "object", "additionalProperties": False, "required": ["items"],
     "properties": {"items": {"type": "array", "items": {
         "type": "object", "additionalProperties": False,
         "required": ["kind", "strength", "text", "quote", "role_family", "level", "min_years", "employer_kinds", "domains",
-                     "companies", "employment", "skill_token", "note"],
+                     "companies", "employment", "skill_token", "note", "countries", "cities", "relocation"],
         "properties": {
             "kind": {"type": "string", "enum": KINDS},
             "strength": {"type": "string", "enum": STRENGTHS},
@@ -39,6 +41,10 @@ SCHEMA = {
             "employment": {"type": ["string", "null"], "enum": ["permanent", "contract", "either", None]},
             "skill_token": {"type": ["string", "null"], "description": "lowercase skill token, only for kind skill"},
             "note": {"type": ["string", "null"], "description": "e.g. what it can substitute for, as stated"},
+            "countries": {"type": "array", "items": {"type": "string"},
+                          "description": "location only: two-letter country codes of the places named (Milan -> IT)"},
+            "cities": {"type": "array", "items": {"type": "string"}, "description": "location only: cities named"},
+            "relocation": {"type": ["boolean", "null"], "description": "location only: true if moving there is fine"},
         }}}},
 }
 
@@ -57,11 +63,14 @@ SYSTEM_INTAKE = (
     "role (kind of work, level, years), employer (background: startup, scaleup, large, consultancy, agency, public "
     "sector, non-profit), domain (industry experience, from the list), target_company (companies to source from, or "
     "with anti, not from), employment (permanent / contract / either), skill (a technical skill, with a lowercase "
-    "token), other (anything else concrete, e.g. '0-to-1 product delivery'). Give a role item only when the notes "
+    "token), other (anything else concrete, e.g. '0-to-1 product delivery'), hiring_company (the company that is hiring, "
+    "when the notes say who it is: its name in companies), location (where the person must live or work: cities, "
+    "two-letter country codes, and relocation true when moving there is fine, e.g. 'must be in Milan or willing to "
+    "move to Milan'). Give a role item only when the notes "
     "state what kind of work, level or years the person needs; the job's title mentioned in passing is not one, and never give any item that only names the job. Strength exactly as the notes put it: "
     "must, strong_plus ('strong plus', 'really wants', 'highly desirable'), nice ('nice to have', 'bonus'), anti ('no', "
-    "'not', 'avoid'). If the notes say one thing can substitute for another, put that in note. Location and right to "
-    "work are handled elsewhere: leave them out. Every item quotes the notes exactly. Never items about personality, "
+    "'not', 'avoid'). If the notes say one thing can substitute for another, put that in note. Right to work is "
+    "handled elsewhere: leave it out. Every item quotes the notes exactly. Never items about personality, "
     "attitude, culture or fit. Never guess."
 )
 
@@ -120,6 +129,8 @@ def read(text: str, client: LLMClient, source: str) -> HiringOutcome:
             why = "personality, culture or fit is never a criterion"
         elif source == "ad" and kind in ("skill", "other"):
             why = "skills and other items from the ad are read by the ad reader"
+        elif source == "ad" and kind in INTAKE_ONLY:
+            why = "the ad's company and places are read by the ad reader"
         if why:
             rejected.append({"item": raw.get("text", "")[:80], "reason": why})
             continue
@@ -142,7 +153,7 @@ def read(text: str, client: LLMClient, source: str) -> HiringOutcome:
                 kinds = [k for k, rx in EMPLOYER_WORDS.items() if rx.search(quote)]
             fields = {"employer_kinds": kinds}
         elif kind == "domain":
-            fields = {"domains": [d for d in raw.get("domains") or [] if d in DOMAINS]}
+            fields = {"domains": [d for d in raw.get("domains") or [] if d in DOMAINS] or domains_in(quote)}
         elif kind == "target_company":
             names = [n.strip() for n in raw.get("companies") or [] if n.strip() and n.strip().lower() in quote.lower()]
             fields = {"companies": names}
@@ -153,7 +164,22 @@ def read(text: str, client: LLMClient, source: str) -> HiringOutcome:
             fields = {"employment": raw.get("employment")}
         elif kind == "skill":
             fields = {"skill_token": (raw.get("skill_token") or "").strip().lower() or None}
-        if any(v in (None, [], "") for k, v in fields.items() if k not in ("level", "min_years")):
+        elif kind == "hiring_company":
+            # The model sometimes gives the name as the item's text only (seen on a real note, 2026-10-13).
+            names = [n.strip() for n in [*(raw.get("companies") or []), raw.get("text") or ""]
+                     if n.strip() and len(n.split()) <= 6 and n.strip().lower() in quote.lower()]
+            fields = {"companies": names[:1]}
+        elif kind == "location":
+            from maindscout.domain.geo import NAMES
+
+            cities = [c.strip() for c in raw.get("cities") or [] if c.strip() and c.strip().lower() in quote.lower()]
+            codes = [c.upper() for c in raw.get("countries") or [] if c.upper() in NAMES]
+            if not codes:
+                rejected.append({"item": raw.get("text", "")[:80], "reason": "no country for the place"})
+                continue
+            fields = {"countries": list(dict.fromkeys(codes)), "cities": cities,
+                      "relocation": bool(raw.get("relocation")) if re.search(r"\b(move|moving|relocat|trasfer)", quote, re.I) else False}
+        if any(v in (None, [], "") for k, v in fields.items() if k not in ("level", "min_years", "cities", "relocation")):
             rejected.append({"item": raw.get("text", "")[:80], "reason": "nothing usable from the lists"})
             continue
         if raw.get("note"):

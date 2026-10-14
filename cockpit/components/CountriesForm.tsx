@@ -3,12 +3,13 @@
 import { useActionState } from "react";
 import type { FormState } from "@/app/actions";
 
-export function CountriesForm({ action, opened }: { action: (s: FormState, f: FormData) => Promise<FormState>; opened: string }) {
+/** Where people must live for this role: the one place its countries are kept (names or codes). */
+export function CountriesForm({ action, current }: { action: (s: FormState, f: FormData) => Promise<FormState>; current: string }) {
   const [state, formAction, pending] = useActionState(action, {});
   return (
     <form action={formAction} className="row">
-      <label htmlFor="countries" className="sub">Also accept people living or working in</label>
-      <input id="countries" name="countries" defaultValue={opened} placeholder="e.g. Brazil, Mexico" />
+      <label htmlFor="countries" className="sub">Must live in or work from</label>
+      <input id="countries" name="countries" defaultValue={current} placeholder="e.g. Italy, Spain (empty: no limit)" className="grow" />
       <button className="btn small" disabled={pending}>{pending ? "Saving…" : "Save"}</button>
       {state.error && <span className="error" role="alert">{state.error}</span>}
       {state.message && <span className="sub" role="status">{state.message}</span>}

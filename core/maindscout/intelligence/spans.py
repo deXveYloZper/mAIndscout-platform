@@ -67,6 +67,17 @@ def locate(text: str, quote: str) -> Located | None:
     return Located(start, end, page, text[start:end])
 
 
+def locate_parts(text: str, quote: str) -> list[Located] | None:
+    """A quote the model pieced together from separate lines of a multi-column page ("June 2021 - August 2024" and,
+    elsewhere, "Full-stack Engineer | BlueCat Networks"). Accepted only when it has two to four pieces and every piece
+    is literally in the text; returns them in the order of the quote, or None."""
+    pieces = [x.strip() for x in re.split(r"\n+", quote or "") if x.strip()]
+    if not 2 <= len(pieces) <= 4 or any(len(x) < 3 for x in pieces):
+        return None
+    found = [locate(text, x) for x in pieces]
+    return None if any(f is None for f in found) else found
+
+
 def _digits(value: str) -> str:
     return re.sub(r"\D", "", value)
 

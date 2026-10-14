@@ -51,9 +51,13 @@ class Projection:
     call_answers: list[str] = field(default_factory=list)  # what they said on the call (Brief answers)
     thread: list[dict[str, str]] = field(default_factory=list)  # earlier messages in this thread
     note: str | None = None  # the recruiter's own line (e.g. interview time)
+    channel: str = "email"  # email | linkedin (a LinkedIn message the recruiter sends from LinkedIn)
 
     def as_text(self) -> str:
         lines = [f"Purpose: {PURPOSE[self.kind]}", f"Recipient's first name: {self.recipient_name or 'unknown'}"]
+        if self.channel == "linkedin":
+            lines.append("Channel: a LinkedIn message, not an email: at most 90 words, no subject line in the body, "
+                         "nothing about how their profile was found")
         if self.recruiter_name:
             lines.append(f"Recruiter's name: {self.recruiter_name}")
         if self.job:
@@ -77,6 +81,8 @@ def template(p: Projection) -> tuple[str, str]:
     at = f" at {p.job['company']}" if p.job.get("company") else ""
     why = f" Your background ({p.facts[0]}) stood out." if p.facts else ""
     if p.kind == "candidate_outreach":
+        if p.channel == "linkedin":
+            return f"{role}{at}", f"{hi}\n\nI'm working on {role}{at} and your background{(' (' + p.facts[0] + ')') if p.facts else ''} caught my eye. Open to a short chat?{sign}"
         return f"{role}{at}", f"{hi}\n\nI'm working on {role}{at} and thought of you.{why} Would you be open to a short call this week?{sign}"
     if p.kind == "follow_up":
         subject = (p.thread[-1]["subject"] if p.thread else role)

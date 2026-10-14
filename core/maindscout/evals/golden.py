@@ -74,7 +74,9 @@ def match_file(oracle: dict[str, Any], files: list[Path]) -> Path | None:
         if _norm(f.name) == source:
             return f
     hint = (oracle.get("subject_hint") or {}).get("full_name")
-    tokens = _norm(hint).split() if hint else source.split()[:2]
+    # A person's name, not the words every CV file shares ("CV - Dmitry Chernyshov" once matched Dmitry Blinov).
+    generic = {"cv", "resume", "pdf", "curriculum", "vitae", "the", "of"}
+    tokens = _norm(hint).split() if hint else [t for t in source.split() if t not in generic and not t.isdigit()][:2]
     for f in files:
         if tokens and all(t in _norm(f.name) for t in tokens):
             return f
@@ -406,7 +408,10 @@ def invariants(w: World, path: Path, label: str) -> list[Check]:
     bad = 0
     for ev in s.scalars(select(Evidence).where(Evidence.claim_id.in_([c.id for c in cl]))):
         loc = ev.locator or {}
-        if loc.get("char_start") is not None and artifact.content[loc["char_start"]:loc["char_end"]] != ev.snippet:
+        if loc.get("parts"):
+            if " … ".join(artifact.content[a:b] for a, b in loc["parts"]) != ev.snippet:
+                bad += 1
+        elif loc.get("char_start") is not None and artifact.content[loc["char_start"]:loc["char_end"]] != ev.snippet:
             bad += 1
     check("every snippet is exactly at its location", bad == 0, f"mismatches: {bad}")
     total = len(result.claim_ids) + len(result.span_failures)
@@ -556,12 +561,33 @@ def slice2_checks(w: World, org_id: uuid.UUID) -> list[Check]:
     # There is no mail path.
     from maindscout.api.app import app
     paths = [getattr(r, "path", "") for r in app.routes]
-    mail = [x for x in paths if any(word in x.lower() for word in ("mail", "send", "outreach", "message"))]
-    add("no mail send path", not mail, f"{len(paths)} routes, none send mail" if not mail else f"found {mail}")
+    # Since Slice 4 the desk writes drafts into the user's own Gmail / Outlook; it must never send one itself.
+    from maindscout.api import mailbox
+
+    source = Path(mailbox.__file__).read_text(encoding="utf-8")
+    sends = [x for x in paths if "send" in x.lower()] + [w for w in ("messages/send", "drafts/send", "sendMail", "/send\"")
+                                                          if w in source]
+    add("no mail send path", not sends, f"{len(paths)} routes: drafts only, nothing sends" if not sends else f"found {sends}")
     return out
 
 
 # --- running ---------------------------------------------------------------------------------------
+
+
+def _no_wrong_merges(session, cv_count: int) -> Check:
+    """Every person is one human: copies of the same CV may be one person (that is right), two different names may
+    never share a record."""
+    from maindscout.intelligence.contacts import same_name
+
+    people = session.scalars(select(Candidate)).all()
+    wrong = []
+    for person in people:
+        names = [c.payload["full_name"] for c in session.scalars(select(Claim).where(
+            Claim.subject_id == person.id, Claim.claim_type == "IdentityClaim"))]
+        if any(not same_name(a, b) for a in names for b in names):
+            wrong.append(sorted(set(names)))
+    detail = f"{cv_count} CVs, {len(people)} people (copies of one CV are one person)"
+    return Check("all", "no two different people merged", PASS if not wrong else FAIL, detail if not wrong else f"merged: {wrong}")
 
 
 def _fresh_database() -> str:
@@ -621,8 +647,7 @@ def evaluate(folder: Path, client: LLMClient, blob_dir: Path) -> tuple[list[Chec
         cvs = [f for f in files if not is_jd(f)]
         for i, path in enumerate(cvs, start=1):
             checks += invariants(w, path, f"cv-{i:02d}")
-        checks.append(Check("all", "one person per CV (no merges)", PASS if session.scalar(
-            select(text("count(*)")).select_from(Candidate)) == len(cvs) else FAIL, f"{len(cvs)} CVs"))
+        checks.append(_no_wrong_merges(session, len(cvs)))
         checks += slice1_checks(w, org.id)
         checks += slice2_checks(w, org.id)
         meta = {"files": [f.name for f in files], "cvs": [f.name for f in cvs], "cost_usd": round(cost, 4),

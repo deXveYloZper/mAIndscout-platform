@@ -73,6 +73,27 @@ def test_web_search_is_recorded_too(folder, monkeypatch):
     assert real.calls == 1 and first == again == ({"facts": "Acme"}, ["https://example.com/a"], {"usd": 0.01, "sources": 1})
 
 
+def test_exa_searches_are_recorded_too_without_photos(folder, monkeypatch):
+    monkeypatch.setenv("LLM_REPLAY", "auto")
+
+    class Exa:
+        model, calls = "exa", 0
+
+        def call(self, body):
+            Exa.calls += 1
+            return {"requestId": "r1", "costDollars": {"total": 0.007}, "results": [
+                {"url": "https://www.linkedin.com/in/x-demo", "title": "X Demo", "text": "# X Demo", "image": "https://example.invalid/p.jpg",
+                 "favicon": "https://example.invalid/f.ico", "entities": [{"type": "person", "properties": {
+                     "name": "X Demo", "location": "Munich", "workHistory": [], "pictureUrl": "https://example.invalid/p.jpg"}}]}]}
+
+    body = {"query": "InSAR engineer in Germany", "category": "people", "numResults": 10}
+    first = recording.wrap_exa(Exa).call(body)
+    again = recording.wrap_exa(Exa).call(body)
+    assert Exa.calls == 1 and first == again
+    saved = next((folder / "exa" / "search").glob("*.json")).read_text(encoding="utf-8")
+    assert "example.invalid" not in saved and "X Demo" in saved, "a photo's address is never kept"
+
+
 def test_record_mode_always_calls_and_overwrites(folder, monkeypatch):
     monkeypatch.setenv("LLM_REPLAY", "record")
     real = Counting()

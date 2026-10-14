@@ -9,6 +9,7 @@ from __future__ import annotations
 import threading
 import urllib.parse
 import uuid
+from datetime import date, datetime
 from functools import lru_cache
 from typing import Any, Iterator
 
@@ -26,6 +27,7 @@ from maindscout.db.models import Document, ExtractionArtifact, IntelligenceRun
 from maindscout.db.session import make_engine, make_session_factory
 from maindscout.domain import registry as reg
 from maindscout.ingestion import pdf
+from maindscout.intelligence import exa as exa_mod
 from maindscout.intelligence.llm import LLMClient, LLMError, XaiClient
 from maindscout.settings import env
 from maindscout.storage import BlobStore, LocalBlobStore
@@ -128,6 +130,7 @@ ERRORS: list[tuple[type[Exception], int]] = [
     (costs.BudgetExceeded, 402),
     (review.ReviewError, 422),
     (sourcing.SourcingError, 422),
+    (exa_mod.ExaError, 502),
     (reg.InvalidPayloadError, 422),
     (reg.UnknownFlagError, 422),
     (reg.UnknownClaimTypeError, 422),
@@ -338,6 +341,10 @@ def set_pair_state(job_id: uuid.UUID, candidate_id: uuid.UUID, body: StateBody, 
     """Move a pair along the pipeline (new → seen → contacted → screened → submitted → interviewing → offer → placed;
     or we passed / withdrawn / client rejected). Notes and reasons as the rules say; pairs are never deleted."""
     pair = review.set_state(session, org_id, job_id, candidate_id, body.state, actor, body.reason, body.note)
+    if body.state == "contacted":  # set by hand: the same contact record as every other door (x-ray B2)
+        from maindscout.api import outreach
+
+        outreach.record_contact(session, org_id, job_id, candidate_id, "other", actor)
     session.commit()
     return {"state": pair.pair_state, "outcome": pair.outcome}
 
@@ -353,6 +360,117 @@ def override_band(job_id: uuid.UUID, candidate_id: uuid.UUID, body: BandBody, or
     pair = review.override_band(session, org_id, job_id, candidate_id, body.band, actor, body.reason)
     session.commit()
     return {"band": pair.triage_band, "reason": pair.triage_reason, "overridden_by": pair.band_overridden_by}
+
+
+# --- phase 1c: the owner's workflow on a role's suggestions, and the contact track (api/outreach.py) ---
+
+
+def _pair_view(pair) -> dict:
+    from maindscout.api import outreach
+
+    return {"stage": outreach.stage(pair), "state": pair.pair_state, "band": pair.triage_band,
+            "contact": {k: v for k, v in (pair.contact or {}).items() if k not in ("mail_ids", "machine")} or None}
+
+
+@app.post("/v1/jobs/{job_id}/people/{candidate_id}/viewed")
+def outreach_viewed(job_id: uuid.UUID, candidate_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org),
+                    session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """The owner opened their profile."""
+    from maindscout.api import outreach
+
+    pair = outreach.viewed(session, org_id, job_id, candidate_id, actor)
+    session.commit()
+    return _pair_view(pair)
+
+
+class DecideBody(BaseModel):
+    choice: str  # reach_out | later | pass
+    reason: str | None = None  # for pass: level | skills | location | domain | other
+    note: str | None = None
+
+
+@app.post("/v1/jobs/{job_id}/people/{candidate_id}/decide")
+def outreach_decide(job_id: uuid.UUID, candidate_id: uuid.UUID, body: DecideBody, org_id: uuid.UUID = Depends(get_org),
+                    session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Reach out (Priority, by the owner), maybe later, or not for this role (with a reason)."""
+    from maindscout.api import outreach
+
+    pair = outreach.decide(session, org_id, job_id, candidate_id, body.choice, actor, body.reason, body.note)
+    session.commit()
+    return _pair_view(pair)
+
+
+@app.post("/v1/jobs/{job_id}/people/{candidate_id}/undo")
+def outreach_undo(job_id: uuid.UUID, candidate_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org),
+                  session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Back to the suggestions (before anyone was contacted)."""
+    from maindscout.api import outreach
+
+    pair = outreach.undo(session, org_id, job_id, candidate_id, actor)
+    session.commit()
+    return _pair_view(pair)
+
+
+class ContactedBody(BaseModel):
+    channel: str  # linkedin_invite | linkedin_message | inmail | email
+    note: str | None = None
+
+
+@app.post("/v1/jobs/{job_id}/people/{candidate_id}/contacted")
+def outreach_contacted(job_id: uuid.UUID, candidate_id: uuid.UUID, body: ContactedBody, org_id: uuid.UUID = Depends(get_org),
+                       session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Contacted outside the desk: the follow-up reminder starts (4 days)."""
+    from maindscout.api import outreach
+
+    outreach.contacted(session, org_id, job_id, candidate_id, body.channel, actor, body.note)
+    session.commit()
+    return _pair_view(outreach._pair(session, org_id, job_id, candidate_id))
+
+
+class RepliedBody(BaseModel):
+    outcome: str  # interested | not_now | not_interested | stop
+    note: str | None = None
+    check_back: date | None = None
+    text: str | None = None
+
+
+@app.post("/v1/jobs/{job_id}/people/{candidate_id}/replied")
+def outreach_replied(job_id: uuid.UUID, candidate_id: uuid.UUID, body: RepliedBody, org_id: uuid.UUID = Depends(get_org),
+                     session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    from maindscout.api import outreach
+
+    pair = outreach.replied(session, org_id, job_id, candidate_id, body.outcome, actor, body.note, body.check_back, body.text)
+    session.commit()
+    return _pair_view(pair)
+
+
+class CallBody(BaseModel):
+    when: datetime | None = None
+
+
+@app.post("/v1/jobs/{job_id}/people/{candidate_id}/call-booked")
+def outreach_call(job_id: uuid.UUID, candidate_id: uuid.UUID, body: CallBody, org_id: uuid.UUID = Depends(get_org),
+                  session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    from maindscout.api import outreach
+
+    pair = outreach.call_booked(session, org_id, job_id, candidate_id, actor, body.when)
+    session.commit()
+    return _pair_view(pair)
+
+
+class SettleBody(BaseModel):
+    mine: bool
+
+
+@app.post("/v1/jobs/{job_id}/people/{candidate_id}/linkedin-email")
+def outreach_settle(job_id: uuid.UUID, candidate_id: uuid.UUID, body: SettleBody, org_id: uuid.UUID = Depends(get_org),
+                    session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Two people contacted on LinkedIn share a name: is LinkedIn's email about this one?"""
+    from maindscout.api import outreach
+
+    pair = outreach.settle(session, org_id, job_id, candidate_id, body.mine, actor)
+    session.commit()
+    return _pair_view(pair)
 
 
 @app.get("/v1/candidates")
@@ -502,43 +620,259 @@ def verify_erase(candidate_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), 
     return {"clean": not survivors, "survivors": survivors}
 
 
-class CampaignBody(BaseModel):
-    source: str = "auto"
-    cap: int = sourcing.DEFAULT_CAP
-    target: int = sourcing.DEFAULT_TARGET
+# --- the sourcing engine (docs/next/PLAN.md, phase 1) ---------------------------------------------------------------
 
 
-@app.post("/v1/jobs/{job_id}/campaigns", status_code=201)
-def start_campaign(job_id: uuid.UUID, body: CampaignBody | None = None, org_id: uuid.UUID = Depends(get_org),
-                   session: Session = Depends(get_session), actor: str = Depends(get_actor)):
-    """Refill a thin priority queue: a bounded find whose people go through the same triage as uploads."""
-    body = body or CampaignBody()
-    campaign = sourcing.start(session, org_id, job_id, actor, body.source, body.cap, body.target)
-    session.commit()
-    return sourcing.as_dict(campaign)
-
-
-@app.get("/v1/jobs/{job_id}/campaigns")
-def list_campaigns(job_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
-    from maindscout.db.models import Campaign
-
-    rows = session.scalars(select(Campaign).where(Campaign.job_id == job_id, Campaign.org_id == org_id).order_by(Campaign.created_at.desc()))
-    from maindscout.db.models import CareerProfile, Job
-
-    job = session.get(Job, job_id)
-    profile = sourcing.profile_query(session, job) if job is not None and job.org_id == org_id else None
-    has_profiles = bool(session.scalar(select(CareerProfile.id).where(CareerProfile.org_id == org_id).limit(1)))
-    return {"priority": sourcing.priority_count(session, job_id), "default_target": sourcing.DEFAULT_TARGET,
-            "by_profile": profile["words"] if profile and has_profiles else None,
-            "campaigns": [sourcing.as_dict(c) for c in rows]}
-
-
-@app.post("/v1/campaigns/{campaign_id}/stop")
-def stop_campaign(campaign_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+@app.get("/v1/jobs/{job_id}/sourcing")
+def sourcing_page(job_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
                   actor: str = Depends(get_actor)):
-    campaign = sourcing.stop(session, org_id, campaign_id, actor)
+    """The role's plan (made on first look, paused), budgets, recent runs and the suggestions waiting."""
+    from maindscout.api import autosource
+
+    out = autosource.page(session, org_id, job_id, actor)
     session.commit()
-    return sourcing.as_dict(campaign)
+    return out
+
+
+class PlanBody(BaseModel):
+    mode: str | None = None
+    target: int | None = None
+    monthly_budget_usd: float | None = None
+    role_variants: list[str] | None = None
+    countries: list[str] | None = None
+    rules: dict[str, float] | None = None
+    open_tiers: list[str] | None = None
+
+
+@app.patch("/v1/jobs/{job_id}/sourcing/plan")
+def change_sourcing_plan(job_id: uuid.UUID, body: PlanBody, org_id: uuid.UUID = Depends(get_org),
+                         session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    from maindscout.api import autosource, hiring
+
+    changes = body.model_dump(exclude_none=True)
+    if "countries" in changes:  # the role's countries live in its hiring profile ("must live in"): written there
+        hiring.set_residence(session, org_id, job_id, changes.pop("countries"), actor)
+    if changes:
+        autosource.update_plan(session, org_id, job_id, actor, **changes)
+    out = autosource.page(session, org_id, job_id, actor)
+    session.commit()
+    return out
+
+
+class TargetBody(BaseModel):
+    name: str
+
+
+@app.post("/v1/jobs/{job_id}/sourcing/targets", status_code=201)
+def add_sourcing_target(job_id: uuid.UUID, body: TargetBody, org_id: uuid.UUID = Depends(get_org),
+                        session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    from maindscout.api import autosource
+
+    autosource.add_target(session, org_id, job_id, body.name, actor)
+    out = autosource.page(session, org_id, job_id, actor)
+    session.commit()
+    return out
+
+
+class TargetChange(BaseModel):
+    pinned: bool | None = None
+    removed: bool | None = None
+
+
+@app.patch("/v1/jobs/{job_id}/sourcing/targets/{company_id}")
+def change_sourcing_target(job_id: uuid.UUID, company_id: uuid.UUID, body: TargetChange, org_id: uuid.UUID = Depends(get_org),
+                           session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    from maindscout.api import autosource
+
+    autosource.set_target(session, org_id, job_id, str(company_id), actor, pinned=body.pinned, removed=body.removed)
+    out = autosource.page(session, org_id, job_id, actor)
+    session.commit()
+    return out
+
+
+@app.post("/v1/jobs/{job_id}/sourcing/run", status_code=202)
+def run_sourcing_now(job_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                     actor: str = Depends(get_actor)):
+    """Search now (in the background): the pool, then the web within the budgets."""
+    from maindscout.api import autosource
+
+    job = autosource._job(session, org_id, job_id)
+    if job.state != "open":
+        raise HTTPException(422, "Only an open role is sourced")
+    autosource.plan(session, org_id, job_id, actor)
+    task = tasks.enqueue(session, org_id, "sourcing_run", {"job_id": str(job_id), "trigger": "manual", "actor": actor},
+                         priority=60, dedupe_key=f"sourcing:{job_id}", max_attempts=1)
+    session.commit()
+    return {"task_id": str(task.id), "status": task.status}
+
+
+@app.post("/v1/jobs/{job_id}/sourcing/strategy", status_code=202)
+def build_sourcing_strategy(job_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                            actor: str = Depends(get_actor)):
+    """Build the role's strategy in the background: the hiring company's talent DNA and the tiered target list
+    (paid, under $0.50; docs/next/PLAN.md section 4b)."""
+    from maindscout.api import autosource
+
+    autosource._job(session, org_id, job_id)
+    autosource.plan(session, org_id, job_id, actor)
+    task = tasks.enqueue(session, org_id, "sourcing_strategy", {"job_id": str(job_id), "actor": actor},
+                         priority=60, dedupe_key=f"strategy:{job_id}", max_attempts=1)
+    session.commit()
+    return {"task_id": str(task.id), "status": task.status}
+
+
+class WidenBody(BaseModel):
+    option: str
+    value: str | list[str] | None = None
+
+
+@app.post("/v1/jobs/{job_id}/sourcing/widen")
+def widen_sourcing(job_id: uuid.UUID, body: WidenBody, org_id: uuid.UUID = Depends(get_org),
+                   session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """The owner's choice from a widening proposal: open a tier, add titles or a country, or search the market."""
+    from maindscout.api import autosource, strategy
+
+    strategy.widen(session, org_id, job_id, actor, body.option, body.value)
+    out = autosource.page(session, org_id, job_id, actor)
+    session.commit()
+    return out
+
+
+@app.get("/v1/sourcing/stats")
+def sourcing_results(job_id: uuid.UUID | None = Query(None), group: str = Query("channel"), since: str | None = Query(None),
+                     org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """Results and spend: what each search strategy cost and what it brought."""
+    from datetime import date as _date
+
+    from maindscout.api import sourcing_stats
+
+    if job_id is not None:
+        from maindscout.api import autosource
+
+        autosource._job(session, org_id, job_id)
+    return sourcing_stats.stats(session, org_id, job_id, group, _date.fromisoformat(since) if since else None)
+
+
+@app.get("/v1/sourcing/settings")
+def sourcing_settings(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    from maindscout.api import autosource
+
+    return {"sourcing_budget_usd": autosource.desk_budget(session, org_id),
+            "spent_usd": round(costs.sourcing_spent(session, org_id), 4), "web_ready": bool(env("EXA_API_KEY"))}
+
+
+class SourcingSettingsBody(BaseModel):
+    sourcing_budget_usd: float
+
+
+@app.put("/v1/sourcing/settings")
+def change_sourcing_settings(body: SourcingSettingsBody, org_id: uuid.UUID = Depends(get_org),
+                             _owner: auth.Principal = Depends(require_owner), session: Session = Depends(get_session)):
+    """The desk's monthly sourcing budget (owners)."""
+    from maindscout.api import autosource
+
+    autosource.set_desk_budget(session, org_id, body.sourcing_budget_usd)
+    session.commit()
+    return {"sourcing_budget_usd": autosource.desk_budget(session, org_id), "spent_usd": round(costs.sourcing_spent(session, org_id), 4)}
+
+
+@app.get("/v1/off-limits")
+def list_off_limits(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """Companies never sourced from: active clients and recent placements (derived) and the desk's own list."""
+    from maindscout.api import autosource
+    from maindscout.db.models import Company, OffLimits
+
+    derived = autosource.off_limits(session, org_id)
+    manual = {str(r.company_id): r for r in session.scalars(select(OffLimits).where(OffLimits.org_id == org_id, OffLimits.removed_at.is_(None)))}
+    names = dict(session.execute(select(Company.id, Company.name).where(Company.id.in_([uuid.UUID(c) for c in derived] or [None]))).all())
+    return {"companies": [{"company_id": cid, "name": names.get(uuid.UUID(cid)), "why": why,
+                           "id": str(manual[cid].id) if cid in manual else None,
+                           "until": manual[cid].until.isoformat() if cid in manual and manual[cid].until else None}
+                          for cid, why in sorted(derived.items(), key=lambda kv: (names.get(uuid.UUID(kv[0])) or "").lower())]}
+
+
+class OffLimitsBody(BaseModel):
+    name: str
+    until: str | None = None
+    note: str | None = None
+
+
+@app.post("/v1/off-limits", status_code=201)
+def add_off_limits(body: OffLimitsBody, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                   actor: str = Depends(get_actor)):
+    from datetime import date as _date
+
+    from maindscout.db.models import OffLimits
+
+    company, _ = companies.resolve(session, body.name, "human")
+    if company is None:
+        raise HTTPException(422, f"{body.name!r} is not a company name")
+    company = companies.canonical(session, company)
+    row = OffLimits(org_id=org_id, company_id=company.id, reason="manual", note=(body.note or "").strip() or None,
+                    until=_date.fromisoformat(body.until) if body.until else None, created_by=actor)
+    session.add(row)
+    session.commit()
+    return {"id": str(row.id), "company_id": str(company.id), "name": company.name}
+
+
+@app.delete("/v1/off-limits/{row_id}")
+def remove_off_limits(row_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                      actor: str = Depends(get_actor)):
+    from datetime import datetime as _dt, timezone as _tz
+
+    from maindscout.db.models import OffLimits
+
+    row = session.get(OffLimits, row_id)
+    if row is None or row.org_id != org_id:
+        raise LookupError(f"No off-limits entry {row_id}")
+    row.removed_by, row.removed_at = actor, _dt.now(_tz.utc)
+    session.commit()
+    return {"removed": True}
+
+
+class PermissionBody(BaseModel):
+    job_id: uuid.UUID | None = None
+    this_role: bool = False
+    other_roles: bool = False
+    how: str | None = None
+    note: str | None = None
+
+
+@app.post("/v1/candidates/{candidate_id}/permission", status_code=201)
+def record_permission(candidate_id: uuid.UUID, body: PermissionBody, org_id: uuid.UUID = Depends(get_org),
+                      session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """What they said yes to: being put forward for this role, and/or for other roles."""
+    from maindscout.api import consent
+
+    consent.record(session, org_id, candidate_id, actor, this_role=body.this_role, other_roles=body.other_roles,
+                   job_id=body.job_id, how=body.how, note=body.note)
+    session.commit()
+    return {"permissions": consent.of(session, org_id, candidate_id)}
+
+
+class NoteBody(BaseModel):
+    note: str | None = None
+
+
+@app.post("/v1/candidates/{candidate_id}/stop")
+def stop_contact(candidate_id: uuid.UUID, body: NoteBody | None = None, org_id: uuid.UUID = Depends(get_org),
+                 session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """They asked not to be contacted: never suggested or drafted to again."""
+    from maindscout.api import consent
+
+    person = consent.stop(session, org_id, candidate_id, actor, (body or NoteBody()).note)
+    session.commit()
+    return {"do_not_contact_at": person.do_not_contact_at.isoformat() if person.do_not_contact_at else None}
+
+
+@app.post("/v1/candidates/{candidate_id}/stop/lift")
+def lift_stop_contact(candidate_id: uuid.UUID, body: NoteBody, org_id: uuid.UUID = Depends(get_org),
+                      session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    from maindscout.api import consent
+
+    consent.lift_stop(session, org_id, candidate_id, actor, body.note or "")
+    session.commit()
+    return {"do_not_contact_at": None}
 
 
 @app.get("/v1/companies")
@@ -551,6 +885,33 @@ def list_companies(q: str | None = Query(None), org_id: uuid.UUID = Depends(get_
 def get_company(company_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
     """A company: its names, this desk's people who worked there (with title and period), and its jobs here."""
     return companies.company_page(session, org_id, company_id)
+
+
+class CompanyKeysBody(BaseModel):
+    website: str | None = None
+    linkedin: str | None = None
+
+
+@app.put("/v1/companies/{company_id}/keys")
+def put_company_keys(company_id: uuid.UUID, body: CompanyKeysBody, org_id: uuid.UUID = Depends(get_org),
+                     session: Session = Depends(get_session)):
+    """A company's website or LinkedIn page, typed by a person: how Exa confirms it is this company (so a role's talent
+    DNA can be learned). A key another company already holds is never moved: a "Same company?" card asks instead."""
+    from maindscout.db.models import Company
+
+    company = companies.canonical(session, session.get(Company, company_id))
+    if company is None:
+        raise LookupError(f"No company {company_id}")
+    if body.website and not companies.domain_of(body.website):
+        raise ValueError("That is not a company website (a LinkedIn or other profile site is not one): type e.g. buonaventura.it")
+    if body.linkedin and not companies.linkedin_of(body.linkedin):
+        raise ValueError("Type the company's LinkedIn page, e.g. linkedin.com/company/buonaventura")
+    clash = companies.learn_keys(session, company, domain=body.website, linkedin=body.linkedin, org_id=org_id)
+    if body.website and companies.domain_of(body.website) and not company.website:
+        company.website = f"https://{companies.domain_of(body.website)}"
+    session.commit()
+    out = companies.company_page(session, org_id, company.id)
+    return {**out, "clash": {"id": str(clash.id), "name": clash.name} if clash is not None else None}
 
 
 class MergeBody(BaseModel):
@@ -604,10 +965,11 @@ class CountriesBody(BaseModel):
 @app.put("/v1/jobs/{job_id}/countries")
 def set_job_countries(job_id: uuid.UUID, body: CountriesBody, org_id: uuid.UUID = Depends(get_org),
                       session: Session = Depends(get_session), actor: str = Depends(get_actor)):
-    """Open a job to countries beyond the desk's coverage (codes or names). Its people are re-checked."""
-    from maindscout.api import coverage
+    """Where people must live for this role (codes or names): the hiring profile's "must live in", the one place the
+    role's countries are kept. Its people are re-checked and the sourcing plan follows."""
+    from maindscout.api import hiring
 
-    coverage.set_open_countries(session, org_id, job_id, body.countries, actor)
+    hiring.set_residence(session, org_id, job_id, body.countries, actor)
     session.commit()
     return queries.job_page(session, org_id, job_id)
 
@@ -625,6 +987,49 @@ def bring_back(candidate_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), se
 
 class IntakeBody(BaseModel):
     text: str
+
+
+class JobStateBody(BaseModel):
+    state: str  # open | on_hold | filled | cancelled
+    note: str | None = None
+
+
+@app.put("/v1/jobs/{job_id}/state")
+def put_job_state(job_id: uuid.UUID, body: JobStateBody, org_id: uuid.UUID = Depends(get_org),
+                  session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Close a role (on hold, filled, cancelled: sourcing stops, everything is kept) or open it again."""
+    from maindscout.api import roles
+
+    roles.set_state(session, org_id, job_id, body.state, actor, body.note)
+    session.commit()
+    return queries.job_page(session, org_id, job_id)
+
+
+@app.delete("/v1/jobs/{job_id}")
+def delete_job(job_id: uuid.UUID, remove_people: bool = Query(False), org_id: uuid.UUID = Depends(get_org),
+               session: Session = Depends(get_session), blobs: BlobStore = Depends(get_blobs), actor: str = Depends(get_actor)):
+    """Delete a role added by mistake. `remove_people`: also the people only its own sourcing found (web profiles, on
+    no other role), without putting them on the never-again list."""
+    from maindscout.api import roles
+
+    counts = roles.delete_role(session, blobs, org_id, job_id, actor, remove_people)
+    session.commit()
+    return {"deleted": True, "counts": counts}
+
+
+class HiringCompanyBody(BaseModel):
+    name: str
+
+
+@app.put("/v1/jobs/{job_id}/hiring-company")
+def put_hiring_company(job_id: uuid.UUID, body: HiringCompanyBody, org_id: uuid.UUID = Depends(get_org),
+                       session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Who is hiring, typed by a person (an anonymised ad names nobody)."""
+    from maindscout.api import hiring
+
+    company = hiring.set_hiring_company(session, org_id, job_id, body.name, actor)
+    session.commit()
+    return {"hiring_company": body.name, "company_id": str(company.id)}
 
 
 @app.post("/v1/jobs/{job_id}/intake")
@@ -930,8 +1335,12 @@ def log_person_activity(candidate_id: uuid.UUID, body: ActivityBody, org_id: uui
     """Log a call, email, meeting, message or note with a person."""
     from maindscout.api import relationship
 
+    from maindscout.api import outreach
+
     a = relationship.log(session, org_id, "candidate", candidate_id, body.kind, body.summary, actor, direction=body.direction,
                          occurred_at=_when(body.occurred_at), job_id=body.job_id)
+    # About a role, it counts there: "we reached out" is first contact, "they reached out" a reply (x-ray B2).
+    outreach.from_activity(session, org_id, candidate_id, body.kind, body.direction, body.job_id, actor, a.occurred_at, body.summary)
     session.commit()
     return {"id": str(a.id)}
 
@@ -1166,6 +1575,7 @@ class DraftBody(BaseModel):
     contact_id: uuid.UUID | None = None
     job_id: uuid.UUID | None = None
     note: str | None = None
+    channel: str = "email"  # email | linkedin
 
 
 @app.post("/v1/messages", status_code=201)
@@ -1175,7 +1585,7 @@ def draft_message(body: DraftBody, org_id: uuid.UUID = Depends(get_org), session
     from maindscout.api import messages
 
     m = messages.draft(session, org_id, body.kind, actor, llm, candidate_id=body.candidate_id, contact_id=body.contact_id,
-                       job_id=body.job_id, note=body.note)
+                       job_id=body.job_id, note=body.note, channel=body.channel)
     session.commit()
     return messages.as_dict(m)
 
