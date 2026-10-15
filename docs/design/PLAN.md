@@ -19,13 +19,13 @@ The desk shares the website's colours but none of its craft:
 - **No starting point.** The home page is the jobs table. A recruiter starting the day wants to know who's waiting, what needs a decision, and who's going stale.
 
 ## Direction
-Calm, dark and editorial, like the website, built as a modern tool. It should feel like Linear, Superhuman or Attio: fast, keyboard-friendly, quiet until something needs you. The brand shows in a few strong places (typewriter titles, amber accents, the split-flap nod), not on every word.
+Calm, dark and editorial, like the website, built as a modern tool. It should feel like Linear, Superhuman or Attio: fast, keyboard-friendly, quiet until something needs you. The brand shows in a few strong places (Plex Sans Light titles, amber accents, the split-flap nod), not on every word.
 
 ## In scope, in order
 1. **Foundations: tokens and type.**
    - Colour, spacing, radius, shadow and motion tokens in one place.
    - Type:
-     - Special Elite for page titles (the website's voice);
+     - IBM Plex Sans Light for page titles, as on the website (Special Elite until 2026-10-15);
      - IBM Plex Sans for interface text (readable at small sizes);
      - IBM Plex Mono only for data (numbers, dates, IDs, counts) with tabular figures.
    - Band colours with meaning:
