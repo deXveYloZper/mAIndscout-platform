@@ -13,7 +13,7 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
 ## How
 - **Design (2026-10-06):**
   - `app/globals.css` is one token-driven system: colours, spacing, radius, shadow and motion.
-  - Type: IBM Plex Sans for the interface, Special Elite for page titles (the website's voice), Plex Mono for numbers.
+  - Type: IBM Plex Sans for the interface and page titles (Light), Plex Mono for numbers; the same two fonts and palette as the website (owner, 2026-10-15).
   - Bands have meaning in colour (Priority amber, Review later slate, Do not submit muted red).
   - Motion stays under 250 ms and is off with reduced motion.
 - **Shell (`app/(desk)/layout.tsx`, `components/shell/`):**
