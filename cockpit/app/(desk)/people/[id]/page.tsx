@@ -42,7 +42,7 @@ export default async function Person({ params, searchParams }: { params: Promise
   const live = (t: string) => (person.claims[t] ?? []).filter((c) => c.status === "proposed" || c.status === "approved");
   const hasEmail = live("ContactClaim").some((c) => c.payload.kind === "email");
   const hasLinkedIn = live("ContactClaim").some((c) => c.payload.kind === "linkedin");
-  const webOnly = person.documents.length > 0 && person.documents.every((d) => d.doc_type === "web_profile");
+  const webOnly = person.documents.length > 0 && person.documents.every((d) => d.doc_type === "web_profile" || d.doc_type === "web_page");
   const current = live("CareerStepClaim").find((c) => !c.valid_to);
   const place = live("LocationClaim").find((c) => (c.payload.kind ?? "current") === "current");
   const toApprove = Object.values(person.claims).flat().filter((c) => c.status === "proposed").length;

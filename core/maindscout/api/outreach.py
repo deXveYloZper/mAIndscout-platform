@@ -76,7 +76,9 @@ def undecided_pairs(session: Session, org_id: uuid.UUID, job_id: uuid.UUID | Non
     for cid, kind in session.execute(select(DocumentSubject.subject_id, Document.doc_type).join(
             Document, Document.id == DocumentSubject.document_id).where(DocumentSubject.subject_id.in_({c for _, c in rows}))):
         kinds.setdefault(cid, set()).add(kind)
-    return {(j, c) for j, c in rows if kinds.get(c) and kinds[c] <= {"web_profile"}}
+    from maindscout.db.models import PUBLIC_DOC_TYPES
+
+    return {(j, c) for j, c in rows if kinds.get(c) and kinds[c] <= PUBLIC_DOC_TYPES}
 
 
 def undecided(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> set[uuid.UUID]:

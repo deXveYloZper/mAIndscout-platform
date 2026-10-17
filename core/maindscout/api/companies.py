@@ -221,6 +221,8 @@ def people_at(session: Session, org_id: uuid.UUID, company_id: uuid.UUID) -> lis
 
 
 def company_page(session: Session, org_id: uuid.UUID, company_id: uuid.UUID) -> dict[str, Any]:
+    from maindscout.api import practices as company_practices
+
     company = canonical(session, session.get(Company, company_id))
     if company is None:
         raise LookupError(f"No company {company_id}")
@@ -253,6 +255,9 @@ def company_page(session: Session, org_id: uuid.UUID, company_id: uuid.UUID) -> 
             "research_status": company.research_status,
             "researched_at": company.researched_at.isoformat() if company.researched_at else None,
             "facts": research.facts(session, company),
+            # What it uses in its own work, from its job adverts (employer evidence, owner 2026-10-17).
+            "practices": company_practices.of_company(session, company),
+            "practices_at": company.practices_at.isoformat() if company.practices_at else None,
             "aliases": sorted(aliases), "people": list(grouped.values()), "people_count": len(grouped),
             "jobs": [{"id": str(j.id), "title": j.title} for j in jobs],
             "contacts": relationship.contacts_at(session, org_id, [uuid.UUID(i) for i in _ids_for(session, company)]),

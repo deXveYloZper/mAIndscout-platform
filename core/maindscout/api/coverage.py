@@ -125,7 +125,9 @@ def discovered_only(session: Session, candidate_id) -> bool:
 
     kinds = set(session.scalars(select(Document.doc_type).join(DocumentSubject, DocumentSubject.document_id == Document.id)
                                 .where(DocumentSubject.subject_id == candidate_id)))
-    return bool(kinds) and kinds <= {"web_profile"}
+    from maindscout.db.models import PUBLIC_DOC_TYPES
+
+    return bool(kinds) and kinds <= PUBLIC_DOC_TYPES
 
 
 def would_accept(session: Session, org_id, candidate_id, job: Job) -> bool:

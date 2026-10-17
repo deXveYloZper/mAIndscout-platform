@@ -67,7 +67,9 @@ class Match:
                 "rows": [v.__dict__ for v in self.rows]}
 
 
-GAP_TO_VERDICT = {"evidence": "strong", "missing": "gap", "conflict": "gap", "question": "ask"}
+# "likely" (their employer uses it, by its own advert) is partly met: it can lift a missing must-have to possible,
+# never make a match strong on its own (owner, 2026-10-17).
+GAP_TO_VERDICT = {"evidence": "strong", "likely": "partial", "missing": "gap", "conflict": "gap", "question": "ask"}
 
 
 def _years(x: float) -> str:
@@ -214,6 +216,8 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
         if g.kind == "skill" and g.status == "missing" and not g.distinctive:
             # A broad skill not written on a CV is not evidence of its absence: ask (distinctive ones decide, rule 1).
             verdict, detail = "ask", f"{g.detail}; not shown on the CV: ask"
+        elif g.status == "likely" and not g.distinctive:
+            verdict = "ask"  # their employer's stack: at least as good as a broad skill not written down
         rows.append(Verdict(g.requirement_id, g.requirement, g.kind, g.strength, verdict, detail, g.distinctive))
     thin = profile is None or profile["reading"]["label"] == "unclear"
     for r in requirements:

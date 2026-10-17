@@ -25,6 +25,7 @@ Plan section 4.6 and phase I5: replace keyword triage with a comparison of what 
 - **Verdicts:**
   - Skills, years, education and languages come from the gap table.
   - A broad must-have skill not written on a CV ("project management skills") is a question, not a gap: absence from a CV isn't evidence. Distinctive must-haves still decide, as today.
+  - **Likely from their employer** ([employer evidence](employer-evidence.md), 2026-10-17): a distinctive must-have that is only likely is "partly met" (so at most possible, never strong on its own); a broad skill that is likely is "Ask". The token triage that rule 1 reads says `likely_from_employer` instead of `no_support_for_must_have`, so rule 1 does not fire for it.
   - Role: compares the kind of work (same, related or other), the title level, and years of related work.
   - Background: years at start-ups, scale-ups, consultancies and so on, from employer mix.
   - Industry: years from domain exposure.
@@ -42,6 +43,7 @@ Plan section 4.6 and phase I5: replace keyword triage with a comparison of what 
   7. **must_gaps**: two or more must-have gaps → unlikely; one → possible.
   8. **partial_must**: a must-have only partly met → possible.
   9. **strong_match**: every must-have fully met or only to ask, and at least half of the known strong-plus items met → strong. Otherwise possible.
+- **A strong web find gets a deeper look** ([evidence checks](evidence-checks.md), 2026-10-17): when a re-banding leaves someone found by a web people search in priority, an evidence check is queued (once per 90 days).
 - **When:** every re-banding computes the match: after a CV is read, a fact is approved or corrected, a career profile is built, or the hiring profile changes. The match is kept up to date even when a person set the band by hand, but a hand-set band is never changed. `python -m maindscout rematch` re-matches everyone at no cost.
 
 ## Depends on

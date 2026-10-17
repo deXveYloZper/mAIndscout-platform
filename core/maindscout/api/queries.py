@@ -356,11 +356,14 @@ def _gap_rows_many(session: Session, org_id: uuid.UUID, job: Job, candidate_ids:
                                                      Claim.status.in_(LIVE))):
             claims[c.subject_id].append(c)
     ev = evidence_for(session, [c.id for cs in claims.values() for c in cs]) if with_snippets else defaultdict(list)
+    from maindscout.api.practices import employer_facts
+
+    employers = employer_facts(session, claims)  # what their employers use, for skills they never wrote down
     out = {}
     for cid, mine in claims.items():
         facts = [gaps.Fact(str(c.id), c.claim_type, c.approved_view or c.payload, c.status, c.valid_from, c.valid_to,
                            (ev[c.id][-1]["snippet"] if ev[c.id] else None)) for c in mine]  # newest reading
-        out[cid] = gaps.gap_table(requirements, facts)
+        out[cid] = gaps.gap_table(requirements, facts + employers.get(cid, []))
     return out
 
 

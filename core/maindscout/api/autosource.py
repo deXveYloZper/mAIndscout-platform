@@ -372,6 +372,10 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
                                 target=query.target if query else None, tier=query.tier if query else None,
                                 new_to_desk=new_to_desk))
         session.flush()
+        if channel == "exa_people":  # judged before the hit existed: a strong web find gets its deeper look now
+            from maindscout.api import evidence
+
+            evidence.maybe_queue(session, pair, pair.triage_band)
         strong = pair.triage_band == "priority"
         row.strong += strong
         return True, strong
@@ -409,6 +413,7 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
     seen_pages: set[str] = set()
     added_people: list[uuid.UUID] = []
     employer_ids: dict[str, None] = {}
+    searched_companies: dict[str, None] = {}
     reason = None
     for q in strategy.next_searches(session, job, p, set(radar.live(session, org_id)), limits):
         if strong_waiting(session, job.id) >= p.target:
@@ -435,6 +440,8 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
             row.error = str(error)[:500]
             return done("failed" if made == 0 else "stopped", "error")
         made += 1
+        if q.get("company_id"):
+            searched_companies[q["company_id"]] = None
         costs.record(session, org_id, "sourcing_exa_people", {"model": "exa", "usd": results.usd, "sources": len(results.found)},
                      subject_type="job", subject_id=job.id, task_id=task_id)
         sq.runs += 1
@@ -487,6 +494,13 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
             row.error = str(error)[:500]
     for cid in added_people:
         profiles.queue(session, org_id, cid)
+    # 3b. What the searched companies use, from their own job adverts (employer evidence, owner 2026-10-17): in the
+    # background, once per company per 180 days; its people are matched again when it is read.
+    from maindscout.api import practices
+
+    title = (p.role_variants or [job.title])[0]
+    report["practices"] = sum(practices.queue(session, org_id, job, session.get(Company, uuid.UUID(c)), title)
+                              for c in searched_companies)
 
     # 4. The list grows: earlier employers of strong people, and companies like the ones that produce.
     if made:
@@ -628,6 +642,9 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
     ids = [x.candidate_id for x in shown]
     who, facts = names(session, ids), _people_facts(session, org_id, ids)
     rows = _gap_rows_many(session, org_id, job, ids) if ids else {}
+    from maindscout.api import evidence as evidence_checks
+
+    checks = evidence_checks.summaries(session, job.id, ids)  # the deeper look at strong matches (owner, 2026-10-17)
     queries = {q.id: q for q in session.scalars(select(SourcingQuery).where(SourcingQuery.job_id == job.id))}
     now = datetime.now(timezone.utc).isoformat()
     lists: dict[str, list[dict[str, Any]]] = {st: [] for st in LISTS}
@@ -653,6 +670,7 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
                           "follow_up": follow,
                           "follow_up_due": bool(st == "contacted" and follow["due"] and follow["due"] <= now and not follow["drafted"]),
                           **facts[x.candidate_id], **_gap_summary(rows.get(x.candidate_id, [])),
+                          "evidence": checks.get(x.candidate_id), "checkable": h.channel == "exa_people",
                           "found_by": {"channel": h.channel, "target": h.target, "tier": h.tier, "query": q.text if q else None,
                                        "at_target": at,
                                        "at": h.created_at.isoformat() if h.created_at else None, "new_to_desk": h.new_to_desk}})

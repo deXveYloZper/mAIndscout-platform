@@ -721,6 +721,25 @@ def build_sourcing_strategy(job_id: uuid.UUID, org_id: uuid.UUID = Depends(get_o
     return {"task_id": str(task.id), "status": task.status}
 
 
+@app.post("/v1/jobs/{job_id}/sourcing/people/{candidate_id}/evidence", status_code=202)
+def check_deeper(job_id: uuid.UUID, candidate_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org),
+                 session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """"Check deeper": look at a suggestion's public work against the role, in the background (their links, and a
+    search for their name with their company; about 1-3 cents). Strong matches get it on their own."""
+    from maindscout.api import autosource, evidence
+    from maindscout.db.models import CandidateJob
+
+    job = autosource._job(session, org_id, job_id)
+    pair = session.scalar(select(CandidateJob).where(CandidateJob.job_id == job.id, CandidateJob.candidate_id == candidate_id))
+    if pair is None or pair.org_id != org_id:
+        raise HTTPException(404, "This person is not on this role")
+    if not evidence.found_on_the_web(session, job.id, candidate_id):
+        raise HTTPException(422, "Only people found on the web are checked this way: the desk already has their file")
+    task = evidence.queue(session, org_id, job.id, candidate_id, actor)
+    session.commit()
+    return {"task_id": str(task.id), "status": task.status}
+
+
 class WidenBody(BaseModel):
     option: str
     value: str | list[str] | None = None

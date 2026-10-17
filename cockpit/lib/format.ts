@@ -39,9 +39,11 @@ export function reasonWords(reason: string | null): string {
   const [code, rest] = reason.split(/:(.*)/s);
   switch (code) {
     case "no_support_for_must_have":
-      return `no evidence of ${rest} (must-have)`;
+      return `no evidence of ${rest.replaceAll("/", " or ")} (must-have)`;
     case "supported":
-      return `evidence of ${rest.replaceAll(",", ", ")}`;
+      return `evidence of ${rest.replaceAll(",", ", ").replaceAll("/", " or ")}`;
+    case "likely_from_employer":
+      return `no mention of ${rest.replaceAll(",", ", ").replaceAll("/", " or ")}, but their employer uses it: likely, check`;
     case "no_distinctive_requirements":
       return "job has no distinctive must-haves yet";
     case "cv_unreadable":

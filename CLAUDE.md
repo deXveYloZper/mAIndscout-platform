@@ -43,13 +43,18 @@ cockpit  →  api/  →  database
   agreeing names; anything else becomes a card for a person.
 - **Where someone lives and works now, never where they are from.** Country alone never puts anyone in
   `do_not_submit`. Never protected characteristics, appearance, personality, culture or fit.
-- **Company research** asks only the fixed list of public facts: never people (names, titles), never tech stack.
+- **Company research** asks only the fixed list of public facts: never people (names, titles), never tech stack. A
+  company's stack, tools and methods are read only from its own job adverts, each with its advert as evidence
+  ([employer evidence](docs/decisions/2026-10-17-evidence-for-strong-matches.md)): "likely" for its people, never proof.
 - **The desk never sends mail** or LinkedIn messages: drafts go into the user's own mailbox, or are copied by the
   owner. Calls need no consent step (the call tools' notetakers already have it).
 - **Sourcing** ([decision](docs/decisions/2026-10-12-sourcing-engine.md)): people found on the web are public data only,
   a guide to contact them, read through the CV path with every value quoted; never a photo. Searches name roles,
-  companies and places, never a person. Off-limits companies and "stop" win; "stop" and erasure win over everything.
-  The talent-release radar quotes company news only, never a person's name. Keep `SOURCING_AUTO=false` while testing.
+  companies and places, never a person, with one exception: a strong match found on the web gets an evidence check
+  that may search their name with their company (owner, 2026-10-17). Off-limits companies and "stop" win; "stop" and
+  erasure win over everything.
+  The talent-release radar quotes company news only, never a person's name. Keep `SOURCING_AUTO=false`,
+  `EVIDENCE_AUTO=false` and `PRACTICES_AUTO=false` while testing with real keys.
 - **Model and Exa calls cost the owner money.** Tests and e2e use fakes or recordings (`LLM_REPLAY`); keep
   `RESEARCH_AUTO=false` while testing; run paid checks only when the owner has agreed to them.
 - **Secrets and real data stay out of git**: `core/.env`, `cockpit/.env.local`, real CVs, `core/eval-reports/`,

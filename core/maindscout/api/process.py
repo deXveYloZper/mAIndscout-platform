@@ -331,11 +331,17 @@ def pair_inputs(session: Session, org_id, candidate_id, job: Job) -> tuple[list[
 
 
 def _triage_now(session: Session, org_id, candidate_id, job: Job, inputs: tuple[list[Claim], list[Claim]] | None = None) -> triage.Triage:
+    from maindscout.api.practices import employer_facts
+    from maindscout.domain.gaps import employer_support
+
     reqs, mine = inputs or pair_inputs(session, org_id, candidate_id, job)
     requirements = [c.payload for c in reqs]
     skills = [c.payload["normalized_skill"] for c in mine if c.claim_type == "SkillClaim"]
     titles = [c.payload["title_raw"] for c in mine if c.claim_type == "CareerStepClaim"]
-    return triage.triage(requirements, skills, titles)
+    tokens = triage.distinctive_tokens(requirements)
+    employers = employer_facts(session, {candidate_id: mine}).get(candidate_id, []) if tokens else []
+    likely = {t for t in tokens if employers and employer_support(t, employers)}
+    return triage.triage(requirements, skills, titles, likely)
 
 
 def _match_now(session: Session, org_id, candidate_id, job: Job, rows=None, coarse: triage.Triage | None = None,
@@ -448,7 +454,10 @@ def retriage_pair(session: Session, pair: CandidateJob, cause: dict, actor: str 
     coarse = _triage_now(session, pair.org_id, pair.candidate_id, job, inputs)
     m = _match_now(session, pair.org_id, pair.candidate_id, job, rows, coarse, inputs)
     pair.match_tier, pair.match = m.tier, m.as_dict()  # kept up to date even when a person set the band
+    from maindscout.api import evidence
+
     if pair.band_overridden_by:
+        evidence.maybe_queue(session, pair, pair.triage_band)  # the owner chose them: a strong match too
         session.flush()
         return None
     if m.band is None:  # unclear: the coarse band stands
@@ -458,6 +467,7 @@ def retriage_pair(session: Session, pair: CandidateJob, cause: dict, actor: str 
     if result.band == "do_not_submit" and _unreadable(session, pair.candidate_id, inputs[1]):
         # Nothing could be read (an image of a page): no evidence is not evidence of a miss. A person opens the file.
         result = triage.Triage("review_later", "cv_unreadable")
+    evidence.maybe_queue(session, pair, result.band)  # a strong match found on the web: look at their public work
     if (pair.triage_band, pair.triage_reason) == (result.band, result.reason):
         session.flush()
         return None

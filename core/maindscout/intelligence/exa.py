@@ -118,18 +118,25 @@ class ExaClient:
         raise ExaError("Exa could not be reached")
 
 
-def request(query: str, category: str, *, num_results: int = 10, country: str | None = None,
-            text_chars: int = 12000, since: str | None = None, summary: dict[str, Any] | None = None) -> dict[str, Any]:
-    """The search body. `country` (ISO code) is Exa's location hint: results lean to it, nothing is excluded by it,
+def request(query: str, category: str | None, *, num_results: int = 10, country: str | None = None,
+            text_chars: int = 12000, since: str | None = None, summary: dict[str, Any] | None = None,
+            exclude_domains: list[str] | None = None) -> dict[str, Any]:
+    """The search body. `category` None searches the whole web (a company's adverts, a person's public work for an
+    evidence check). `country` (ISO code) is Exa's location hint: results lean to it, nothing is excluded by it,
     so the coverage gate still decides who is in the role's countries. `since` (YYYY-MM-DD) keeps pages published
-    from that day; `summary` ({query, schema}) asks Exa for a structured summary of each page."""
-    if category not in CATEGORIES:
-        raise ValueError(f"category must be one of {CATEGORIES}")
+    from that day; `summary` ({query, schema}) asks Exa for a structured summary of each page; `exclude_domains`
+    leaves sites out (an evidence check already has the person's LinkedIn page)."""
+    if category is not None and category not in CATEGORIES:
+        raise ValueError(f"category must be one of {CATEGORIES} or None")
     query = " ".join(query.split())
     if not query:
         raise ValueError("an empty query")
-    body: dict[str, Any] = {"query": query, "category": category, "numResults": max(1, min(num_results, MAX_RESULTS)),
+    body: dict[str, Any] = {"query": query, "numResults": max(1, min(num_results, MAX_RESULTS)),
                             "contents": {"text": {"maxCharacters": text_chars}}}
+    if category is not None:
+        body["category"] = category
+    if exclude_domains:
+        body["excludeDomains"] = list(exclude_domains)
     if country:
         body["userLocation"] = country.upper()
     if since:
@@ -147,11 +154,12 @@ def fetch(caller: Caller, urls: list[str], text_chars: int = 8000) -> Results:
     return parse(caller.contents({"urls": urls, "text": {"maxCharacters": text_chars}}), "", "contents")
 
 
-def search(caller: Caller, query: str, category: str, *, num_results: int = 10, country: str | None = None,
-           text_chars: int = 12000, since: str | None = None, summary: dict[str, Any] | None = None) -> Results:
+def search(caller: Caller, query: str, category: str | None, *, num_results: int = 10, country: str | None = None,
+           text_chars: int = 12000, since: str | None = None, summary: dict[str, Any] | None = None,
+           exclude_domains: list[str] | None = None) -> Results:
     body = request(query, category, num_results=num_results, country=country, text_chars=text_chars, since=since,
-                   summary=summary)
-    return parse(caller.call(body), body["query"], category)
+                   summary=summary, exclude_domains=exclude_domains)
+    return parse(caller.call(body), body["query"], category or "web")
 
 
 def _summary(value: Any) -> Any:

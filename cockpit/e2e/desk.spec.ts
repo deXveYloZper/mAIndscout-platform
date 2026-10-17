@@ -16,6 +16,13 @@ test.describe.configure({ mode: "serial" });
 
 let catalystUrl = "";
 
+/** Open "Drop CVs onto this job" (it is already open on a job with nobody on it; a click would close it). */
+async function openDropZone(page: Page) {
+  const drop = page.locator("details.addcvs");
+  if ((await drop.getAttribute("open")) === null) await drop.locator("summary").click();
+  await expect(drop).toHaveAttribute("open", "");
+}
+
 /** Show one band on the job page (the band tiles act as tabs). */
 async function band(page: Page, key: "priority" | "review_later" | "do_not_submit" | "archived") {
   await page.locator(`.bandtiles .band-${key}`).click();
@@ -87,7 +94,7 @@ test("a job is created from its advertisement", async ({ page }) => {
 
 test("CVs dropped on a job are read one by one and each is banded", async ({ page }) => {
   await page.goto(catalystUrl);
-  await page.locator("details.addcvs > summary").click();
+  await openDropZone(page);
   await page.locator('input[type="file"]').setInputFiles(CVS);
   await page.getByRole("button", { name: "Read and band 4 CVs" }).click();
   await expect(page.getByRole("status")).toContainText(/Reading \d+ of 4 done/, { timeout: 30_000 });
@@ -522,7 +529,7 @@ test("forgetting a person needs a typed confirmation, then leaves nothing", asyn
 
 test("an erased person uploaded again is not stored", async ({ page }) => {
   await page.goto(catalystUrl);
-  await page.locator("details.addcvs > summary").click();
+  await openDropZone(page);
   await page.locator('input[type="file"]').setInputFiles(CVS[3]);
   await page.getByRole("button", { name: "Read and band" }).click();
   await expect(page.locator(".results li")).toContainText("Not stored: this person was erased earlier.", { timeout: 120_000 });

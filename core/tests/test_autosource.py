@@ -73,9 +73,9 @@ NOT_A_PERSON = {"url": "https://orbital-testworks.example", "title": "Orbital Te
 class FakeExa:
     model = "exa"
 
-    def __init__(self, people=None, companies=None, cost=0.007, news=None, pages=None, by_query=None):
+    def __init__(self, people=None, companies=None, cost=0.007, news=None, pages=None, by_query=None, web=None):
         self.people = people if people is not None else [ADA, BEN, CARA, DEV, NOT_A_PERSON]
-        self.companies, self.news = companies or [], news or []
+        self.companies, self.news, self.web = companies or [], news or [], web or []
         self.pages, self.by_query = pages or {}, by_query or {}
         self.cost, self.calls, self.fetched = cost, [], []
 
@@ -88,7 +88,7 @@ class FakeExa:
         self.calls.append(body)
         if body["query"] in self.by_query:
             return {"results": self.by_query[body["query"]], "costDollars": {"total": self.cost}}
-        results = {"company": self.companies, "news": self.news}.get(body["category"], self.people)
+        results = {"company": self.companies, "news": self.news, None: self.web}.get(body.get("category"), self.people)
         return {"results": results[: body.get("numResults", 10)], "costDollars": {"total": self.cost}}
 
 

@@ -401,6 +401,19 @@ tr.rowlink { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .live .dot { animation: none; } }
 .blocktag { background: var(--amber-soft); border-style: solid; }
 .verdict.gap, .verdict.against { color: var(--cream-faint); text-decoration: line-through; }
+.gapstatus.likely { background: var(--slate-soft); color: var(--slate); }
+.tag.warn { background: var(--red-soft); color: var(--red); }
+/* The deeper look at a strong match: findings quoted from their public work. */
+.evidence .findings { margin: 4px 0 0; padding-left: 0; list-style: none; display: grid; gap: 4px; font-size: 13px; color: var(--cream-dim); }
+.evidence .findings a { color: var(--cream-faint); }
+/* Findings sit inside a person card: none of the card list's own row layout. */
+.people .evidence .findings li { display: block; grid-template-columns: none; margin: 0; padding: 0; border: 0;
+  background: none; line-height: 1.45; }
+.people .evidence .findings li:hover { background: none; }
+.evidence .findings .tag { display: inline-block; vertical-align: baseline; }
+.evidence.weakened > .hint strong, .evidence.mixed > .hint strong { color: var(--red); }
+.evidence.confirmed > .hint strong { color: var(--green); }
+form.inline { display: inline-block; margin-top: 4px; }
 .chip { height: 24px; padding: 0 10px; font-size: 12px; margin: 2px 4px 2px 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chips li { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 999px; background: var(--bg-raise-2); border: 1px solid var(--line); font-size: 13px; }

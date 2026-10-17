@@ -27,17 +27,18 @@ function facetValue(m: { facet: string; countries?: string[] | null; offered?: b
 
 /** Evidence, questions, missing and conflicts as one bar: how well a person is known against this job, at a glance. */
 function GapBar({ g }: { g: NonNullable<PersonOnJob["gaps"]> }) {
-  const total = g.evidence + g.question + g.missing + g.conflict;
+  const likely = g.likely ?? 0;
+  const total = g.evidence + likely + g.question + g.missing + g.conflict;
   if (!total) return null;
   const pct = (n: number) => `${(n / total) * 100}%`;
   return (
-    <span className="gapbar" title={`${g.evidence} evidence · ${g.question} to ask · ${g.missing} missing${g.conflict ? ` · ${g.conflict} conflict` : ""}`}>
+    <span className="gapbar" title={`${g.evidence} evidence${likely ? ` · ${likely} likely from their employer` : ""} · ${g.question} to ask · ${g.missing} missing${g.conflict ? ` · ${g.conflict} conflict` : ""}`}>
       <span className="track" aria-hidden="true">
         <span className="ev" style={{ width: pct(g.evidence) }} />
-        <span className="q" style={{ width: pct(g.question) }} />
+        <span className="q" style={{ width: pct(g.question + likely) }} />
         <span className="cf" style={{ width: pct(g.conflict) }} />
       </span>
-      <span className="mini">{g.evidence} evidence · {g.question} to ask · {g.missing} missing{g.conflict ? ` · ${g.conflict} conflict` : ""}</span>
+      <span className="mini">{g.evidence} evidence{likely ? ` · ${likely} likely` : ""} · {g.question} to ask · {g.missing} missing{g.conflict ? ` · ${g.conflict} conflict` : ""}</span>
     </span>
   );
 }

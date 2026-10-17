@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { Pin, PinOff, Radar, Undo2, X } from "lucide-react";
-import { addSourcingTarget, buildStrategy, changeSourcingTarget, draftLinkedIn, runSourcingNow, setSourcingMode, setSourcingPlan,
-  widenSourcing } from "@/app/actions";
+import { addSourcingTarget, buildStrategy, changeSourcingTarget, checkDeeper, draftLinkedIn, runSourcingNow, setSourcingMode,
+  setSourcingPlan, widenSourcing } from "@/app/actions";
 import { Refresh } from "@/components/CallsClient";
 import { ProfileLink, Triage } from "@/components/Outreach";
 import { AddTarget, OneClick, PlanSettings, PlanWords } from "@/components/SourcingForms";
-import type { CompanyProfile, SourcingMode, SourcingPage, SourcingStats, SourcingTarget, Suggestion, TalentDna, Widening } from "@/lib/api";
+import type { CompanyProfile, EvidenceCheck, SourcingMode, SourcingPage, SourcingStats, SourcingTarget, Suggestion, TalentDna,
+  Widening } from "@/lib/api";
 import { MODE_LABEL, reasonWords, TIER_WORDS } from "@/lib/format";
 import { ActForm } from "@/components/ActForm";
 
@@ -83,6 +84,46 @@ function trackLine(s: Suggestion): string | null {
   return bits.length ? bits.join(" · ") : null;
 }
 
+const OUTCOME: Record<string, string> = {
+  confirmed: "Their public work supports this match", mixed: "Their public work both supports and weakens this match",
+  weakened: "Their public work speaks against this match", nothing_found: "No public work about them beyond their profile",
+};
+const BECAUSE: Record<string, string> = { left_the_field: "left this kind of work", works_elsewhere_now: "works elsewhere now",
+  says_otherwise: "says so themselves" };
+const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u; } };
+
+/** The deeper look at a strong match's public work: what it found, quoted, with the page it came from. */
+function EvidenceLine({ jobId, s, deciding }: { jobId: string; s: Suggestion; deciding: boolean }) {
+  const e: EvidenceCheck | null | undefined = s.evidence;
+  if (!e) {
+    return deciding && s.checkable ? (
+      <ActForm action={checkDeeper.bind(null, jobId, s.candidate_id)} className="inline">
+        <button className="btn small ghost" title="Their own links, then a search for their name with their company (about 1-3 cents)">Check deeper</button>
+      </ActForm>
+    ) : null;
+  }
+  if (e.status === "queued" || e.status === "running") return <p className="hint live" role="status">Checking their public work…</p>;
+  if (e.status === "failed") return <p className="warn">The deeper check failed{e.error ? `: ${e.error}` : ""}.</p>;
+  if (e.status === "skipped") return <p className="hint">Deeper check not run: {e.reason ?? "skipped"}.</p>;
+  return (
+    <div className={`evidence ${e.outcome ?? ""}`}>
+      <p className="hint"><strong>{OUTCOME[e.outcome ?? ""] ?? "Checked"}</strong> ({day(e.at)}: {e.pages} of {e.looked} pages were
+        theirs{e.facts_added ? `, ${e.facts_added} skill${e.facts_added === 1 ? "" : "s"} added to review` : ""}{e.usd != null ? `, ${usd(e.usd)}` : ""})</p>
+      {e.findings.length > 0 && (
+        <ul className="findings">
+          {e.findings.map((f, i) => (
+            <li key={i} className={f.effect}>
+              <span className={`tag ${f.effect === "supports" ? "key" : "warn"}`}>{f.effect === "supports" ? "supports"
+                : `against${f.because ? `: ${BECAUSE[f.because] ?? f.because}` : ""}`}</span>{" "}
+              {f.requirement}: &ldquo;{f.quote}&rdquo; <a href={f.url} target="_blank" rel="noreferrer">{host(f.url)}</a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function SuggestionCard({ jobId, s, since }: { jobId: string; s: Suggestion; since?: string | null }) {
   const fresh = Boolean(since && s.found_by.at && s.found_by.at >= since);
   const track = trackLine(s);
@@ -106,6 +147,7 @@ function SuggestionCard({ jobId, s, since }: { jobId: string; s: Suggestion; sin
         {s.contact?.reply?.text && <p className="hint">&ldquo;{s.contact.reply.text}&rdquo;</p>}
         {s.employer && <p className="hint">Works at: {facts(s.employer)}</p>}
         {s.stage === "to_review" && <p className="hint">{reasonWords(s.reason)} · {foundBy(s.found_by)}</p>}
+        <EvidenceLine jobId={jobId} s={s} deciding={deciding} />
         <Triage jobId={jobId} s={s} />
       </div>
       <div className="pc-side">
@@ -311,7 +353,8 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
   const since = lastRun?.status !== "running" ? lastRun?.started_at ?? null : null;
   return (
     <>
-      {(s.running || s.building) && <Refresh every={3000} upTo={300000} />}
+      {(s.running || s.building || s.suggestions.some((x) => x.evidence?.status === "queued" || x.evidence?.status === "running"))
+        && <Refresh every={3000} upTo={300000} />}
       <section className="panel">
         <div className="row spread">
           <h3><Radar aria-hidden="true" className="h-icon" />Sourcing: {MODE_LABEL[p.mode]}</h3>

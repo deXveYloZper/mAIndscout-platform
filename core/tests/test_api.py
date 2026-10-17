@@ -293,7 +293,7 @@ def test_gap_table_lists_every_requirement_with_a_status_and_never_a_number(clie
     assert page["person"]["name"] == "Jane Example" and page["band"] == "do_not_submit"
     insar = next(r for r in page["rows"] if r["requirement"] == "InSAR processing experience")
     assert insar["status"] == "missing" and insar["distinctive"] is True and insar["official"] is False
-    assert set(page["counts"]) == {"evidence", "missing", "conflict", "question"}
+    assert set(page["counts"]) == {"evidence", "likely", "missing", "conflict", "question"}
     assert not any(k in page for k in ("score", "fit", "total"))
     people = client.get(f"/v1/jobs/{job_id}").json()["people"]["do_not_submit"]
     assert people[0]["gaps"]["missing"] >= 1

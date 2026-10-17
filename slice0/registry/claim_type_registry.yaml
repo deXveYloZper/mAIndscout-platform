@@ -135,6 +135,18 @@ types:
     default_review: policy_eligible
     payload_schema: schemas/company_location_claim.schema.json
 
+  CompanyPracticeClaim:
+    class: observed
+    subject_types: [company]
+    natural_key: "company_id + token + area"
+    volatility: volatile
+    default_review: policy_eligible
+    payload_schema: schemas/company_practice_claim.schema.json
+    notes: >
+      2026-10-17 (owner). A technology, tool, method or standard the company uses, quoted from its own job adverts or
+      careers pages, with the page as evidence. Public tier. Employer evidence for matching: someone in that area of
+      work there is "likely" to use it (never strong on its own). Never people.
+
   StepClassificationClaim:
     class: inferred
     subject_types: [candidate]

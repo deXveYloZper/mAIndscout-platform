@@ -115,7 +115,7 @@ export type PersonOnJob = {
   reason: string | null;
   overridden_by: string | null;
   open_decisions: number;
-  gaps?: { evidence: number; missing: number; conflict: number; question: number };
+  gaps?: { evidence: number; likely?: number; missing: number; conflict: number; question: number };
   state?: string;
   coverage?: { applicable: number; official: number; needed: number; met: boolean; words: string };
 };
@@ -144,7 +144,7 @@ export type PersonPage = {
   name: string | null;
   claims: Record<string, ClaimView[]>;
   jobs: { job_id: string; title: string; band: Band; reason: string | null; state?: string }[];
-  documents: { id: string; filename: string | null; doc_type: "cv" | "jd" | "transcript" | "web_profile" | "other"; needs_vision: boolean; as_of: string | null }[];
+  documents: { id: string; filename: string | null; doc_type: "cv" | "jd" | "transcript" | "web_profile" | "web_page" | "other"; needs_vision: boolean; as_of: string | null }[];
   open_decisions: string[];
   archived: { at: string; reason: string | null } | null;
   coverage_override: boolean;
@@ -393,7 +393,15 @@ export type Suggestion = { candidate_id: string; name: string | null; band: Band
   state: string; current: string | null; location: string | null; profile: string | null; employer: CompanyProfile | null;
   gaps?: PersonOnJob["gaps"]; coverage?: PersonOnJob["coverage"];
   found_by: { channel: string; target: string | null; tier: string | null; query: string | null; at: string | null; new_to_desk: boolean;
-    at_target?: "now" | "before" | null } };
+    at_target?: "now" | "before" | null };
+  evidence?: EvidenceCheck | null; checkable?: boolean };
+
+/** The deeper look at a strong match's public work (owner, 2026-10-17). */
+export type EvidenceCheck = { status: "queued" | "running" | "done" | "failed" | "skipped"; at: string | null;
+  outcome: "confirmed" | "mixed" | "weakened" | "nothing_found" | null; reason: string | null;
+  findings: { requirement: string; strength: string; effect: "supports" | "weakens"; because?: string | null; text: string; quote: string;
+    url: string; skill: string | null }[];
+  pages: number; looked: number; facts_added: number; usd: number | null; error: string | null };
 
 export type SourcingPage = {
   job_id: string; title: string; state: string;

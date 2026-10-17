@@ -156,6 +156,32 @@ def sourcing_run(session: Session, task: Task) -> dict[str, Any]:
             "cost_usd": float(row.cost_usd or 0)}
 
 
+@handler("read_practices")
+def read_practices(session: Session, task: Task) -> dict[str, Any]:
+    """What a company uses, from its own job adverts (employer evidence); its people are matched again after."""
+    from maindscout.api import practices
+
+    caller = exa_factory()
+    if caller is None:
+        return {"status": "skipped", "reason": "no web search (EXA_API_KEY)"}
+    p = task.payload
+    return practices.read_company(session, task.org_id, uuid.UUID(p["job_id"]), uuid.UUID(p["company_id"]), caller,
+                                  llm_factory(), title=p.get("title"), task_id=task.id)
+
+
+@handler("evidence_check")
+def evidence_check(session: Session, task: Task) -> dict[str, Any]:
+    """A strong match's public work against the role (their name with their company may be searched)."""
+    from maindscout.api import evidence
+
+    caller = exa_factory()
+    if caller is None:
+        return {"status": "skipped", "reason": "no web search (EXA_API_KEY)"}
+    p = task.payload
+    return evidence.run(session, blob_factory(), task.org_id, uuid.UUID(p["job_id"]), uuid.UUID(p["candidate_id"]), caller,
+                        llm_factory(), task_id=task.id)
+
+
 @handler("mailbox_sync")
 def mailbox_sync(session: Session, task: Task) -> dict[str, Any]:
     return messages.sync(session, task.org_id)

@@ -82,6 +82,29 @@ GROUP_LABEL = {"engineering": "technical work", "product_design": "product and d
 def group_of(family: str | None) -> str | None:
     return next((g for g, fams in GROUPS.items() if family in fams), family)
 
+
+# The area of work a job title is in, by its words (for employer evidence: a company's engineering stack says nothing
+# about its sales team). Product and design first ("Product Engineer" is engineering, "Product Manager" is not).
+AREA_WORDS = (
+    ("product_design", r"product (manager|owner|lead|director)|head of product|designer|\bux\b|\bui\b|user research"),
+    ("engineering", r"engineer|developer|programmer|software|\bsre\b|devops|architect|\bcto\b|tech(nical)? lead|"
+                    r"data scientist|machine learning|\bml\b|\bai\b|full[- ]?stack|front[- ]?end|back[- ]?end|"
+                    r"head of engineering|engineering (manager|lead)|\bqa\b|tester"),
+    ("commercial", r"sales|account (executive|manager)|business development|marketing|customer success|partnerships?"),
+    ("operations", r"operations|finance|accountant|controller|\bhr\b|people partner|recruit|talent|procurement|"
+                   r"buyer|purchasing|supply chain|office manager"),
+)
+
+
+def area_of_title(title: str | None) -> str | None:
+    """engineering | product_design | commercial | operations, or None when the title does not say."""
+    import re as _re
+
+    for area, words in AREA_WORDS:
+        if _re.search(words, title or "", _re.I):
+            return area
+    return None
+
 CONTRACT = ("contract", "consulting")
 NOT_EXPERIENCE = ("internship", "side")
 YEAR = 365.25

@@ -5,6 +5,8 @@ Rules are data, not model judgement (docs/slice-0/HANDOFF.md section 11):
 2. At least one distinctive must-have supported -> priority.
 3. Otherwise -> review_later.
 4. A place or country mismatch never forces do_not_submit by itself.
+5. A distinctive must-have their employer uses in their area of work (its own job advert) is not "no evidence": it
+   makes them review_later, to check (employer evidence, owner 2026-10-17).
 """
 
 from __future__ import annotations
@@ -60,15 +62,22 @@ def supports(token: str, skills: list[str], titles: list[str]) -> bool:
     return bool(re.search(whole(wanted), blob))
 
 
-def triage(requirements: list[dict], skills: list[str], titles: list[str]) -> Triage:
-    """`requirements` are JobRequirementClaim payloads of the job."""
-    distinctive = [
-        r["normalized_token"] for r in requirements
-        if r.get("distinctive") and r.get("strength") in ("must", "deal_breaker") and r.get("normalized_token")
-    ]
+def distinctive_tokens(requirements: list[dict]) -> list[str]:
+    return [r["normalized_token"] for r in requirements
+            if r.get("distinctive") and r.get("strength") in ("must", "deal_breaker") and r.get("normalized_token")]
+
+
+def triage(requirements: list[dict], skills: list[str], titles: list[str], likely: set[str] | None = None) -> Triage:
+    """`requirements` are JobRequirementClaim payloads of the job. `likely`: the distinctive tokens the person's
+    employer uses in their area of work (employer evidence): with nothing of their own, those make them a possible
+    match to check, never a priority on their own."""
+    distinctive = distinctive_tokens(requirements)
     if not distinctive:
         return Triage("review_later", "no_distinctive_requirements")
     supported = [t for t in distinctive if supports(t, skills, titles)]
     if supported:
         return Triage("priority", f"supported:{','.join(sorted(set(supported)))}")
+    via_employer = [t for t in distinctive if t in (likely or set())]
+    if via_employer:
+        return Triage("review_later", f"likely_from_employer:{','.join(sorted(set(via_employer)))}")
     return Triage("do_not_submit", f"no_support_for_must_have:{distinctive[0]}")

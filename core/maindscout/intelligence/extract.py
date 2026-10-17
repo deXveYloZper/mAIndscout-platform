@@ -512,6 +512,7 @@ def extract_jd(text: str, artifact_id: uuid.UUID, client: LLMClient, as_of: date
         run.accept(claim)
         reqs.append(claim)
 
+    reqs = join_alternatives(reqs)
     reqs.extend(_mobility(run, data.get("mobility") or {}))
 
     for item in data.get("work_locations", []):
@@ -616,6 +617,64 @@ def _mobility(run: "_Run", data: dict[str, Any]) -> list[StagedClaim]:
         stage(facet, category, f"{label}: {'offered' if item['offered'] else 'not offered'}", {"offered": bool(item["offered"])},
               item["quote"], "unknown")
     return out
+
+
+# Between two skills of one sentence: "React and/or Node.js", "React or Node.js", "React / Node.js" name alternatives;
+# a comma continues a list ("React, Vue or Angular"); anything else ("and familiar with") makes them separate asks.
+_OR_JOIN = re.compile(r"^\s*(?:and\s*/\s*or|or|/)\s*$", re.I)
+_LIST_JOIN = re.compile(r"^\s*,\s*$")
+STRENGTH_ORDER = ("deal_breaker", "must", "nice", "unknown")
+
+
+def _label_in(quote: str, claim: StagedClaim) -> tuple[int, int] | None:
+    """Where a skill requirement's own words stand in its quote (its token first, then its text)."""
+    for words in (claim.payload.get("normalized_token"), claim.payload.get("text_raw")):
+        if not words:
+            continue
+        m = re.search(rf"(?<![a-z0-9]){re.escape(words.lower())}(?![a-z0-9])", quote.lower())
+        if m:
+            return m.start(), m.end()
+    return None
+
+
+def join_alternatives(reqs: list[StagedClaim]) -> list[StagedClaim]:
+    """Skills the ad offers as alternatives are one requirement, written with a slash ("familiar with React and/or
+    Node.js" -> "react/node.js"), whatever the model returned: two must-haves would turn away everyone who has only
+    one of them (seen on a real ad, 2026-10-17). Only skills that share one quote are joined, and only when the words
+    between them say "or"; "JavaScript/TypeScript and familiar with React" stays two asks."""
+    groups: dict[tuple, list[tuple[int, int, StagedClaim]]] = {}
+    for c in reqs:
+        if c.payload.get("category") != "skill" or not c.payload.get("normalized_token") or not c.span:
+            continue
+        where = _label_in(c.span["snippet"], c)
+        if where is not None:
+            groups.setdefault((c.span["char_start"], c.span["char_end"]), []).append((*where, c))
+    drop: set[int] = set()
+    for items in groups.values():
+        if len(items) < 2:
+            continue
+        items.sort(key=lambda x: x[0])
+        quote = items[0][2].span["snippet"]
+        runs: list[list[tuple[int, int, StagedClaim]]] = [[items[0]]]
+        ors: list[bool] = [False]
+        for prev, nxt in zip(items, items[1:]):
+            between = quote[prev[1]:nxt[0]]
+            if nxt[0] >= prev[1] and (_OR_JOIN.match(between) or _LIST_JOIN.match(between)):
+                runs[-1].append(nxt)
+                ors[-1] = ors[-1] or bool(_OR_JOIN.match(between))
+            else:
+                runs.append([nxt])
+                ors.append(False)
+        for run_, has_or in zip(runs, ors):
+            if len(run_) < 2 or not has_or:
+                continue  # a plain list ("Python, SQL") is several asks
+            first = run_[0][2]
+            tokens = list(dict.fromkeys(t for _, _, c in run_ for t in c.payload["normalized_token"].split("/")))
+            first.payload = {**first.payload, "text_raw": quote[run_[0][0]:run_[-1][1]], "normalized_token": "/".join(tokens),
+                             "distinctive": any(c.payload.get("distinctive") for _, _, c in run_),
+                             "strength": min((c.payload["strength"] for _, _, c in run_), key=STRENGTH_ORDER.index)}
+            drop |= {id(c) for _, _, c in run_[1:]}
+    return [c for c in reqs if id(c) not in drop]
 
 
 def _cost(result) -> dict[str, Any]:

@@ -913,6 +913,16 @@ export async function outreachStep(jobId: string, candidateId: string, step: str
   return {};
 }
 
+export async function checkDeeper(jobId: string, candidateId: string): Promise<FormState> {
+  try {
+    await apiJson(`/v1/jobs/${jobId}/sourcing/people/${candidateId}/evidence`, {});
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return { message: "Checking their public work: their own links, then their name with their company. This card updates by itself." };
+}
+
 export async function draftLinkedIn(jobId: string, candidateId: string): Promise<FormState> {
   try {
     await apiJson("/v1/messages", { kind: "candidate_outreach", candidate_id: candidateId, job_id: jobId, channel: "linkedin" });

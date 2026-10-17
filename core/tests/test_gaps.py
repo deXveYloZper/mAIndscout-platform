@@ -98,5 +98,5 @@ def test_counts_are_per_status_and_never_combined():
     rows = gap_table([req(1, "skill", "React", normalized_token="react"), req(2, "skill", "Go", normalized_token="go")],
                      [skill(1, "react")], TODAY)
     c = counts(rows)
-    assert c == {"evidence": 1, "missing": 1, "conflict": 0, "question": 0}
+    assert c == {"evidence": 1, "likely": 0, "missing": 1, "conflict": 0, "question": 0}
     assert not any(k in c for k in ("score", "total", "fit"))
