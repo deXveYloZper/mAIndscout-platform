@@ -34,6 +34,23 @@ ads:
 9. **Years asked for a kind of work are years of that work** (from the career profile), not of a whole career.
    (8 and 9 came from the first real marketing search: a Junior Marketing Specialist read as a strong match, as a
    "manager" with "8.2 years", from six months with a manager title and years spent translating and in retail.)
+10. **A year in an industry or a kind of company is enough** for it to count as met (owner: "1 year is fine"; it was
+    two). A strong plus such as procurement experience or a start-up background is met from one year.
+11. **A luxury client recruits from luxury, in every industry the ad names** (owner: "buonaventura is a high luxury, so
+    high luxury hospitality should be fine, not low level ... there needs to be that type of synonyms";
+    `domain/tiers.py`):
+    - a role is a luxury role when its own requirements say luxury, high-end, haute couture, premium fashion…;
+    - its industries are searched in luxury words ("luxury hotels, five-star hotel groups and high-end hospitality
+      companies in Italy");
+    - a company is a luxury one by its own words (offering, about, industry: "luxury hotels", "4 and 5-star
+      hotels", "Luxury Goods") or as a fashion, beauty, accessories, jewellery or eyewear house; a hotel that
+      calls itself 4-star or lower is not, whatever its copy says; a tour operator's "luxury travel" sales tag does
+      not count;
+    - a company known not to be luxury is not searched for a luxury role (the map says why), and years at it in an
+      industry other than luxury itself (hotels, travel…) do not count towards the role's industry requirement.
+12. **A company's thousands are not a list:** "Italy: 2,701 (22%)" was read as two countries, so Prada Group, Dolce
+    & Gabbana, Valentino and Armani looked as if nobody worked in Italy and were never searched. 36 companies
+    were read again (about $0.001 each).
 
 ## Not changed
 A role with no core skill (most marketing and sales roles) still starts everyone as possible. Strong comes from the

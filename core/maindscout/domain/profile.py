@@ -120,6 +120,7 @@ class CompanyFacts:
     team_max: int | None = None  # the top of a published range ("51-200"), when there is one
     status: str | None = None  # active | acquired | merged | shut_down | public
     domains: list[str] = field(default_factory=list)
+    luxury: bool | None = None  # a luxury company by its own words (domain/tiers.py); None when not known
 
 
 @dataclass

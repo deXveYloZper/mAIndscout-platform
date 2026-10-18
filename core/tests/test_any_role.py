@@ -185,3 +185,77 @@ def test_years_asked_for_a_kind_of_work_are_years_of_that_work():
     m = matching.match(reqs, rows, prof, [], ("review_later", "no_distinctive_requirements"))
     assert m.rows[0].verdict == "partial" and "5.3 years of related work" in m.rows[0].detail
     assert m.tier == "possible"
+
+
+# --- a luxury client recruits from luxury (owner, 2026-10-18) ----------------------------------------------------------
+
+
+def test_a_company_is_luxury_by_its_own_words_its_stars_or_its_trade():
+    from maindscout.domain import tiers
+
+    assert tiers.luxury_company({"offering": "luxury hotels", "about": "operates 4 and 5-star hotels in Italy"})
+    assert tiers.luxury_company({"offering": "hotel and resort accommodations",
+                                 "about": "a 4-star hotel and resort company ... a new way of experiencing luxury"}) is False
+    assert tiers.luxury_company({"offering": "vacation packages and tours", "industry": "Leisure, Travel & Tourism",
+                                 "categories": ["luxury travel"]}) is False, "a tour operator's sales tags do not count"
+    assert tiers.luxury_company({"industry": "Retail Apparel and Fashion", "domains": ["apparel", "fashion"],
+                                 "about": "known for its history, values, and timeless style"}), "a fashion house never writes the word"
+    assert tiers.luxury_company({}) is None
+    assert tiers.luxury_role(["Experience in luxury, premium fashion … is strongly preferred"])
+    assert not tiers.luxury_role(["Experience in fashion retail"])
+
+
+def test_a_luxury_roles_industries_are_searched_in_luxury_words(session, job):
+    from maindscout.api import strategy
+
+    hiring.add_requirement(session, job.org_id, job.id, {"category": "domain", "strength": "strong_plus",
+                                                         "text_raw": "luxury fashion or high-end hospitality",
+                                                         "domains": ["luxury / fashion / beauty", "travel / hospitality"]},
+                           "owner@desk.test")
+    assert strategy.profile_queries(session, job, ["IT"]) == [
+        "luxury, fashion and beauty companies in Italy",
+        "luxury hotels, five-star hotel groups and high-end hospitality companies in Italy"]
+
+
+def test_a_luxury_role_does_not_search_a_company_that_is_not_luxury(session, job):
+    from maindscout.api import companies, strategy
+
+    four_star, _ = companies.resolve(session, "Hotel Testchain", "human")
+    four_star.exa_profile = {"offering": "hotel and resort accommodations", "about": "A 4-star hotel chain in Italy."}
+    five_star, _ = companies.resolve(session, "Palazzo Testhotels", "human")
+    five_star.exa_profile = {"offering": "luxury hotels", "about": "Five-star palace hotels in Rome and Milan."}
+    assert strategy.fit(session, four_star, set(), None, luxury=True) == {
+        "searched": False, "why": "not a luxury company: the role asks for luxury"}
+    assert strategy.fit(session, five_star, set(), None, luxury=True)["searched"] is True
+    assert strategy.fit(session, four_star, set(), None, luxury=False)["searched"] is True, "only a luxury role asks"
+
+
+def test_hotel_years_count_for_a_luxury_role_only_at_luxury_hotels():
+    from datetime import date
+
+    from maindscout.domain import profile
+
+    S, F = profile.Stint, profile.CompanyFacts
+    stints = [S("1", "Hotel Testchain", "Marketing Manager", date(2019, 1, 1), date(2022, 6, 1), family="marketing",
+                level="manager", domains=["travel / hospitality"], facts=F(luxury=False)),
+              S("2", "Palazzo Testhotels", "Marketing Manager", date(2022, 6, 1), date(2023, 3, 1), family="marketing",
+                level="manager", domains=["travel / hospitality"], facts=F(luxury=True))]
+    prof = {"reading": {"label": "clear"}, "dimensions": {"domain_exposure": {"years": {"travel / hospitality": 4.2}}}}
+    req = {"category": "domain", "strength": "strong_plus", "text_raw": "luxury fashion or high-end hospitality",
+           "domains": ["luxury / fashion / beauty", "travel / hospitality"]}
+    verdict, detail = matching._domain(req, prof, stints, luxury=True)
+    assert verdict == "partial" and "luxury companies only" in detail, "3.5 years at a 4-star chain do not count"
+    verdict, _ = matching._domain(req, prof, stints, luxury=False)
+    assert verdict == "strong", "without luxury every hotel year counts"
+    verdict, _ = matching._domain({**req, "domains": ["travel / hospitality"]},
+                                  {"reading": {"label": "clear"}, "dimensions": {"domain_exposure": {"years": {"travel / hospitality": 1.2}}}},
+                                  [], luxury=False)
+    assert verdict == "strong", "a year in the industry is enough (it was two)"
+
+
+def test_a_thousands_comma_is_not_a_second_country():
+    from maindscout.intelligence.company_profile import _pairs
+
+    assert _pairs("Italy: 2,701 (22%), United States: 772 (6%)") == [
+        {"name": "Italy", "n": 2701, "pct": 22}, {"name": "United States", "n": 772, "pct": 6}], \
+        "Prada Group's team in Italy read as '2 people in Italy and a country called 701'"

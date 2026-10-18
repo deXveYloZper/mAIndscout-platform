@@ -89,6 +89,9 @@ The tests that decided it are in [plan section 4b](../../next/PLAN.md):
 
 `core/tests/test_recording.py` also covers recordings without the people parts.
 
+- Where the team works is read with its thousands kept ("Italy: 2,701 (22%)" is one country, fixed 2026-10-18; the 36
+  companies read before were read again).
+
 ## Known limits
 - Exa's profiles are estimates. Small, regional or shut-down companies are often missing or confused, so a name match alone is never accepted.
 - Employers without an Exa ID or LinkedIn link stay names until a CV or research identifies them.

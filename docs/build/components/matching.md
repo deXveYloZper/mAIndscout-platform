@@ -30,8 +30,9 @@ Plan section 4.6 and phase I5: replace keyword triage with a comparison of what 
   - Years asked for ("7 or more years of marketing experience") are compared with their years in that kind of work
     when there is a career profile, not their whole career: under three quarters of the years is a gap, from three
     quarters partly met (2026-10-18).
-  - Background: years at start-ups, scale-ups, consultancies and so on, from employer mix.
-  - Industry: years from domain exposure.
+  - Background: years at start-ups, scale-ups, consultancies and so on, from employer mix; a year is enough (2026-10-18).
+  - Industry: years from domain exposure; a year is enough (2026-10-18, it was two). For a luxury role, years in an
+    industry other than luxury itself (hotels, travel…) count only at luxury companies.
   - Target companies: whether they worked there.
   - Employment: contract jobs read contractor patterns. A current contractor for a permanent job is a question.
   - Where someone lives and visas are always "Ask".

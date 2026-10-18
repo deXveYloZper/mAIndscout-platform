@@ -158,7 +158,13 @@ def company_facts_many(session: Session, companies: list[Company]) -> dict[uuid.
     for c in session.scalars(select(Claim).where(Claim.org_id == PUBLIC_ORG_ID, Claim.subject_id.in_(list(owner) or [None]),
                                                  Claim.status.in_(LIVE))):
         claims[owner[c.subject_id]].append(c)
-    return {cid: _facts_from(rows) for cid, rows in claims.items()}
+    from maindscout.domain import tiers
+
+    out = {cid: _facts_from(rows) for cid, rows in claims.items()}
+    for c in companies:
+        if out.get(c.id) is not None:
+            out[c.id].luxury = tiers.luxury_company(c.exa_profile, out[c.id].domains)
+    return out
 
 
 def _facts_from(rows: list[Claim]) -> rubric.CompanyFacts | None:

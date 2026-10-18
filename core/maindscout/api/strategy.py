@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 
 from maindscout.api import autosource, companies, company_profiles, costs
 from maindscout.db.models import PUBLIC_ORG_ID, Candidate, CandidateJob, Claim, Company, Job, SourcingPlan, SourcingQuery
-from maindscout.domain import geo
+from maindscout.domain import geo, tiers
 from maindscout.intelligence import company_profile, exa
 
 LIVE = ("proposed", "approved")
@@ -101,8 +101,11 @@ def talent_dna(session: Session, org_id: uuid.UUID, job: Job, p: SourcingPlan, c
 
     people: dict[str, list[dict[str, Any]]] = {}
     spent, searches = 0.0, []
+    # The name the company goes by, as its confirmed profile writes it: an ad's "BUONAVENTURA" found none of
+    # Bonaventura's people (2026-10-18).
+    name = (profile.get("name") or company.name).strip()
     for variant in (p.role_variants or [job.title])[:DNA_SEARCHES]:
-        results = exa.search(caller, f"{variant} at {company.name}", "people", num_results=10, text_chars=1000)
+        results = exa.search(caller, f"{variant} at {name}", "people", num_results=10, text_chars=1000)
         spent += results.usd
         kept = 0
         for found in results.found:
@@ -110,7 +113,7 @@ def talent_dna(session: Session, org_id: uuid.UUID, job: Job, p: SourcingPlan, c
             if any((j.get("company") or {}).get("id") == company.exa_id for j in history):
                 people.setdefault(found.url, history)
                 kept += 1
-        searches.append({"text": f"{variant} at {company.name}", "results": len(results.found), "theirs": kept})
+        searches.append({"text": f"{variant} at {name}", "results": len(results.found), "theirs": kept})
     costs.record(session, org_id, "sourcing_talent_dna", {"model": "exa", "usd": spent, "sources": len(people)},
                  subject_type="job", subject_id=job.id, task_id=task_id)
 
@@ -205,6 +208,8 @@ def profile_queries(session: Session, job: Job, countries: list[str] | None = No
 
     where = " and ".join(geo.name_of(c) for c in (countries or [])[:2])
     place = f" in {where}" if where else ""
+    lux = luxury(session, job)  # a luxury client's industries are searched in luxury words (owner, 2026-10-18)
+    words = (lambda d: tiers.search_words(d, as_words(d))) if lux else as_words
     phrases: list[str] = []
     for c in session.scalars(select(Claim).where(Claim.subject_id == job.id, Claim.claim_type == "JobRequirementClaim",
                                                  Claim.status.in_(LIVE)).order_by(Claim.created_at)):
@@ -212,15 +217,26 @@ def profile_queries(session: Session, job: Job, countries: list[str] | None = No
         if p.get("strength") == "anti":
             continue
         if p.get("category") == "domain":
-            phrases += [as_words(d) for d in p.get("domains") or [] if d != "other"]
+            phrases += [words(d) for d in p.get("domains") or [] if d != "other"]
         elif p.get("category") in ("skill", "other") and (p.get("distinctive") or BACKGROUND.search(p.get("text_raw") or "")):
-            phrases += [as_words(d) for d in domains_in(p.get("text_raw") or "")[:1]]
+            phrases += [words(d) for d in domains_in(p.get("text_raw") or "")[:1]]
         elif p.get("category") in ("employer", "other") and p.get("source") in ("recruiter", "intake"):
             text = " ".join((p.get("text_raw") or "").split())
             if 0 < len(text.split()) <= 4 and not p.get("employer_kinds"):
-                phrases.append(text)
+                phrases.append(tiers.search_words("", text) if lux else text)
     out = list(dict.fromkeys(f"{x.lower()} companies{place}" for x in phrases))
     return out[:3]
+
+
+def luxury(session: Session, job: Job) -> bool:
+    """Does the role ask for luxury (its own requirements say so)? Then its companies must be luxury ones too."""
+    texts = []
+    for c in session.scalars(select(Claim).where(Claim.subject_id == job.id, Claim.claim_type == "JobRequirementClaim",
+                                                 Claim.status.in_(LIVE))):
+        p = c.approved_view or c.payload
+        if p.get("strength") != "anti":
+            texts.append(p.get("text_raw") or "")
+    return tiers.luxury_role(texts)
 
 
 # A requirement that speaks about where a person comes from, not what they can do ("Experience in luxury, …").
@@ -235,6 +251,7 @@ def _peers(session: Session, org_id: uuid.UUID, job: Job, of: Company | None, ca
     one call at the end."""
     out: list[dict[str, Any]] = []
     made: list[Company] = []
+    lux = luxury(session, job)
     for query in queries if queries is not None else peer_queries(of, countries, skills):
         results = exa.search(caller, query, "company", num_results=10, text_chars=8000)
         costs.record(session, org_id, company_profiles.PURPOSE, {"model": "exa", "usd": results.usd, "sources": len(results.found)},
@@ -249,8 +266,8 @@ def _peers(session: Session, org_id: uuid.UUID, job: Job, of: Company | None, ca
             if company is None or str(company.id) in have or company.id == job.hiring_company_id or (of is not None and company.id == of.id):
                 continue
             company_profiles.apply(session, company, found, org_id)
-            if fit(session, company, set(), not_from(session, job)[1])["searched"] is False:
-                continue  # a kind of company the hiring profile does not want
+            if fit(session, company, set(), not_from(session, job)[1], lux)["searched"] is False:
+                continue  # a kind of company the hiring profile does not want, or not luxury for a luxury role
             have.add(str(company.id))
             made.append(company)
             out.append(_target(company, "peer", [why, f'company search: "{query}"'], "exa_company"))
@@ -438,13 +455,17 @@ def not_from(session: Session, job: Job) -> tuple[set[str], set[str]]:
     return ids, kinds
 
 
-def fit(session: Session, company: Company | None, countries: set[str], avoid_kinds: set[str] | None = None) -> dict[str, Any]:
-    """Why a company is or is not searched for this role, for the map."""
+def fit(session: Session, company: Company | None, countries: set[str], avoid_kinds: set[str] | None = None,
+        luxury: bool = False) -> dict[str, Any]:
+    """Why a company is or is not searched for this role, for the map. `luxury`: the role asks for luxury, so a
+    company that is known and is not a luxury one is left out (a 4-star chain, a tour operator)."""
     if closed(session, company):
         return {"searched": False, "why": "shut down"}
     kind = ((company.exa_profile or {}).get("kind") if company is not None else None)
     if kind and avoid_kinds and kind in avoid_kinds:
         return {"searched": False, "why": f"a {kind.replace('_', ' ')}: the hiring profile says not from there"}
+    if luxury and company is not None and tiers.luxury_company(company.exa_profile) is False:
+        return {"searched": False, "why": "not a luxury company: the role asks for luxury"}
     inside = team_in(company, countries)
     if inside is False:
         where = ", ".join(r["country"] for r in (company.exa_profile or {}).get("countries", [])[:2])
@@ -542,12 +563,13 @@ def next_searches(session: Session, job: Job, p: SourcingPlan, releasing: set[st
     used = 0
     countries = set(p.countries or [])
     avoid_ids, avoid_kinds = not_from(session, job)
+    lux = luxury(session, job)
     for t in targets:
         s = state.get(t["company_id"])
         if t["company_id"] in avoid_ids:
             continue  # the hiring profile says not from here
         company = session.get(Company, uuid.UUID(t["company_id"]))
-        if not t.get("pinned") and not fit(session, company, countries, avoid_kinds)["searched"]:
+        if not t.get("pinned") and not fit(session, company, countries, avoid_kinds, lux)["searched"]:
             continue  # shut down, its team works only outside the role's countries, or a kind the profile does not want
         if s and s["exhausted"]:
             last = datetime.fromisoformat(s["last_run_at"]) if s["last_run_at"] else None
@@ -656,7 +678,8 @@ def widening(session: Session, org_id: uuid.UUID, job: Job, p: SourcingPlan) -> 
     countries = set(p.countries or [])
     live = [t for t in p.targets if not t.get("removed") and group_of(t) in open_groups and t.get("company_id")
             and not limits.get(t["company_id"])
-            and (t.get("pinned") or fit(session, session.get(Company, uuid.UUID(t["company_id"])), countries)["searched"])]
+            and (t.get("pinned") or fit(session, session.get(Company, uuid.UUID(t["company_id"])), countries, None,
+                                         luxury(session, job))["searched"])]
     if autosource.strong_waiting(session, job.id) >= p.target:
         return None
     if not live:

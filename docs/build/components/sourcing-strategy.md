@@ -56,6 +56,11 @@ The owner (2026-10-13): "we should be aware that our initial list of companies w
   - last of all, country-wide searches.
 
   **Checkpoint 2:** the owner picks one, and it becomes a new plan version. Tier A always stays open.
+- **A luxury client recruits from luxury** (2026-10-18, [decision](../../decisions/2026-10-18-every-kind-of-role.md)):
+  when the role's own requirements say luxury, its industry searches use luxury words ("luxury hotels, five-star hotel
+  groups and high-end hospitality companies in Italy") and a company known not to be luxury (a 4-star chain, a tour
+  operator) is not searched; the map says "not a luxury company". The talent DNA searches the client by the name
+  its confirmed profile gives ("BONAVENTURA", not the ad's "BUONAVENTURA").
 - **In step with the hiring profile** (`sync`, at every run and page view; owner 2026-10-13): its "must live in" countries are the role's countries, and every company it names is a pinned tier A target. A new plan version only when something changed.
 - **Where the role is.** The hiring profile's "must live in" countries, else the places the ad names ("LOCATION: Markham or Gatineau"). A city that names no country counts as the hiring company's home country. The sync only adds these countries; one the owner added is never taken away. When the ad names its place, the strategy never replaces it with where the hiring company's team works.
 - **Companies that can give the role nobody are not searched:** one that has shut down (by its public facts), or one whose team works only outside the role's countries (from its profile). The map says why ("not searched: no team in the role's countries"). Pinning searches it anyway.

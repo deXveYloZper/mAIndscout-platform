@@ -131,24 +131,49 @@ def _employer(p: dict[str, Any], profile: dict[str, Any]) -> tuple[str, str]:
     if p.get("strength") == "anti":
         share = have / total
         return ("against", f"{_years(have)} of the last 10 at {names}") if share >= 0.5 else ("strong", f"mostly not at {names}")
-    if have >= 2:
+    if have >= 1:  # a year in that kind of company is enough (owner, 2026-10-18; it was two)
         return "strong", f"{_years(have)} at {names}"
     if have > 0:
         return "partial", f"{_years(have)} at {names}"
     return "gap", f"no time at {names} (as far as research shows)"
 
 
-def _domain(p: dict[str, Any], profile: dict[str, Any]) -> tuple[str, str]:
+def _tier_years(stints: list[Stint], wanted: list[str]) -> dict[str, float]:
+    """Years in each wanted industry, counting an industry other than luxury itself (hotels, travel…) only at luxury
+    companies: a luxury role's "hospitality" means luxury hospitality, not a 4-star chain (owner, 2026-10-18)."""
+    from datetime import date
+
+    from maindscout.domain.profile import NOT_EXPERIENCE, _span
+    from maindscout.domain.profile import _years as span_years
+    from maindscout.domain.tiers import INHERENT
+
+    spans: dict[str, list] = {}
+    for s in stints:
+        span = _span(s, date.today())
+        d = (s.domains[0] if s.domains else "").strip().lower().replace("_", " ")
+        if span is None or s.employment in NOT_EXPERIENCE or d not in wanted:
+            continue
+        if d == INHERENT or (s.facts is not None and s.facts.luxury):
+            spans.setdefault(d, []).append(span)
+    return {d: round(span_years(v), 1) for d, v in spans.items()}
+
+
+def _domain(p: dict[str, Any], profile: dict[str, Any], stints: list[Stint] | None = None, luxury: bool = False) -> tuple[str, str]:
+    from maindscout.domain.tiers import INHERENT
+
     dom = profile["dimensions"]["domain_exposure"]
     years = dom.get("years") or {}
     wanted = p.get("domains") or []
     if not years:
         return "ask", "industries not known yet"
-    have = max((years.get(d, 0) for d in wanted), default=0)
     names = ", ".join(wanted)
+    if luxury and stints and p.get("strength") != "anti" and any(d != INHERENT for d in wanted):
+        years = _tier_years(stints, wanted)
+        names += " (luxury companies only)"
+    have = max((years.get(d, 0) for d in wanted), default=0)
     if p.get("strength") == "anti":
         return ("against", f"{_years(have)} in {names}") if have >= 2 else ("strong", f"little or no time in {names}")
-    if have >= 2:
+    if have >= 1:  # a year in the industry is enough (owner, 2026-10-18; it was two)
         return "strong", f"{_years(have)} in {names}"
     if have > 0:
         return "partial", f"{_years(have)} in {names}"
@@ -206,6 +231,9 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
     person; `profile`: the latest career profile (or None); `coarse`: the token triage (band, reason) as fallback;
     `preferences`: domain.preferences.rows for what the person said they want."""
     by_id = {r["id"]: r["payload"] for r in requirements}
+    from maindscout.domain.tiers import luxury_role
+
+    luxury = luxury_role([p.get("text_raw") or "" for p in by_id.values() if p.get("strength") != "anti"])
     rows: list[Verdict] = []
     for g in gap_rows:  # skills, years, education, languages, mobility, and anything the gap table already reads
         p = by_id.get(g.requirement_id, {})
@@ -244,7 +272,7 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
         elif cat == "employer":
             v, d = _employer(p, profile)
         elif cat == "domain":
-            v, d = _domain(p, profile)
+            v, d = _domain(p, profile, stints, luxury)
         elif cat == "target_company":
             v, d = _target(p, stints)
         else:

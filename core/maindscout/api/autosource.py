@@ -605,12 +605,13 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
     signals = radar.live(session, org_id)
     state = strategy.company_state(session, job.id, p)
     avoid_ids, avoid_kinds = strategy.not_from(session, job)
+    lux = strategy.luxury(session, job)
     profiles_by_id = {str(c.id): c for c in session.scalars(select(Company).where(
         Company.id.in_([uuid.UUID(t["company_id"]) for t in p.targets if t.get("company_id")] or [None])))}
     targets = [{**t, "group": strategy.group_of(t), "off_limits": limits.get(t.get("company_id") or ""),
                 "release": signals.get(t.get("company_id") or ""),
                 "progress": {k: v for k, v in (state.get(t.get("company_id") or "") or {}).items() if k not in ("texts", "recent")} or None,
-                "fit": strategy.fit(session, profiles_by_id.get(t.get("company_id") or ""), set(p.countries or []), avoid_kinds),
+                "fit": strategy.fit(session, profiles_by_id.get(t.get("company_id") or ""), set(p.countries or []), avoid_kinds, lux),
                 "profile": company_profiles.summary(profiles_by_id.get(t.get("company_id") or ""))}
                for t in p.targets]
     hits = {h.candidate_id: h for h in session.scalars(select(SourcingHit).where(SourcingHit.job_id == job.id))}
