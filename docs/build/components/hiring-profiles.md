@@ -15,6 +15,10 @@ Beside them: what public research says about the hiring company (kind, stage, si
 Plan section 4.5 and phase I4: matching (I5) needs to know what the hiring manager wants, not only what the ad says. For example: start-up experience as a strong plus, procurement experience that can substitute for it, permanent not contract, no candidates from big consultancies.
 
 ## How
+- **The ad reader's requirements, for every kind of role** (2026-10-18, [decision](../../decisions/2026-10-18-every-kind-of-role.md)):
+  a skill written as a short name gets it as its skill word ("influencer marketing", "CRM", not only technologies);
+  "several of / any of the following" is one requirement met by any item; "strongly preferred" is a strong plus;
+  personality ("calm, decisive") is dropped. Skills typed here get their name as their word too.
 - **One model call per text** (about $0.003). The values come from the same fixed lists as career profiles (kinds of work, levels, industries; employer kinds start-up / scale-up / large / consultancy / agency / public sector / non-profit), so I5 compares like with like.
 - **Checks, before anything is stored:**
   - every item must quote the text, and the quote must be found in it;

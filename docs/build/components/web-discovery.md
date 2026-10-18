@@ -34,7 +34,10 @@ The owner's next build: sourcing beyond inbound, with Exa ([plan](../../next/PLA
     - "### Title - [Company]" with its date line, when both are in that heading;
     - or, for several roles at one company, the company heading, the role and its dates, quoted in pieces (the span check accepts a quote assembled from its places, `spans.locate_parts`);
   - an education entry: its heading and date line;
-  - skills: only the role's own skill words, found as whole words in the headline, the About section or the Skills list.
+  - skills: only the role's own skill words and languages, found as whole words in the headline, the About section, the
+    Skills and Languages lists, or what the person wrote under their own jobs (2026-10-18; languages in the profile's own
+    language too, "Italiano"). Exa's blurb about each employer is never read ([decision](../../decisions/2026-10-18-every-kind-of-role.md)).
+  - stored profiles are read again for free when a role's requirements change (`reread_for_job`), for its current words.
 
   The descriptions Exa adds under each job (company size, funding and the like) are about companies, never read. What cannot be quoted is left out, exactly as for a CV.
 - **Store and read** (`discovery.add`):

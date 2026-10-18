@@ -8,9 +8,11 @@ person's own lines only:
   are in that heading; or, for several roles at one company ("### [Company]", then "#### Title" and a date line),
   the company heading, the role and its dates as one quote in pieces;
 - an education entry: its heading and its date line;
-- skills: only the role's own skill words, found as whole words in the headline, the About section or the Skills list.
+- skills: only the role's own skill words (and its languages), found as whole words in the headline, the About section,
+  the Skills list, the Languages list, or what the person wrote under their own jobs ("- Created a node-based UI using
+  react", owner 2026-10-18: a skill in their own job description is theirs).
 The descriptions Exa writes under each job (company size, funding, …) are about companies, not the person: nothing is
-ever read from them. What cannot be quoted is left out, exactly as the span check does for a CV.
+ever read from them (`COMPANY_BLURB`). What cannot be quoted is left out, exactly as the span check does for a CV.
 """
 
 from __future__ import annotations
@@ -24,7 +26,14 @@ from maindscout.intelligence.exa import Found
 from maindscout.intelligence.llm import LLMResult
 from maindscout.intelligence.triage import ALIASES, canon
 
-READER_VERSION = "2026-10-12.1"
+READER_VERSION = "2026-10-18.1"
+# Exa writes a blurb about each employer under the person's job ("Tacto is a Software Development company ... has 100-150
+# employees (+10% YoY), founded in 2020"): about the company, never the person. Only markers a person never uses of
+# themselves ("a software engineer" must still pass).
+COMPANY_BLURB = re.compile(r"\bis an? [^.]{0,80}\b(company|organi[sz]ation|institution)\b|\bhas \d[\d,]*-\d[\d,]* employees|"
+                           r"\bemployees \(|\bYoY\b|\bfounded in \d{4}|\bheadquartered in\b|\btotal funding\b|"
+                           r"\bfunding rounds?\b|\bannual revenue\b|\bthey offer\b", re.I)
+_NOT_OWN = re.compile(r"^(department:|level:|total experience:)|•\s*level:", re.I)
 MONTHS = {m: i for i, m in enumerate(("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), 1)}
 _WHEN = r"(?:(?:[A-Za-z]{3,9})\.?\s+)?\d{4}"
 _RANGE = re.compile(rf"(?P<s>{_WHEN})\s*(?:-|–|—|to)\s*(?P<e>{_WHEN}|present|current|now|today)", re.I)
@@ -166,7 +175,6 @@ def read(found: Found, skill_tokens: list[str]) -> dict[str, Any]:
         if x.text.startswith("#"):
             break
         top.append(x)
-    headline = top[0] if top else None
 
     where = (person.get("location") or "").strip()
     if where:
@@ -203,8 +211,44 @@ def read(found: Found, skill_tokens: list[str]) -> dict[str, Any]:
                                       "quote": found.text[x.start:(dates or x).end]})
             break
 
+    data["skills"] = skills_in(own_lines(found.text), skill_tokens)
+    return data
+
+
+def _descriptions(experience: list[_Line]) -> list[str]:
+    """What the person wrote under their own jobs, sentence by sentence: never a heading, a date line, Exa's
+    department and level line, or Exa's blurb about the company."""
+    out: list[str] = []
+    for x in experience:
+        text = x.text.lstrip("-*• ").strip()
+        if not text or x.text.startswith("#") or _NOT_OWN.search(text) or COMPANY_BLURB.search(text):
+            continue
+        if len(text) < 120 and _RANGE.search(text) and date_range(text)[0]:
+            continue  # "Nov 2025 - Present (10 months) in Munich"
+        out.extend(s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip())
+    return out
+
+
+def own_lines(text: str) -> list[str]:
+    """The person's own words on their profile: the headline, About, the Skills and Languages lists, and what they
+    wrote under their jobs. Skills are read from these only."""
+    lines = _lines(text)
+    heading = next((x for x in lines if x.text.startswith("# ")), None)
+    top = []
+    for x in lines[lines.index(heading) + 1 if heading else 0:]:
+        if x.text.startswith("#"):
+            break
+        top.append(x)
     listed = [item.strip() for x in _section(lines, "skills") for item in re.split(r"\s*[•·,;|]\s*", x.text) if item.strip()]
-    own = ([headline.text] if headline else []) + _sentences(_section(lines, "about")) + listed
+    languages = [x.text for x in _section(lines, "languages")]
+    return (([top[0].text] if top else []) + _sentences(_section(lines, "about")) + listed + languages
+            + _descriptions(_section(lines, "experience")))
+
+
+def skills_in(own: list[str], skill_tokens: list[str]) -> list[dict[str, str]]:
+    """Each of the role's skill words (alternatives one by one, aliases too: "Italiano" is Italian) the person's own
+    words name, with the line that names it: [{label, normalized, quote}]."""
+    out: list[dict[str, str]] = []
     seen: set[str] = set()
     for token in skill_tokens:
         for part in [p for p in token.split("/") if p.strip()] if "/" in token else [token]:
@@ -214,9 +258,9 @@ def read(found: Found, skill_tokens: list[str]) -> dict[str, Any]:
                 hit = next((m for w in words if (m := _whole(w).search(line))), None)
                 if hit and wanted not in seen:
                     seen.add(wanted)
-                    data["skills"].append({"label": hit.group(0), "normalized": wanted, "quote": line})
+                    out.append({"label": hit.group(0), "normalized": wanted, "quote": line})
                     break
-    return data
+    return out
 
 
 class EntityReader:

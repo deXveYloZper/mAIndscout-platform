@@ -265,8 +265,8 @@ def build(session: Session, org_id, candidate_id, as_of: date | None = None) -> 
     stints, edu = inputs(session, org_id, candidate_id)
     digest = _hash(stints, edu, as_of)
     last = latest(session, candidate_id)
-    if last is not None and last.inputs_hash == digest:
-        return last
+    if last is not None and last.inputs_hash == digest and last.rubric_version == rubric.RUBRIC_VERSION:
+        return last  # nothing new, and the same rules: the snapshot stands
     snapshot = CareerProfile(org_id=org_id, candidate_id=candidate_id, profile=rubric.build(stints, edu, as_of),
                              inputs_hash=digest, rubric_version=rubric.RUBRIC_VERSION,
                              # Not the database's now(): that is the transaction start, equal for every snapshot in it.

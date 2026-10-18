@@ -512,7 +512,7 @@ def extract_jd(text: str, artifact_id: uuid.UUID, client: LLMClient, as_of: date
         run.accept(claim)
         reqs.append(claim)
 
-    reqs = join_alternatives(reqs)
+    reqs = join_alternatives(name_skills(drop_traits(reqs, run)))
     reqs.extend(_mobility(run, data.get("mobility") or {}))
 
     for item in data.get("work_locations", []):
@@ -623,7 +623,64 @@ def _mobility(run: "_Run", data: dict[str, Any]) -> list[StagedClaim]:
 # a comma continues a list ("React, Vue or Angular"); anything else ("and familiar with") makes them separate asks.
 _OR_JOIN = re.compile(r"^\s*(?:and\s*/\s*or|or|/)\s*$", re.I)
 _LIST_JOIN = re.compile(r"^\s*,\s*$")
-STRENGTH_ORDER = ("deal_breaker", "must", "nice", "unknown")
+_AND_JOIN = re.compile(r"^\s*(?:,\s*)?(?:and|&)\s*$", re.I)
+# "Demonstrated ability across several of the following areas: brand marketing, CRM, PR … and retail marketing": a list
+# introduced like this is met by any of its items, even when it ends with "and" (a real marketing ad, 2026-10-18).
+_ANY_OF = re.compile(r"\b(several|any|one or more|at least (one|two|some)|some|a (mix|combination|number)) of\b", re.I)
+STRENGTH_ORDER = ("deal_breaker", "must", "strong_plus", "nice", "unknown")
+# The ad reader has no "strong plus"; the words for it are plain enough to read in code (a marketing ad's "Experience
+# in luxury … is strongly preferred" came back as nice to have, 2026-10-18).
+_STRONG_PLUS = re.compile(r"\bstrongly (preferred|desired|desirable)\b|\bhighly (desirable|desired|valued|preferred)\b|"
+                          r"\b(big|strong|major|huge) (plus|advantage)\b", re.I)
+# A short name is a skill a profile or CV can show, in any field: "influencer marketing", "CRM", "PR", "events", not
+# only technologies. Sentences and qualities stay without one (they are asked on the call).
+_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9&+#./' -]*")
+_NOT_A_NAME = re.compile(r"\b(experience|experienced|ability|able|skills?|knowledge|understanding|strong|good|proven|excellent|"
+                         r"solid|deep|familiar|familiarity|background|fundamentals|mindset|attitude|working|hands-on|years?)\b", re.I)
+# Personality is never a criterion (owner, 2026-10-03), in the ad reader too: "Calm, constructive and decisive in a
+# fast-moving environment" came back as a must-have, once as "other" and once as a skill (2026-10-18). Only for
+# qualities (no skill name), never for a named skill ("data-driven marketing" stays).
+_TRAITS = re.compile(r"(?<![\w-])(calm|decisive|constructive|curious|driven|passionate|enthusiastic|energetic|motivated|"
+                     r"self-starter|self-motivated|resilient|humble|empathetic|friendly|charismatic|confident|proactive|"
+                     r"positive attitude|can-do)(?![\w-])", re.I)
+
+
+def drop_traits(reqs: list[StagedClaim], run: "_Run") -> list[StagedClaim]:
+    from maindscout.intelligence.hiring import NOT_CRITERIA
+
+    kept = []
+    for c in reqs:
+        words = f"{c.payload.get('text_raw') or ''} {(c.span or {}).get('snippet') or ''}"
+        quality = c.payload.get("category") == "other" or (c.payload.get("category") == "skill" and not c.payload.get("normalized_token")
+                                                             and skill_name_token(c.payload.get("text_raw")) is None)
+        if quality and (NOT_CRITERIA.search(words) or _TRAITS.search(c.payload.get("text_raw") or "")):
+            run.reject(c.client_key, "personality, culture or fit is never a criterion")
+            continue
+        kept.append(c)
+    return kept
+
+
+def skill_name_token(text: str | None) -> str | None:
+    """The token of a skill written as a short name ("Influencer marketing" -> "influencer marketing"), else None."""
+    text = " ".join((text or "").split())
+    if 0 < len(text.split()) <= 4 and _NAME.fullmatch(text) and not _NOT_A_NAME.search(text):
+        return text.lower()
+    return None
+
+
+def name_skills(reqs: list[StagedClaim]) -> list[StagedClaim]:
+    """A skill written as a short name gets that name as its token, so a profile or CV can show it; and "strongly
+    preferred" is a strong plus."""
+    for c in reqs:
+        p = c.payload
+        quote = (c.span or {}).get("snippet") or ""
+        if p.get("strength") in ("nice", "unknown") and _STRONG_PLUS.search(quote):
+            p = c.payload = {**p, "strength": "strong_plus"}
+        if p.get("category") != "skill" or p.get("normalized_token"):
+            continue
+        if token := skill_name_token(p.get("text_raw")):
+            c.payload = {**p, "normalized_token": token}
+    return reqs
 
 
 def _label_in(quote: str, claim: StagedClaim) -> tuple[int, int] | None:
@@ -641,27 +698,29 @@ def join_alternatives(reqs: list[StagedClaim]) -> list[StagedClaim]:
     """Skills the ad offers as alternatives are one requirement, written with a slash ("familiar with React and/or
     Node.js" -> "react/node.js"), whatever the model returned: two must-haves would turn away everyone who has only
     one of them (seen on a real ad, 2026-10-17). Only skills that share one quote are joined, and only when the words
-    between them say "or"; "JavaScript/TypeScript and familiar with React" stays two asks."""
-    groups: dict[tuple, list[tuple[int, int, StagedClaim]]] = {}
+    between them say "or", or the list is introduced as "several of", "any of"…; "JavaScript/TypeScript and familiar
+    with React" stays two asks."""
+    groups: dict[int, list[StagedClaim]] = {}
     for c in reqs:
-        if c.payload.get("category") != "skill" or not c.payload.get("normalized_token") or not c.span:
-            continue
-        where = _label_in(c.span["snippet"], c)
-        if where is not None:
-            groups.setdefault((c.span["char_start"], c.span["char_end"]), []).append((*where, c))
+        if c.payload.get("category") == "skill" and c.payload.get("normalized_token") and c.span:
+            groups.setdefault(c.span["char_start"], []).append(c)
     drop: set[int] = set()
-    for items in groups.values():
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        quote = max((c.span["snippet"] for c in members), key=len)  # quotes of one sentence may end at different words
+        items = sorted(((*where, c) for c in members if (where := _label_in(quote, c)) is not None), key=lambda x: x[0])
         if len(items) < 2:
             continue
-        items.sort(key=lambda x: x[0])
-        quote = items[0][2].span["snippet"]
+        any_of = bool(_ANY_OF.search(quote[:items[0][0]]))
         runs: list[list[tuple[int, int, StagedClaim]]] = [[items[0]]]
         ors: list[bool] = [False]
         for prev, nxt in zip(items, items[1:]):
             between = quote[prev[1]:nxt[0]]
-            if nxt[0] >= prev[1] and (_OR_JOIN.match(between) or _LIST_JOIN.match(between)):
+            joined = _OR_JOIN.match(between) or _LIST_JOIN.match(between) or (any_of and _AND_JOIN.match(between))
+            if nxt[0] >= prev[1] and joined:
                 runs[-1].append(nxt)
-                ors[-1] = ors[-1] or bool(_OR_JOIN.match(between))
+                ors[-1] = ors[-1] or bool(_OR_JOIN.match(between)) or any_of
             else:
                 runs.append([nxt])
                 ors.append(False)
@@ -672,7 +731,8 @@ def join_alternatives(reqs: list[StagedClaim]) -> list[StagedClaim]:
             tokens = list(dict.fromkeys(t for _, _, c in run_ for t in c.payload["normalized_token"].split("/")))
             first.payload = {**first.payload, "text_raw": quote[run_[0][0]:run_[-1][1]], "normalized_token": "/".join(tokens),
                              "distinctive": any(c.payload.get("distinctive") for _, _, c in run_),
-                             "strength": min((c.payload["strength"] for _, _, c in run_), key=STRENGTH_ORDER.index)}
+                             "strength": min((c.payload["strength"] for _, _, c in run_),
+                                             key=lambda s: STRENGTH_ORDER.index(s) if s in STRENGTH_ORDER else len(STRENGTH_ORDER))}
             drop |= {id(c) for _, _, c in run_[1:]}
     return [c for c in reqs if id(c) not in drop]
 

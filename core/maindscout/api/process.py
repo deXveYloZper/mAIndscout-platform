@@ -501,6 +501,11 @@ INLINE_JOB_REMATCH = 40  # up to this many people, a job re-matches before the r
 
 
 def retriage_job(session: Session, org_id, job_id, cause: dict, actor: str) -> list[PairEvent]:
+    from maindscout.api.discovery import reread_for_job
+
+    # Its requirements changed: people found on the web are read again for its skill words first (free; a CV's skills
+    # were read whole, a found profile only for the words the role had then).
+    reread_for_job(session, org_id, session.get(Job, job_id))
     pairs = session.scalars(select(CandidateJob).where(CandidateJob.org_id == org_id, CandidateJob.job_id == job_id))
     return [e for e in (retriage_pair(session, p, cause, actor) for p in pairs) if e]
 

@@ -22,6 +22,13 @@ ALIASES = {
     "d-insar": "insar", "dinsar": "insar",
     "persistent scatterer interferometry": "psi",
     "radar interferometry": "interferometry",
+    # Languages as a profile may name them in its own language ("Italiano - Madrelingua", "Englisch").
+    "italiano": "italian", "italienisch": "italian", "italien": "italian",
+    "inglese": "english", "englisch": "english", "anglais": "english", "inglés": "english",
+    "deutsch": "german", "tedesco": "german", "allemand": "german", "alemán": "german",
+    "francese": "french", "französisch": "french", "français": "french", "francés": "french",
+    "spagnolo": "spanish", "spanisch": "spanish", "espagnol": "spanish", "español": "spanish",
+    "giapponese": "japanese", "japanisch": "japanese", "japonais": "japanese",
 }
 
 

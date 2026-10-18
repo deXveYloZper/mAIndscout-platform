@@ -27,11 +27,15 @@ Plan section 4.6 and phase I5: replace keyword triage with a comparison of what 
   - A broad must-have skill not written on a CV ("project management skills") is a question, not a gap: absence from a CV isn't evidence. Distinctive must-haves still decide, as today.
   - **Likely from their employer** ([employer evidence](employer-evidence.md), 2026-10-17): a distinctive must-have that is only likely is "partly met" (so at most possible, never strong on its own); a broad skill that is likely is "Ask". The token triage that rule 1 reads says `likely_from_employer` instead of `no_support_for_must_have`, so rule 1 does not fire for it.
   - Role: compares the kind of work (same, related or other), the title level, and years of related work.
+  - Years asked for ("7 or more years of marketing experience") are compared with their years in that kind of work
+    when there is a career profile, not their whole career: under three quarters of the years is a gap, from three
+    quarters partly met (2026-10-18).
   - Background: years at start-ups, scale-ups, consultancies and so on, from employer mix.
   - Industry: years from domain exposure.
   - Target companies: whether they worked there.
   - Employment: contract jobs read contractor patterns. A current contractor for a permanent job is a question.
   - Where someone lives and visas are always "Ask".
+  - A language the profile or CV does not list is "Ask", never a gap (2026-10-18: many profiles list no languages).
 - **Rules, in order** (`matching.RULES`, each with its wording):
   1. **distinctive_must_missing**: a must-have that decides the band has no evidence → unlikely (today's InSAR rule, unchanged).
   2. **not_wanted**: they meet a "not wanted" requirement → unlikely.

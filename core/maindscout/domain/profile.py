@@ -13,7 +13,7 @@ from datetime import date
 from statistics import median
 from typing import Any
 
-RUBRIC_VERSION = "2026-10-04.3"
+RUBRIC_VERSION = "2026-10-18.1"  # a title sets the level only when current or held a year
 
 ROLE_FAMILIES = [
     "software_engineering", "data_ml", "devops_infrastructure", "security", "qa_testing", "embedded_hardware",
@@ -108,6 +108,7 @@ def area_of_title(title: str | None) -> str | None:
 CONTRACT = ("contract", "consulting")
 NOT_EXPERIENCE = ("internship", "side")
 YEAR = 365.25
+MIN_TITLE_DAYS = 365  # a past title sets the level only when held this long (a current one always does)
 
 
 @dataclass
@@ -231,8 +232,11 @@ def seniority(stints: list[Stint], ry: dict[str, Any], as_of: date) -> dict[str,
     if not main:
         return _dim("unknown", "Relevant years unknown.")
     by_years = level_by_years(ry["main_years"])
+    # A title sets the level only when it is their job now or they held it at least a year: six months as "PA and Brand
+    # Manager" at a small firm made a Junior Marketing Specialist a manager (a real marketing search, 2026-10-18).
     recent = [s for s in stints if group_of(s.family) == ry.get("group") and s.level in LEVEL_RANK
-              and _span(s, as_of) and _span(s, as_of)[1].year >= as_of.year - 5]
+              and _span(s, as_of) and _span(s, as_of)[1].year >= as_of.year - 5
+              and (s.end is None or (_span(s, as_of)[1] - _span(s, as_of)[0]).days >= MIN_TITLE_DAYS)]
     top = max(recent, key=lambda s: LEVEL_RANK[s.level], default=None)
     if top is None:
         return _dim(by_years, f"{_cap(by_years)} by years ({_y(ry['main_years'])}); titles do not show a level.", ry["evidence"], by_years=by_years)

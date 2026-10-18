@@ -32,6 +32,9 @@ Plan section 4.3 and the owner's brief (2026-10-03): understand a candidate's ca
    - Stored as `StepClassificationClaim`s: class `inferred`, status `proposed`, with evidence pointing to the CV.
 2. **Level by code**: read from the title words (Junior → junior, no level word → mid, Senior → senior, Lead / Staff → lead, Head of → head, …), computed when the profile is built.
    - Leading a team without the title is a notable item, never a higher level.
+   - Their level is the highest title in their kind of work in the last five years that is their job now or that they
+     held at least a year (2026-10-18: six months as "PA and Brand Manager" made a Junior Marketing Specialist a
+     manager).
    - A recruiter's correction (approved) wins.
 3. **University rank**: one web search per institution (shared, refreshed yearly) for its place in the QS World University Rankings. It's kept only if the page was opened by the search and the quote contains the rank. Stored as bands: top 50 / 51–100 / 101–200 / 201–500 / 501+ / not ranked.
 4. **Build** (free): `domain/profile.build` turns the stints, company facts and education into the dimensions. Key rules:

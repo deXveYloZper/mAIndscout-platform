@@ -26,6 +26,7 @@ from maindscout.intelligence import spans
 from maindscout.intelligence.exa import Found
 from maindscout.intelligence.llm import LLMClient
 from maindscout.intelligence.triage import canon, supports
+from maindscout.intelligence.webprofile import COMPANY_BLURB
 
 READER_VERSION = "evidence-2026-10-17.2"
 MAX_PAGES = 4
@@ -39,12 +40,8 @@ PROFILE_COPIES = ("linkedin.com", "exa.ai")
 # "Not mentioned" is never evidence against anyone (the first real checks called a missing word "weakens").
 _ABSENCE = re.compile(r"\b(no|not|nothing|never)\b[^.]{0,80}\b(mention|mentioned|shown|stated|listed|explicit|evidence|reference)|"
                       r"\bdoes(n't| not) (mention|show|say|list)|\bwithout (any )?mention", re.I)
-# Exa writes a blurb about each employer under the person's job ("Tacto is a Software Development company ... has 100-150
-# employees (+10% YoY), founded in 2020"): about the company, never their work. Only markers a person never uses of
-# themselves ("a software engineer" must still pass).
-_COMPANY_BLURB = re.compile(r"\bis an? [^.]{0,80}\b(company|organi[sz]ation|institution)\b|\bhas \d[\d,]*-\d[\d,]* employees|"
-                            r"\bemployees \(|\bYoY\b|\bfounded in \d{4}|\bheadquartered in\b|\btotal funding\b|"
-                            r"\bfunding rounds?\b|\bannual revenue\b|\bthey offer\b", re.I)
+# Exa's blurb about each employer ("... is a Software Development company ... founded in 2020") is never their work.
+_COMPANY_BLURB = COMPANY_BLURB
 _GITHUB = re.compile(r"https?://(?:www\.)?github\.com/([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))(?=[)/\s?#]|$)")
 _PROJECT = re.compile(r"\[Project Link\]\((https?://[^)\s]+)\)")
 NOT_A_USER = {"orgs", "topics", "features", "about", "pricing", "enterprise", "sponsors", "login", "join", "explore"}

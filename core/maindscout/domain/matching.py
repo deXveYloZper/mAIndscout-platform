@@ -216,6 +216,18 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
         if g.kind == "skill" and g.status == "missing" and not g.distinctive:
             # A broad skill not written on a CV is not evidence of its absence: ask (distinctive ones decide, rule 1).
             verdict, detail = "ask", f"{g.detail}; not shown on the CV: ask"
+        elif g.kind == "seniority" and g.status in ("evidence", "conflict") and by_id.get(g.requirement_id, {}).get("min_years")                 and profile is not None and profile["reading"]["label"] != "unclear"                 and (profile["dimensions"].get("relevant_years") or {}).get("label") not in (None, "unknown"):
+            # "7 or more years of marketing experience" is years of that kind of work, not of a whole career (a junior
+            # specialist with 8.2 years across translating, retail and 5.3 in marketing read as met, 2026-10-18).
+            need = float(by_id[g.requirement_id]["min_years"])
+            ry = profile["dimensions"]["relevant_years"]
+            have = float(ry.get("main_years") or 0)
+            verdict = "strong" if have >= need else "partial" if have >= 0.75 * need else "gap"
+            detail = f"{_years(have)} of related work ({ry['label']}) against {need:g} asked; {g.detail}"
+        elif g.kind == "language" and g.status == "missing":
+            # Many profiles never list languages: a Milan marketing manager without "Italian" on their profile is a
+            # question, never two must-have gaps that make them unlikely (a real marketing role, 2026-10-18).
+            verdict = "ask"
         elif g.status == "likely" and not g.distinctive:
             verdict = "ask"  # their employer's stack: at least as good as a broad skill not written down
         rows.append(Verdict(g.requirement_id, g.requirement, g.kind, g.strength, verdict, detail, g.distinctive))

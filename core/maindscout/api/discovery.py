@@ -31,15 +31,75 @@ LIVE = ("proposed", "approved")
 
 
 def skill_tokens(session: Session, job: Job) -> list[str]:
-    """The role's own skill words (must, strong plus, nice to have): the only skills read from a profile."""
+    """The role's own skill words and languages (must, strong plus, nice to have): the only skills read from a
+    profile. Languages too: "Native or fluent Italian" must be readable from a profile's Languages list (2026-10-18)."""
     out: list[str] = []
     for c in session.scalars(select(Claim).where(Claim.subject_id == job.id, Claim.claim_type == "JobRequirementClaim",
                                                  Claim.status.in_(LIVE))):
         p = c.approved_view or c.payload
         token = (p.get("normalized_token") or "").strip().lower()
-        if p.get("category") == "skill" and token and p.get("strength") != "anti" and token not in out:
+        if p.get("category") in ("skill", "language") and token and p.get("strength") != "anti" and token not in out:
             out.append(token)
     return out
+
+
+def reread_skills(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID, tokens: list[str] | None = None) -> int:
+    """Read a found person's stored profile again for the skill words and languages of the roles they are on (free:
+    no web call, no model). A skill the reader finds now that it missed before (a role's new requirement, a newer
+    reader) becomes a proposed fact quoted from the same page. Returns how many were added."""
+    from datetime import datetime, timezone
+
+    from maindscout.api.process import _write_claim, natural_key
+    from maindscout.db.models import CandidateJob, DocumentSubject, IntelligenceRun
+    from maindscout.intelligence import spans
+
+    doc = session.scalar(select(Document).join(DocumentSubject, DocumentSubject.document_id == Document.id).where(
+        DocumentSubject.subject_id == candidate_id, Document.doc_type == "web_profile").order_by(Document.created_at.desc()).limit(1))
+    if doc is None:
+        return 0
+    artifact = session.scalar(select(ExtractionArtifact).where(ExtractionArtifact.document_id == doc.id).limit(1))
+    if artifact is None or not artifact.content:
+        return 0
+    if tokens is None:
+        tokens = []
+        for job in session.scalars(select(Job).join(CandidateJob, CandidateJob.job_id == Job.id).where(
+                CandidateJob.candidate_id == candidate_id, Job.state == "open")):
+            tokens += [t for t in skill_tokens(session, job) if t not in tokens]
+    have = {(c.approved_view or c.payload).get("normalized_skill") for c in session.scalars(select(Claim).where(
+        Claim.org_id == org_id, Claim.subject_id == candidate_id, Claim.claim_type == "SkillClaim", Claim.status.in_(LIVE)))}
+    new = [s for s in webprofile.skills_in(webprofile.own_lines(artifact.content), tokens) if s["normalized"] not in have]
+    if not new:
+        return 0
+    run = IntelligenceRun(org_id=org_id, document_id=doc.id, trigger="skills_reread", status="committed",
+                          committed_at=datetime.now(timezone.utc), version_manifest={"reader": webprofile.READER_VERSION})
+    session.add(run)
+    session.flush()
+    added = 0
+    for s in new:
+        where = spans.locate(artifact.content, s["quote"])
+        if where is None:
+            continue
+        span = {"artifact_id": str(artifact.id), "page": where.page, "char_start": where.char_start, "char_end": where.char_end,
+                "snippet": where.snippet}
+        payload = {"raw_label": s["label"], "normalized_skill": s["normalized"]}
+        _, created = _write_claim(session, doc, run, "candidate", candidate_id, "SkillClaim", payload,
+                                  natural_key(candidate_id, "SkillClaim", payload), span, origin="independent_web",
+                                  authority=doc.source_authority or "third_party_assertion")
+        added += created
+    return added
+
+
+def reread_for_job(session: Session, org_id: uuid.UUID, job: Job) -> int:
+    """Everyone found on the web for this role, read again for its current skill words (before a re-match)."""
+    from maindscout.db.models import CandidateJob, DocumentSubject
+
+    tokens = skill_tokens(session, job)
+    if not tokens:
+        return 0
+    people = session.scalars(select(CandidateJob.candidate_id).join(DocumentSubject, DocumentSubject.subject_id == CandidateJob.candidate_id)
+                             .join(Document, Document.id == DocumentSubject.document_id).where(
+        CandidateJob.job_id == job.id, CandidateJob.org_id == org_id, Document.doc_type == "web_profile").distinct())
+    return sum(reread_skills(session, org_id, cid, tokens) for cid in list(people))
 
 
 def person_by_profile(session: Session, org_id: uuid.UUID, url: str) -> uuid.UUID | None:

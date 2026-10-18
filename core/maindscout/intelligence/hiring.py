@@ -151,7 +151,12 @@ def read(text: str, client: LLMClient, source: str) -> HiringOutcome:
             kinds = [k for k in raw.get("employer_kinds") or [] if k in EMPLOYER_KINDS]
             if not kinds:  # the model left it empty: read it from the quote's own words
                 kinds = [k for k, rx in EMPLOYER_WORDS.items() if rx.search(quote)]
-            fields = {"employer_kinds": kinds}
+            if not kinds and domains_in(quote):
+                # "Experience in luxury, premium fashion … consumer brand" is an industry, not a kind of employer (the
+                # model called it a background twice on a real marketing ad, 2026-10-18, and it was lost).
+                kind, fields = "domain", {"domains": domains_in(quote)}
+            else:
+                fields = {"employer_kinds": kinds}
         elif kind == "domain":
             fields = {"domains": [d for d in raw.get("domains") or [] if d in DOMAINS] or domains_in(quote)}
         elif kind == "target_company":

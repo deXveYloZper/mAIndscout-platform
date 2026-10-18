@@ -322,6 +322,11 @@ def add_requirement(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, fiel
         raise ValueError("Choose the industry from the list.")
     p.setdefault("distinctive", False)
     p["source"] = "recruiter"
+    if p.get("category") == "skill" and not p.get("normalized_token"):
+        from maindscout.intelligence.extract import skill_name_token
+
+        if token := skill_name_token(p.get("text_raw")):  # "influencer marketing" can be shown by a profile or CV
+            p["normalized_token"] = token
     if p.get("category") == "target_company":
         out = []
         for c in p.get("companies") or []:
