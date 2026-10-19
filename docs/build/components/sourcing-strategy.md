@@ -40,6 +40,10 @@ The owner (2026-10-13): "we should be aware that our initial list of companies w
   - **Deeper searches** (owner, 2026-10-13: replies take time, so each search should give a longer list). A search at a company asks for about a quarter of its staff, from 10 to 50 (`max_results`), or 25 when its size is unknown; a country-wide search asks for 25. Exa charges $0.007 for 10 and $0.001 for each one beyond, so 50 cost about $0.047. In a test, all 25 results of "software engineer at Omnea" (219 staff) really worked there. The budget check uses each search's own price.
   - **Only that company's people count.** A result counts only when the person's work history shows the company (its Exa ID, one of its names, or its LinkedIn page). Look-alikes are skipped and never stored: on the first real run, 20 results for a 9-person company included none of its people. A suggestion says "works at X now" or "worked at X before".
   - A company is **exhausted** when every variant has been searched and either the last 2 searches found no new relevant person, or 80% of its results were already known. An exhausted company waits 90 days, unless the radar flags it.
+  - **Relevant is counted as it stands now** (2026-10-19, `relevant_now`): the strong suggestions each search found, by their current
+    band. Most people become strong only when their career reading arrives after the run; counted when found, every marketing
+    search read 0 while Safilo's three had found 15 strong people, and Safilo was rested as exhausted. The widening proposal's
+    yield is counted the same way.
   - Per company the plan keeps searches, results, known, relevant and the date of the last search.
   - **Snowball** (after each run): an earlier employer of 2 or more strong people for the role becomes a tier B target. A company that has produced 3 or more strong suggestions gets its own peer search, once.
   - **Country-wide searches by title run only when the owner opens them.**

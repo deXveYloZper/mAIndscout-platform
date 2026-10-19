@@ -510,6 +510,22 @@ def variants_for(p: SourcingPlan, company: Company | None) -> list[str]:
     return out
 
 
+def relevant_now(session: Session, job_id: uuid.UUID) -> dict[uuid.UUID, int]:
+    """search id -> the strong suggestions it found (it was their first finder), as they stand now. Most people become
+    strong only when their career reading arrives, after the run: counted when they were found, every marketing search
+    read 0 while Safilo's three had found 15 strong people, and Safilo was rested as exhausted (2026-10-19)."""
+    from sqlalchemy import func
+
+    from maindscout.db.models import Candidate, SourcingHit
+
+    rows = session.execute(select(SourcingHit.query_id, func.count()).join(
+        CandidateJob, (CandidateJob.job_id == SourcingHit.job_id) & (CandidateJob.candidate_id == SourcingHit.candidate_id)).join(
+        Candidate, Candidate.id == SourcingHit.candidate_id).where(
+        SourcingHit.job_id == job_id, SourcingHit.query_id.is_not(None), CandidateJob.triage_band == "priority",
+        Candidate.do_not_contact_at.is_(None)).group_by(SourcingHit.query_id)).all()
+    return {qid: n for qid, n in rows}
+
+
 def company_state(session: Session, job_id: uuid.UUID, p: SourcingPlan) -> dict[str, dict[str, Any]]:
     """company id -> what its searches brought for this role, and whether it is exhausted: every title variant
     searched and the last `exhausted_after` searches brought no new relevant person, or most of what it returns is
@@ -518,15 +534,16 @@ def company_state(session: Session, job_id: uuid.UUID, p: SourcingPlan) -> dict[
     out: dict[str, dict[str, Any]] = {}
     rows = list(session.scalars(select(SourcingQuery).where(SourcingQuery.job_id == job_id, SourcingQuery.company_id.is_not(None),
                                                             SourcingQuery.channel == "exa_people").order_by(SourcingQuery.last_run_at)))
+    live = relevant_now(session, job_id)
     for q in rows:
         s = out.setdefault(str(q.company_id), {"searches": 0, "results": 0, "known": 0, "relevant": 0, "texts": {}, "recent": [],
                                                "last_run_at": None})
         s["searches"] += q.runs or 0
         s["results"] += q.results or 0
         s["known"] += q.known or 0
-        s["relevant"] += q.relevant or 0
+        s["relevant"] += live.get(q.id, 0)
         s["texts"][q.text.lower()] = q.last_run_at
-        s["recent"].append(q.relevant or 0)
+        s["recent"].append(live.get(q.id, 0))
         s["last_run_at"] = q.last_run_at
     by_id = {t.get("company_id"): t for t in p.targets}
     for cid, s in out.items():
@@ -697,7 +714,8 @@ def widening(session: Session, org_id: uuid.UUID, job: Job, p: SourcingPlan) -> 
                                   .order_by(SourcingQuery.last_run_at.desc()).limit(r["yield_window"])))
     # Everything open is exhausted and the role is short: there is nothing left to search, so the owner is always asked,
     # whatever the recent yield (it is shown, to help the choice).
-    rate = sum(q.relevant or 0 for q in recent) / len(recent) if recent else 0.0
+    live = relevant_now(session, job.id)
+    rate = sum(live.get(q.id, 0) for q in recent) / len(recent) if recent else 0.0
     options = []
     closed = [g for g in GROUPS if g not in open_groups]
     if closed:

@@ -259,3 +259,40 @@ def test_a_thousands_comma_is_not_a_second_country():
     assert _pairs("Italy: 2,701 (22%), United States: 772 (6%)") == [
         {"name": "Italy", "n": 2701, "pct": 22}, {"name": "United States", "n": 772, "pct": 6}], \
         "Prada Group's team in Italy read as '2 people in Italy and a country called 701'"
+
+
+def test_a_company_whose_people_turn_strong_after_the_run_is_not_exhausted(session, job):
+    """Counted when they were found, Safilo's three searches read 0 strong though they had found 15 (2026-10-19)."""
+    from datetime import datetime, timezone
+
+    from maindscout.api import autosource, strategy
+    from maindscout.db.models import Candidate, CandidateJob, SourcingHit, SourcingQuery, SourcingRun
+
+    autosource.add_target(session, job.org_id, job.id, "Testco Eyewear", "owner@desk.test")
+    p = autosource.update_plan(session, job.org_id, job.id, "owner@desk.test",
+                               role_variants=["Radar Interferometry Specialist", "InSAR Engineer"])
+    t = next(x for x in p.targets if x["name"] == "Testco Eyewear")
+    company_id = uuid.UUID(t["company_id"])
+    queries = []
+    for v in strategy.variants_for(p, None):
+        q = SourcingQuery(org_id=job.org_id, job_id=job.id, key=f"k-{v}", channel="exa_people", text=f"{v} at Testco Eyewear",
+                          target="Testco Eyewear", tier="manual", country="IT", runs=1, results=10, new=10, known=0,
+                          relevant=0, cost_usd=0.007, company_id=company_id, last_run_at=datetime.now(timezone.utc))
+        session.add(q)
+        queries.append(q)
+    session.flush()
+    person = Candidate(org_id=job.org_id, name_variants=["Una Testperson"])
+    session.add(person)
+    session.flush()
+    pair = CandidateJob(org_id=job.org_id, candidate_id=person.id, job_id=job.id, triage_band="review_later")
+    run = SourcingRun(org_id=job.org_id, job_id=job.id, plan_id=p.id, trigger="manual", status="done", report={})
+    session.add_all([pair, run])
+    session.flush()
+    session.add(SourcingHit(org_id=job.org_id, job_id=job.id, candidate_id=person.id, run_id=run.id, query_id=queries[-1].id,
+                            channel="exa_people", target="Testco Eyewear", tier="manual", new_to_desk=True))
+    session.flush()
+    assert strategy.company_state(session, job.id, p)[str(company_id)]["exhausted"], "nobody strong yet: quiet"
+    pair.triage_band = "priority"  # their career reading arrived after the run
+    session.flush()
+    state = strategy.company_state(session, job.id, p)[str(company_id)]
+    assert state["relevant"] == 1 and not state["exhausted"], "the search's strong people count as they stand now"
