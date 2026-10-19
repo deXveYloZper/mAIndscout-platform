@@ -45,7 +45,11 @@ Plan section 4.5 and phase I4: matching (I5) needs to know what the hiring manag
 - `JobRequirementClaim`, optional additions only:
   - categories `role`, `employer`, `domain`, `target_company`, `employment`;
   - strengths `strong_plus`, `anti`;
-  - fields `role_family`, `level`, `employer_kinds`, `domains`, `companies[{name, company_id}]`, `employment`, `source`, `note`.
+  - fields `role_family`, `level`, `employer_kinds`, `domains`, `companies[{name, company_id}]`, `employment`, `source`, `note`;
+  - `company_words` (an industry as companies describe themselves, 2026-10-19);
+  - `min_staff` / `max_staff`: a company size in people, typed as "Company size" on Add a requirement (2026-10-19);
+  - `recent_months`: on a "not from" company, how recently a leaver still counts as from it; the default is 6
+    (2026-10-19).
 - Table `job_intake` (0014).
 - `POST /v1/jobs/{id}/intake {text}`, `POST /v1/jobs/{id}/requirements`, `POST /v1/requirements/{claim_id}/strength`.
 - `GET /v1/jobs/{id}` adds `hiring` (`company`, `intakes`, `targets`).

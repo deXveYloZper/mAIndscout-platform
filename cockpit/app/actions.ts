@@ -370,7 +370,13 @@ export async function addRequirement(jobId: string, _: FormState, form: FormData
   const body: Record<string, unknown> = { category, strength: String(form.get("strength") || "must"), text_raw };
   if (category === "role") Object.assign(body, { role_family: form.get("role_family") || null, level: form.get("level") || null,
     min_years: form.get("min_years") ? Number(form.get("min_years")) : null });
-  if (category === "employer") body.employer_kinds = list("employer_kinds");
+  if (category === "employer") {
+    body.employer_kinds = list("employer_kinds");
+    const [low, high] = String(form.get("staff") || "-").split("-");
+    if (low) body.min_staff = Number(low);
+    if (high) body.max_staff = Number(high);
+  }
+  if (category === "target_company" && form.get("recent_months")) body.recent_months = Number(form.get("recent_months"));
   if (category === "domain") {
     body.domains = list("domains");
     const words = String(form.get("company_words") || "").split(",").map((w) => w.trim()).filter(Boolean);

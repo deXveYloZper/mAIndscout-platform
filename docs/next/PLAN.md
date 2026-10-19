@@ -6,6 +6,10 @@ role) is the owner's to declare.
 **Phase 1b APPROVED** 2026-10-13 by the owner ("go ahead with phase 1b"; section 4b): company knowledge by identity keys (Exa for breadth, Grok for depth) and a
 staged search (talent DNA, tiered target list, batches, exhaustion, widening with the owner's say). Built 2026-10-13
 (see [STATUS](../build/STATUS.md)); peers come from descriptive company searches, since find-similar matched on names.
+**Phase 1e APPROVED** 2026-10-19 by the owner ("agree. tread carefully, what we do not want is to have worse results
+once this is implemented. Go"): understand the hire before searching (role brief, grouped requirements, kind of work,
+level, move check, a search by size, less text) and measure every rule change first. Steps A–F in
+[the decision](../decisions/2026-10-19-understand-the-hire.md); step A built 2026-10-19.
 Phases 2–6 stay drafts until the owner approves them. Revised the same day with the owner's answers (section 10).
 Written after a survey of what is built ([STATUS](../build/STATUS.md)).
 

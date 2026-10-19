@@ -5,6 +5,9 @@ import type { FormState } from "@/app/actions";
 import { DOMAINS, EMPLOYER_KIND_LABEL, FAMILY_LABEL, KIND_LABEL, LEVELS, STRENGTHS } from "@/lib/format";
 
 const KINDS = ["role", "employer", "domain", "target_company", "employment", "skill", "other"];
+/** Company size in people (the desk's size bands, owner 2026-10-19): "min-max", either end open. */
+const SIZES: [string, string][] = [["", "any size"], ["-50", "up to 50 people"], ["-250", "up to 250 people"],
+  ["-500", "up to 500 people"], ["501-5000", "501-5,000 people"], ["5001-", "over 5,000 people"]];
 
 export function AddRequirement({ action }: { action: (s: FormState, f: FormData) => Promise<FormState> }) {
   const [state, formAction, pending] = useActionState(action, {});
@@ -39,7 +42,15 @@ export function AddRequirement({ action }: { action: (s: FormState, f: FormData)
           {Object.entries(EMPLOYER_KIND_LABEL).map(([k, v]) => (
             <label key={k}><input type="checkbox" name="employer_kinds" value={k} /> {v}</label>
           ))}
+          <select name="staff" defaultValue="" aria-label="Company size">
+            {SIZES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
         </fieldset>
+      )}
+      {kind === "target_company" && (
+        <label className="sub">If not wanted, people who left it within
+          <input name="recent_months" type="number" min={0} max={60} step={1} size={3} placeholder="6" aria-label="Months" /> months count as from it
+        </label>
       )}
       {kind === "domain" && (
         <div className="row">

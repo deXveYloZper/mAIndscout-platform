@@ -17,6 +17,11 @@ function detail(r: ClaimView, targets: Record<string, number>) {
     bits.push(<span key="r">{FAMILY_LABEL[p.role_family] ?? p.role_family}{p.level ? `, ${p.level}` : ""}{p.min_years != null ? `, ${p.min_years}+ years` : ""}</span>);
   }
   if (p.employer_kinds?.length) bits.push(<span key="e">{p.employer_kinds.map((k: string) => EMPLOYER_KIND_LABEL[k] ?? k).join(", ")}</span>);
+  if (p.min_staff || p.max_staff) {
+    const n = (x: number) => x.toLocaleString("en-GB");
+    bits.push(<span key="s">{p.min_staff && p.max_staff ? `${n(p.min_staff)}-${n(p.max_staff)} people`
+      : p.max_staff ? `up to ${n(p.max_staff)} people` : `over ${n(p.min_staff - 1)} people`}</span>);
+  }
   if (p.domains?.length) bits.push(<span key="d">{p.domains.join(", ")}</span>);
   if (p.employment) bits.push(<span key="m">{p.employment}</span>);
   if (p.companies?.length) {
@@ -31,6 +36,9 @@ function detail(r: ClaimView, targets: Record<string, number>) {
         ))}
       </span>,
     );
+  }
+  if (p.category === "target_company" && p.strength === "anti") {
+    bits.push(<span key="w">their people now, and anyone who left in the last {p.recent_months ?? 6} months</span>);
   }
   if (p.note) bits.push(<span key="n" className="note">{p.note}</span>);
   return bits.length ? <span className="reqdetail"> · {bits.reduce<React.ReactNode[]>((a, b, i) => (i ? [...a, " · ", b] : [b]), [])}</span> : null;

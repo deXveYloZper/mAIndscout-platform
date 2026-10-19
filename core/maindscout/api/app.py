@@ -1076,6 +1076,9 @@ class RequirementBody(BaseModel):
     normalized_token: str | None = None
     note: str | None = None
     company_words: list[str] | None = None  # an industry as companies describe themselves (leather goods, bags)
+    min_staff: int | None = None  # employer: a company size in people (owner, 2026-10-19)
+    max_staff: int | None = None
+    recent_months: int | None = None  # "not from" a company: leavers of less than this many months count (default 6)
 
 
 @app.post("/v1/jobs/{job_id}/requirements", status_code=201)

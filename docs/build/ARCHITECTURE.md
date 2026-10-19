@@ -60,6 +60,7 @@ Local setup: [core/README.md](../../core/README.md).
 | Coverage floor + reserved score (Slice 1) | built | [coverage.md](components/coverage.md) |
 | Gap table (Slice 1) | built | [gap-table.md](components/gap-table.md) |
 | Golden eval (Milestone G) | built | [golden-eval.md](components/golden-eval.md) |
+| Match eval: what a rule change does to the desk's verdicts, before it goes live (free, rolled back) | built | [match-eval.md](components/match-eval.md) |
 | Erasure + suppression | built | [erasure.md](components/erasure.md) |
 | Cockpit (recruiter UI) | built | [cockpit.md](components/cockpit.md) |
 | HTTP API `/v1` | built | [http-api.md](components/http-api.md) |

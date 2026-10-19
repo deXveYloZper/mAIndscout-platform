@@ -210,7 +210,9 @@ def inputs(session: Session, org_id, candidate_id) -> tuple[list[rubric.Stint], 
         companies_of.append(company)
         stints.append(rubric.Stint(
             id=str(c.id), company=p["company"]["raw_name"], title=p["title_raw"], start=c.valid_from, end=c.valid_to,
-            employment=p.get("employment_type") or "unknown", company_key=str(company.id) if company else p["company"]["raw_name"].lower(),
+            # A board seat, volunteering or mentoring is read from the title at build time, like the level: not a job.
+            employment="side" if rubric.side_role(p["title_raw"]) else p.get("employment_type") or "unknown",
+            company_key=str(company.id) if company else p["company"]["raw_name"].lower(),
             family=label.get("role_family"), level=level, domains=label.get("domains") or [],
             signals=label.get("signals") or [],
             facts=None,  # filled below: every company's facts are read at once

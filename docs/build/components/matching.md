@@ -30,12 +30,21 @@ Plan section 4.6 and phase I5: replace keyword triage with a comparison of what 
   - Years asked for ("7 or more years of marketing experience") are compared with their years in that kind of work
     when there is a career profile, not their whole career: under three quarters of the years is a gap, from three
     quarters partly met (2026-10-18).
-  - Background: years at start-ups, scale-ups, consultancies and so on, from employer mix; a year is enough (2026-10-18).
+  - Background: years at start-ups, scale-ups, consultancies and so on; a year is enough (2026-10-18). What is wanted
+    counts only years in the role's kind of work and the work that builds on it (2026-10-19: six months as a baker in
+    a 4-person bakery is not small-brand experience for a marketing role). What is not wanted counts every job.
+  - Company size in people (2026-10-19, `min_staff` / `max_staff`, e.g. "a small or mid-size brand, up to 500
+    people"): years at employers of that size, in the role's kind of work, with the companies named.
+    - Agencies, consultancies, public bodies and non-profits count only when the requirement names them.
+    - Unknown sizes make it a question.
+    - Bands: 1–50, 51–250, 251–500, 501–5,000, 5,000+ (`profile.SIZE_BANDS`).
   - Industry in the companies' own words (2026-10-19): a requirement with `company_words` ("leather goods", "bags")
     counts years at employers whose own profile says it; a year is enough; unknown employers make it a question.
   - Industry: years from domain exposure; a year is enough (2026-10-18, it was two). For a luxury role, years in an
     industry other than luxury itself (hotels, travel…) count only at luxury companies.
   - Target companies: whether they worked there.
+  - "Not from" a company (2026-10-19): against when they work there now or left less than 6 months ago
+    (`recent_months` on the requirement). An earlier leaver is fine, with the date they left.
   - Employment: contract jobs read contractor patterns. A current contractor for a permanent job is a question.
   - Where someone lives and visas are always "Ask".
   - A language the profile or CV does not list is "Ask", never a gap (2026-10-18: many profiles list no languages).

@@ -194,6 +194,31 @@
       },
       "description": "employer: kinds of employer the person should (or, with anti, should not) come from."
     },
+    "min_staff": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "description": "employer: the smallest staff count of the companies wanted (e.g. 501 for large companies)."
+    },
+    "max_staff": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "description": "employer: the largest staff count of the companies wanted (e.g. 500 for 'a small or mid-size brand'; owner, 2026-10-19)."
+    },
+    "recent_months": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 60,
+      "description": "target_company with anti: anyone who left that company less than this many months ago counts as from it (default 6; owner, 2026-10-19)."
+    },
     "domains": {
       "type": [
         "array",

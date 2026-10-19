@@ -42,6 +42,14 @@ Plan section 4.3 and the owner's brief (2026-10-03): understand a candidate's ca
    - **Stability:** one tenure per employer, so a promotion isn't a move. Jobs before the career started, in another kind of work, don't count. Year-only dates ("2017 – 2018") never make a stay "short". A short stay at a company that shut down or was sold isn't counted, and becomes a question instead.
    - **Contractors** are read against contractor norms: long or short engagements.
    - **Employer kind** comes from the funding stage when they joined. A round more than 8 years earlier doesn't count; then company size decides.
+   - **Real jobs only** (2026-10-19): a title that is only a board seat, volunteering or mentoring ("Board Member",
+     "Advisory Board Member", "Volunteer", "Mentor …") is read as a side role when the profile is built
+     (`profile.side_role`). It never counts as years of experience, employer kind or industry.
+     - Executive and management boards, and any title that also names a job ("CEO & Board Member"), stay jobs.
+     - Lecturers, tutors, "Client Advisor" and "Brand ambassador" stay jobs too.
+     - The rule was tested on every title on the desk.
+   - **Company size bands** (2026-10-19, `profile.SIZE_BANDS`): 1–50, 51–250, 251–500, 501–5,000, 5,000+, for sizes asked
+     in people ([matching](matching.md)).
    - **Reading:**
      - unclear when too little is known;
      - developing when relevant work is under 2 years;

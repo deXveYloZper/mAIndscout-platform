@@ -11,6 +11,8 @@
     python -m maindscout coverage-check      apply the coverage rule to everyone already on the desk (free)
     python -m maindscout profiles-rebuild [--reclassify]  rebuild career profiles (reclassify: read step labels again, paid)
     python -m maindscout rematch             match every person on every job again (free)
+    python -m maindscout match-eval [--job ID ...] [--labels FILE]   what the current rules would change, before
+                                             they go live, against the owner's decisions (free; writes nothing)
     python -m maindscout demo-seed [--count 60]  add synthetic demo people ("Demo · ", @example.invalid) for testing
     python -m maindscout demo-clear          erase every demo person
     python -m maindscout worker [--threads 2] run background tasks (serve also starts workers unless --no-workers)
@@ -244,6 +246,11 @@ def main() -> None:
     p_prof = sub.add_parser("profiles-rebuild")
     p_prof.add_argument("--reclassify", action="store_true")
     sub.add_parser("rematch")
+    p_meval = sub.add_parser("match-eval")
+    p_meval.add_argument("--job", action="append", default=None)
+    p_meval.add_argument("--labels", type=Path, default=None)
+    p_meval.add_argument("--show", type=int, default=40)
+    p_meval.add_argument("--quiet", type=int, default=0, help="also list N people whose rows changed with no move")
     p_demo = sub.add_parser("demo-seed")
     p_demo.add_argument("--count", type=int, default=60)
     sub.add_parser("demo-clear")
@@ -359,6 +366,10 @@ def main() -> None:
                 changed += retriage_pair(session, pair, {"act": "rematch"}, "system") is not None
             session.commit()
             print(f"bands changed: {changed}")
+    elif args.cmd == "match-eval":
+        from maindscout.evals.matching import main as match_eval
+
+        raise SystemExit(match_eval(args.job, args.labels, args.show, args.quiet))
     elif args.cmd in ("demo-seed", "demo-clear"):
         import os
 

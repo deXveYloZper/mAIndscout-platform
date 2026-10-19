@@ -8,12 +8,13 @@ Never personality, culture or "fit" (owner's rule, 2026-10-03).
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from statistics import median
-from typing import Any
+from typing import Any, Callable
 
-RUBRIC_VERSION = "2026-10-18.1"  # a title sets the level only when current or held a year
+RUBRIC_VERSION = "2026-10-19.1"  # a board seat, volunteering or mentoring is not a job
 
 ROLE_FAMILIES = [
     "software_engineering", "data_ml", "devops_infrastructure", "security", "qa_testing", "embedded_hardware",
@@ -109,6 +110,48 @@ CONTRACT = ("contract", "consulting")
 NOT_EXPERIENCE = ("internship", "side")
 YEAR = 365.25
 MIN_TITLE_DAYS = 365  # a past title sets the level only when held this long (a current one always does)
+
+# A seat on a board, volunteering or mentoring is not a job there: never years of experience, never "experience at a
+# small company" (a club's membership board made a worldwide media director "small-brand experienced", 2026-10-19).
+# Tested on every title on the desk: lecturers, tutors, "Client Advisor" and "Brand ambassador" (luxury retail jobs)
+# stay jobs. An executive or management board is a job, and so is any title that also names one.
+_SIDE_ROLE = re.compile(r"\b(advisory board|board of advisors|advisory council|board advisor|board member|member of the board|"
+                        r"board of directors|membership board|supervisory board|non[- ]executive director|trustee|"
+                        r"volunteer(ing)?|mentor)\b", re.I)
+_EXECUTIVE_BOARD = re.compile(r"\b(executive board|management board|managing board)\b", re.I)
+_JOB_WORDS = re.compile(r"\b(ceo|cfo|coo|cto|cmo|cpo|chief|founder|co-?founder|president|managing director|general manager|owner|"
+                        r"partner|manager|coordinator|head|lead|officer|specialist|engineer|developer|analyst|consultant|executive)\b", re.I)
+
+
+def side_role(title: str | None) -> bool:
+    """Is this title only a board seat, volunteering or mentoring (not a job at the company)?"""
+    t = title or ""
+    if not _SIDE_ROLE.search(t) or _EXECUTIVE_BOARD.search(t):
+        return False
+    return not _JOB_WORDS.search(re.sub(r"non[- ]executive director", "", t, flags=re.I))
+
+
+# Company size in bands (owner, 2026-10-19: up to 50 is small; 51-250 and 251-500 are different; "everything above 500
+# is already big"). 250 is also the EU's line for a mid-size company. (upper bound, words); None: no upper bound.
+SIZE_BANDS: tuple[tuple[int | None, str], ...] = (
+    (50, "small (up to 50 people)"), (250, "mid-size (51-250 people)"), (500, "upper mid-size (251-500 people)"),
+    (5000, "large (501-5,000 people)"), (None, "very large (over 5,000 people)"))
+
+
+def size_band(staff: int | None) -> int | None:
+    """0 small … 4 very large, from a staff count; None when the size is not known."""
+    if staff is None:
+        return None
+    return next(i for i, (top, _) in enumerate(SIZE_BANDS) if top is None or staff <= top)
+
+
+def staff_words(low: int | None, high: int | None) -> str:
+    """A staff range in words: "up to 500 people", "over 5,000 people", "51-250 people"."""
+    if low and high:
+        return f"{low:,}-{high:,} people"
+    if high:
+        return f"up to {high:,} people"
+    return f"over {(low or 1) - 1:,} people" if low and low > 1 else "any size"
 
 
 @dataclass
@@ -388,13 +431,16 @@ CATEGORY_LABEL = {"startup": "start-ups", "scaleup": "scale-ups", "large": "larg
                   "agency": "agencies", "public_sector": "public sector", "non_profit": "non-profits", "unknown": "not known"}
 
 
-def employer_mix(stints: list[Stint], as_of: date) -> dict[str, Any]:
+def _employer_months(stints: list[Stint], as_of: date, keep: Callable[[Stint], bool] | None = None
+                     ) -> tuple[dict[str, float], dict[str, list[str]]]:
+    """Months in the last 10 years at each kind of employer (stint_category), in real jobs; `keep` limits the jobs
+    counted (matching counts only the role's kind of work)."""
     window = as_of.replace(year=as_of.year - 10)
     months: dict[str, float] = {}
     ids: dict[str, list[str]] = {}
     for s in stints:
         span = _span(s, as_of)
-        if span is None or s.employment in NOT_EXPERIENCE:
+        if span is None or s.employment in NOT_EXPERIENCE or (keep is not None and not keep(s)):
             continue
         start = max(span[0], window)
         if span[1] <= start:
@@ -402,6 +448,39 @@ def employer_mix(stints: list[Stint], as_of: date) -> dict[str, Any]:
         cat = stint_category(s)
         months[cat] = months.get(cat, 0) + _months(start, span[1])
         ids.setdefault(cat, []).append(s.id)
+    return months, ids
+
+
+def employer_years(stints: list[Stint], as_of: date, keep: Callable[[Stint], bool] | None = None) -> dict[str, float]:
+    """Years in the last 10 at each kind of employer, as the employer mix counts them."""
+    months, _ = _employer_months(stints, as_of, keep)
+    return {k: round(v / 12, 1) for k, v in months.items()}
+
+
+def years_at_size(stints: list[Stint], as_of: date, low: int | None, high: int | None,
+                  keep: Callable[[Stint], bool] | None = None) -> tuple[float, list[Stint], bool]:
+    """Years in the last 10 at employers whose staff count is in [low, high] (overlaps once), in real jobs; the jobs
+    that count; and whether any job's employer size is known at all."""
+    window = as_of.replace(year=as_of.year - 10)
+    spans, hits, known = [], [], False
+    for s in stints:
+        span = _span(s, as_of)
+        if span is None or s.employment in NOT_EXPERIENCE or (keep is not None and not keep(s)):
+            continue
+        staff = s.facts.team_min if s.facts is not None else None
+        if staff is None:
+            continue
+        known = True
+        start = max(span[0], window)
+        if span[1] <= start or (low is not None and staff < low) or (high is not None and staff > high):
+            continue
+        spans.append((start, span[1]))
+        hits.append(s)
+    return round(_years(spans), 1), hits, known
+
+
+def employer_mix(stints: list[Stint], as_of: date) -> dict[str, Any]:
+    months, ids = _employer_months(stints, as_of)
     known = {k: v for k, v in months.items() if k != "unknown"}
     if not known:
         return _dim("unknown", "Employer kinds not known yet (company research pending or not found).")

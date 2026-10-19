@@ -16,11 +16,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from datetime import date, timedelta
+from typing import Any, Callable
 
-from maindscout.domain.profile import FAMILY_LABEL, LEVEL_RANK, Stint, group_of
+from maindscout.domain.profile import (FAMILY_LABEL, LEVEL_RANK, NOT_EXPERIENCE, Stint, employer_years, group_of, staff_words,
+                                       years_at_size)
 
-ENGINE_VERSION = "match-2026-10-06.1"
+ENGINE_VERSION = "match-2026-10-19.1"  # company sizes in people; a kind of company counts in the role's own work
 MUST = ("must", "deal_breaker")
 
 # The desk's rules, as data: id -> what it says. The order of evaluation is the order of this list.
@@ -119,22 +121,67 @@ def _role(p: dict[str, Any], profile: dict[str, Any]) -> tuple[str, str]:
 
 
 # Kinds of employer in plain words. Without a funding round, size decides the kind (domain/profile.stint_category):
-# up to 50 people is a start-up, up to 1,000 a scale-up, so an established 62-person brand reads as a scale-up.
+# up to 50 people is a start-up, up to 1,000 a scale-up, so an established 62-person brand reads as a scale-up. A size
+# asked in people ("a small or mid-size brand") is its own range instead (min_staff / max_staff; profile.SIZE_BANDS).
 KIND_WORDS = {"startup": "start-ups or small companies (up to 50 people)",
               "scaleup": "scale-ups or mid-size companies (51-1,000 people)", "large": "large companies",
               "consultancy": "consultancies", "agency": "agencies", "public_sector": "the public sector", "non_profit": "non-profits"}
 
 
-def _employer(p: dict[str, Any], profile: dict[str, Any]) -> tuple[str, str]:
-    mix = profile["dimensions"]["employer_mix"]
-    years = mix.get("years") or {}
-    known = {k: y for k, y in years.items() if k != "unknown"}
+def _relevant(family: str | None) -> Callable[[Stint], bool] | None:
+    """The role's kind of work, and the work that builds on it (as relevant years count it). None: every job counts."""
+    if not family:
+        return None
+    group = group_of(family)
+    return lambda s: s.family is None or group_of(s.family) == group
+
+
+# A size alone asks about companies like a client: agencies, consultancies, public bodies and non-profits do not count
+# unless the requirement names them (the start-up / scale-up reading never counted them either; a PR agency and a
+# fashion trade body read as "small-brand experience" in the what-if of 2026-10-19).
+NOT_LIKE_A_CLIENT = ("agency", "consultancy", "outsourcing", "public_sector", "non_profit")
+
+
+def _employer(p: dict[str, Any], profile: dict[str, Any], stints: list[Stint] | None = None,
+              family: str | None = None) -> tuple[str, str]:
+    """A kind of company (start-up, agency…) or a size in people. What is wanted counts only years in the role's kind of
+    work (owner, 2026-10-19: six months as a baker in a 4-person bakery is not "small-brand experience" for a marketing
+    role); what is not wanted counts every job, as before."""
+    from maindscout.domain.profile import stint_category
+
     kinds = p.get("employer_kinds") or []
+    keep = _relevant(family) if stints is not None else None
+    jobs = [s for s in stints or [] if s.employment not in NOT_EXPERIENCE and (keep is None or keep(s))]
+    low, high = p.get("min_staff"), p.get("max_staff")
+    if p.get("strength") != "anti" and (low is not None or high is not None):
+        size = staff_words(low, high)
+        if keep is not None and not jobs:
+            return "gap", f"no time at companies of {size} in this kind of work"
+        if not any(s.facts is not None and s.facts.team_min is not None for s in jobs):
+            return "ask", f"the sizes of their employers are not known yet ({size})"
+        like = (lambda s: stint_category(s) in kinds) if kinds else (
+            lambda s: (s.facts.kind if s.facts is not None else None) not in NOT_LIKE_A_CLIENT)
+        have, hits, _ = years_at_size(jobs, date.today(), low, high, like)
+        names = list(dict.fromkeys(s.company for s in hits))[:3]
+        at = f" ({', '.join(names)})" if names else ""
+        if have >= 1:
+            return "strong", f"{_years(have)} at companies of {size}{at}"
+        if have > 0:
+            return "partial", f"{_years(have)} at companies of {size}{at}"
+        return "gap", f"no time at companies of {size} in this kind of work (as far as research shows)"
+    mix = profile["dimensions"]["employer_mix"]
+    names = " or ".join(KIND_WORDS.get(k, k.replace("_", " ")) for k in kinds)
+    if p.get("strength") == "anti" or keep is None:
+        years = mix.get("years") or {}
+    elif not jobs:
+        return "gap", f"no time at {names} in this kind of work"
+    else:
+        years = employer_years(jobs, date.today())
+    known = {k: y for k, y in years.items() if k != "unknown"}
     if not known:
         return "ask", "the kinds of employer are not known yet"
     have = sum(known.get(k, 0) for k in kinds)
     total = sum(years.values()) or 1
-    names = " or ".join(KIND_WORDS.get(k, k.replace("_", " ")) for k in kinds)
     if p.get("strength") == "anti":
         share = have / total
         return ("against", f"{_years(have)} of the last 10 at {names}") if share >= 0.5 else ("strong", f"mostly not at {names}")
@@ -225,12 +272,28 @@ def _domain(p: dict[str, Any], profile: dict[str, Any], stints: list[Stint] | No
     return "gap", f"no time in {names}"
 
 
+# "Not from" a company: its people now, and anyone who left it less than this long ago; earlier leavers are fine
+# (owner, 2026-10-19: no-compete clauses rarely run past two years, and six months is the line). A setting on each
+# restriction ("recent_months").
+RECENT_MONTHS = 6
+
+
 def _target(p: dict[str, Any], stints: list[Stint]) -> tuple[str, str]:
     ids = {c.get("company_id") for c in p.get("companies") or [] if c.get("company_id")}
     hit = [s for s in stints if s.company_key in ids]
     names = ", ".join(c["name"] for c in p.get("companies") or [])
     if p.get("strength") == "anti":
-        return ("against", f"worked at {hit[0].company}") if hit else ("strong", f"never at {names}")
+        months = RECENT_MONTHS if p.get("recent_months") is None else int(p["recent_months"])
+        cutoff = date.today() - timedelta(days=round(months * 30.44))
+        now = [s for s in hit if s.end is None]
+        if now:
+            return "against", f"works at {now[0].company}"
+        recent = [s for s in hit if s.end >= cutoff]
+        if recent:
+            return "against", f"left {recent[0].company} in {max(s.end for s in recent):%B %Y}, less than {months} months ago"
+        if hit:
+            return "strong", f"left {hit[0].company} in {max(s.end for s in hit):%B %Y}, more than {months} months ago"
+        return "strong", f"never at {names}"
     return ("strong", f"worked at {', '.join(sorted({s.company for s in hit}))}") if hit else ("gap", f"never at {names}")
 
 
@@ -279,6 +342,8 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
     from maindscout.domain.tiers import luxury_role
 
     luxury = luxury_role([p.get("text_raw") or "" for p in by_id.values() if p.get("strength") != "anti"])
+    family = next((p["role_family"] for p in by_id.values() if p.get("category") == "role" and p.get("role_family")
+                   and p.get("strength") != "anti"), None)  # the role's kind of work
     rows: list[Verdict] = []
     for g in gap_rows:  # skills, years, education, languages, mobility, and anything the gap table already reads
         p = by_id.get(g.requirement_id, {})
@@ -315,7 +380,7 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
         elif cat == "role":
             v, d = _role(p, profile)
         elif cat == "employer":
-            v, d = _employer(p, profile)
+            v, d = _employer(p, profile, stints, family)
         elif cat == "domain":
             v, d = _domain(p, profile, stints, luxury)
         elif cat == "target_company":

@@ -24,7 +24,7 @@ from maindscout.intelligence.llm import LLMClient
 
 LIVE = ("proposed", "approved")
 VALUE_FIELDS = ("role_family", "level", "min_years", "employer_kinds", "domains", "employment", "normalized_token", "mobility",
-                "cities", "relocation")
+                "cities", "relocation", "min_staff", "max_staff", "recent_months")
 CATEGORY = {"role": "role", "employer": "employer", "domain": "domain", "target_company": "target_company",
             "employment": "employment", "skill": "skill", "other": "other", "location": "location"}
 
@@ -39,7 +39,8 @@ def key_for(job_id, p: dict[str, Any]) -> str:
     if cat == "role":
         part = "role"  # a job has one role
     elif cat == "employer":
-        part = ",".join(sorted(p.get("employer_kinds") or [])) + f"|{'anti' if p['strength'] == 'anti' else 'want'}"
+        size = f"|{p.get('min_staff') or ''}-{p.get('max_staff') or ''}" if p.get("min_staff") or p.get("max_staff") else ""
+        part = ",".join(sorted(p.get("employer_kinds") or [])) + size + f"|{'anti' if p['strength'] == 'anti' else 'want'}"
     elif cat == "domain":
         part = ",".join(sorted(p.get("domains") or [])) + f"|{'anti' if p['strength'] == 'anti' else 'want'}"
     elif cat == "target_company":
@@ -316,8 +317,11 @@ def add_requirement(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, fiel
     from maindscout.api import review
 
     p = {k: v for k, v in fields.items() if v not in (None, "", [])}
-    if p.get("category") == "employer" and not p.get("employer_kinds"):
-        raise ValueError("Tick a background (start-up, agency, …). For an industry such as luxury, choose Industry instead.")
+    if p.get("category") == "employer" and not p.get("employer_kinds") and not (p.get("min_staff") or p.get("max_staff")):
+        raise ValueError("Tick a background (start-up, agency, …) or choose a company size. For an industry such as luxury, "
+                         "choose Industry instead.")
+    if p.get("min_staff") and p.get("max_staff") and p["min_staff"] > p["max_staff"]:
+        raise ValueError("The smallest company size is above the largest.")
     if p.get("company_words"):
         p["company_words"] = list(dict.fromkeys(w.strip().lower() for w in p["company_words"] if w and w.strip()))[:12]
     if p.get("category") == "domain" and not p.get("domains") and not p.get("company_words"):

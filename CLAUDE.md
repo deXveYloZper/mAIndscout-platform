@@ -55,6 +55,10 @@ cockpit  →  api/  →  database
   erasure win over everything.
   The talent-release radar quotes company news only, never a person's name. Keep `SOURCING_AUTO=false`,
   `EVIDENCE_AUTO=false` and `PRACTICES_AUTO=false` while testing with real keys.
+- **A rule change is measured before it goes live** (owner, 2026-10-19: "what we do not want is to have worse results"):
+  `python -m maindscout match-eval` re-matches stored people with the new code (free, rolled back). With the code
+  unchanged it must report no moves; after the change every move is explained, and the owner's own decisions and
+  the labels in `core/eval-reports/match-labels.json` must not get worse ([match eval](docs/build/components/match-eval.md)).
 - **Model and Exa calls cost the owner money.** Tests and e2e use fakes or recordings (`LLM_REPLAY`); keep
   `RESEARCH_AUTO=false` while testing; run paid checks only when the owner has agreed to them.
 - **Secrets and real data stay out of git**: `core/.env`, `cockpit/.env.local`, real CVs, `core/eval-reports/`,
