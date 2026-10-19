@@ -14,7 +14,7 @@ from typing import Any
 from maindscout.domain.profile import DOMAINS, LEVELS, ROLE_FAMILIES, domains_in
 from maindscout.intelligence.llm import LLMClient
 
-HIRING_PROMPT_VERSION = "2026-10-13.1"
+HIRING_PROMPT_VERSION = "2026-10-19.1"  # sizes in people, level limits, and no ask dropped
 EMPLOYER_KINDS = ["startup", "scaleup", "large", "consultancy", "agency", "public_sector", "non_profit"]
 STRENGTHS = ["must", "strong_plus", "nice", "anti"]
 KINDS = ["role", "employer", "domain", "target_company", "employment", "skill", "other", "hiring_company", "location"]
@@ -26,7 +26,8 @@ SCHEMA = {
     "properties": {"items": {"type": "array", "items": {
         "type": "object", "additionalProperties": False,
         "required": ["kind", "strength", "text", "quote", "role_family", "level", "min_years", "employer_kinds", "domains",
-                     "companies", "employment", "skill_token", "note", "countries", "cities", "relocation"],
+                     "companies", "employment", "skill_token", "note", "countries", "cities", "relocation", "min_staff",
+                     "max_staff"],
         "properties": {
             "kind": {"type": "string", "enum": KINDS},
             "strength": {"type": "string", "enum": STRENGTHS},
@@ -45,18 +46,31 @@ SCHEMA = {
                           "description": "location only: two-letter country codes of the places named (Milan -> IT)"},
             "cities": {"type": "array", "items": {"type": "string"}, "description": "location only: cities named"},
             "relocation": {"type": ["boolean", "null"], "description": "location only: true if moving there is fine"},
+            "min_staff": {"type": ["integer", "null"], "description": "employer only: the smallest company size in people"},
+            "max_staff": {"type": ["integer", "null"], "description": "employer only: the largest company size in people"},
         }}}},
 }
+
+# Company sizes in the desk's words (owner, 2026-10-19; domain/profile.SIZE_BANDS): when notes say "small" or "big"
+# without a number, these are the sizes meant.
+SIZE_WORDS = ("Company sizes in people: small is up to 50, mid-size up to 250, big or large means over 500 "
+              "(min_staff 501) unless a number is written; 'up to 200 people' is max_staff 200. ")
+LEVEL_LIMIT = ("A limit on seniority ('not too senior', 'no heads or directors', 'not global or regional roles') is a "
+               "role item with strength anti, the kind of work of the job, and level = the FIRST level that is too "
+               "senior (head when heads, global or regional leads are not wanted; director when directors are not). ")
+NO_ASK_DROPPED = ("Every concrete ask in the text must become an item: if it fits none of the kinds, give it as kind "
+                  "other with its quote, never leave it out. ")
 
 SYSTEM_AD = (
     "You read ONE job advertisement for a recruiting desk and state the hiring profile it gives. Give: one 'role' item "
     "(the kind of work from the list, the level if the ad states or clearly implies it, min_years only if a number is "
     "written); 'employment' (permanent or contract) if stated; 'employer' items only if the ad asks for a background "
-    "(e.g. 'start-up experience'); 'domain' items only if the ad asks for industry experience; 'target_company' only if "
-    "companies are named as where people should come from. Skills, education and languages are read elsewhere: do not "
-    "repeat them. Strength: must (required, essential), strong_plus (highly desirable, big plus, strongly preferred), "
-    "nice (nice to have, bonus), anti (explicitly not wanted). Every item quotes the ad exactly. Never items about "
-    "personality, attitude, culture or fit. Never guess: leave out what the ad does not say."
+    "(e.g. 'start-up experience', or a company size); 'domain' items only if the ad asks for industry experience; "
+    "'target_company' only if companies are named as where people should come from. Skills, education and languages "
+    "are read elsewhere: do not repeat them. Strength: must (required, essential), strong_plus (highly desirable, big "
+    "plus, strongly preferred), nice (nice to have, bonus), anti (explicitly not wanted). " + SIZE_WORDS + LEVEL_LIMIT +
+    "Every item quotes the ad exactly. Never items about personality, attitude, culture or fit. Never guess: leave out "
+    "what the ad does not say."
 )
 SYSTEM_INTAKE = (
     "You read a recruiter's notes from a call with a hiring manager and turn them into hiring requirements. Kinds: "
@@ -68,10 +82,12 @@ SYSTEM_INTAKE = (
     "two-letter country codes, and relocation true when moving there is fine, e.g. 'must be in Milan or willing to "
     "move to Milan'). Give a role item only when the notes "
     "state what kind of work, level or years the person needs; the job's title mentioned in passing is not one, and never give any item that only names the job. Strength exactly as the notes put it: "
-    "must, strong_plus ('strong plus', 'really wants', 'highly desirable'), nice ('nice to have', 'bonus'), anti ('no', "
-    "'not', 'avoid'). If the notes say one thing can substitute for another, put that in note. Right to work is "
-    "handled elsewhere: leave it out. Every item quotes the notes exactly. Never items about personality, "
-    "attitude, culture or fit. Never guess."
+    "must, strong_plus ('strong plus', 'really wants', 'highly desirable', 'ideally'), nice ('nice to have', 'bonus'), "
+    "anti ('no', 'not', 'avoid', 'cannot'). If the notes say one thing can substitute for another, put that in note. "
+    "An employer item may name a size in people instead of, or as well as, a kind ('ideally from small brands up to "
+    "200 people': strong_plus, max_staff 200; 'not from big brands': anti, min_staff 501). " + SIZE_WORDS + LEVEL_LIMIT +
+    NO_ASK_DROPPED + "Right to work is handled elsewhere: leave it out. Every item quotes the notes exactly. Never "
+    "items about personality, attitude, culture or fit. Never guess."
 )
 
 EMPLOYMENT_WORDS = re.compile(r"\b(permanent|full[- ]time|part[- ]time|contract|contractor|freelance|fixed[- ]term|temporary|"
@@ -149,14 +165,22 @@ def read(text: str, client: LLMClient, source: str) -> HiringOutcome:
                 fields["min_years"] = years
         elif kind == "employer":
             kinds = [k for k in raw.get("employer_kinds") or [] if k in EMPLOYER_KINDS]
-            if not kinds:  # the model left it empty: read it from the quote's own words
+            sizes = {k: int(raw[k]) for k in ("min_staff", "max_staff")
+                     if isinstance(raw.get(k), (int, float)) and 1 <= raw[k] <= 1_000_000}
+            if sizes:
+                kinds = [k for k in kinds if k not in ("startup", "scaleup", "large")]  # the size says it in people
+            elif not kinds:  # the model left it empty: read it from the quote's own words
                 kinds = [k for k, rx in EMPLOYER_WORDS.items() if rx.search(quote)]
-            if not kinds and domains_in(quote):
+            if not kinds and not sizes and domains_in(quote):
                 # "Experience in luxury, premium fashion … consumer brand" is an industry, not a kind of employer (the
                 # model called it a background twice on a real marketing ad, 2026-10-18, and it was lost).
                 kind, fields = "domain", {"domains": domains_in(quote)}
+            elif not kinds and not sizes:
+                # "not from big brands" with no kind and no size was dropped as "nothing usable" (2026-10-19): it is
+                # kept for the conversation instead.
+                kind, fields = "other", {}
             else:
-                fields = {"employer_kinds": kinds}
+                fields = ({"employer_kinds": kinds} if kinds else {}) | sizes
         elif kind == "domain":
             fields = {"domains": [d for d in raw.get("domains") or [] if d in DOMAINS] or domains_in(quote)}
         elif kind == "target_company":

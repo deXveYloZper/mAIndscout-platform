@@ -27,6 +27,21 @@ Plan section 4.5 and phase I4: matching (I5) needs to know what the hiring manag
   - target companies only when named in the quote;
   - a background the model leaves empty is read from the quote's own words ("start-up", "consultancies");
   - from notes, a "role" with no level or years is a concrete ask (e.g. "0-to-1 product delivery"), never the job's role.
+- **Sizes, level limits, and no ask dropped** (2026-10-19, `HIRING_PROMPT_VERSION` 2026-10-19.1). The owner's
+  Bonaventura notes had lost three asks: "not too senior like global and regional", "not from big brands" and "ideally
+  from small up to 200 people". Now:
+  - an employer item may give a size in people (`min_staff`, `max_staff`), in the desk's words: small up to 50,
+    mid-size up to 250, big over 500;
+  - a limit on seniority is a role item with strength anti and the first level that is too senior. It is its own
+    requirement (key `role|anti`), takes the job's own kind of work, and is shown as "head and above";
+  - an ask that fits no list is kept as kind other, for the conversation, never dropped;
+  - an "other" ask already on the role under another kind is not added twice;
+  - a leading article no longer makes a second requirement ("the salary…" and "salary…").
+  - `reread_intakes` reads a role's notes again with today's reader. The marketing role's notes were read again the
+    same day; Procure AI's were not (nothing was missing).
+- **Three groups** ([role brief](role-brief.md), `domain/groups.py`): what the desk searches and rates by, what is for
+  the conversation (asked on the call, nothing to confirm), and context. The job page API gives each requirement's
+  group.
 - **Never personality, culture or "fit":** such items are dropped whatever the model says (owner's rule, 2026-10-03).
 - **One requirement per subject.** A job has one role and one employment requirement. If the intake states a different value or strength than the ad, the intake's reading replaces the ad's (the ad's is kept as superseded). What a person approved is never replaced by a machine reading.
 - **Stored as `JobRequirementClaim`s.**

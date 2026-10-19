@@ -91,6 +91,27 @@ Tracing the 57 strong people through each step showed where it went wrong:
 - **The seven hand labels** (Tommaso Galli, Piera Valentina Toniolo and five CRM specialists should not be strong) are
   still wrong. They are step C's to fix: the move check, the level, and the finer kind of work.
 
+## Step B (built 2026-10-19, the owner's "go ahead with B")
+1. **The notes reader drops no ask.** The owner's Bonaventura notes had said "not too senior like global and
+   regional, not from big brands, ideally from small up to 200 people", and only the Milan, Valentino and salary asks
+   were read.
+   - Sizes in people are read in the desk's words ("big" is over 500).
+   - A limit on seniority is its own "not wanted" requirement (head and above).
+   - An ask no list can hold is kept for the conversation.
+   - The notes were read again. "Up to 200 people" replaced the typed "up to 500", which had been a stand-in written in
+     this build; match-eval showed three strong people move to possible, one hand label fixed, none made worse.
+2. **The two limits rate nobody yet.** The seniority limit and "not from big brands" are read and shown; step C defines
+   how they rate, through match-eval first.
+3. **A role brief** ([role brief](../build/components/role-brief.md)): situation, core work, team, hands-on, market,
+   reports to, level. Each line comes from the ad, the notes or research (quoted, checked) or is our reading, and a
+   reading that changes whom to look for carries one question, at most five. One model call, about half a cent; the
+   first two briefs cost $0.008.
+   - Bonaventura: entering Italy and Europe, leads a small Milan team and agencies, steps into the work; level from the
+     owner's notes; one question, who the role reports to and where.
+   - Procure AI: every line said by the ad, so no questions.
+4. **Three groups** for the requirements: what the desk searches and rates by, what is for the conversation (it becomes
+   a call question, nothing to confirm), and context. The screens come with step E, preview first.
+
 ## Not changed
 - The kinds start-up and scale-up keep their meaning (a stage; by size only when no funding is known).
 - Industry years still count every real job.

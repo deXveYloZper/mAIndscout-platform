@@ -173,7 +173,7 @@
         "founder",
         null
       ],
-      "description": "role: the level asked for."
+      "description": "role: the level asked for. With strength anti (a limit on seniority, e.g. 'not too senior like global and regional'): the first level that is too senior."
     },
     "employer_kinds": {
       "type": [

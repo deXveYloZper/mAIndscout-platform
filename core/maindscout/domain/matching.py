@@ -375,6 +375,10 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
         cat = p.get("category")
         if cat not in ("role", "employer", "domain", "target_company", "employment"):
             continue
+        if p.get("strength") == "anti" and (cat == "role" or (cat == "employer" and (p.get("min_staff") or p.get("max_staff")))):
+            # A limit on seniority ("not too senior") or "not from" companies of a size: read since 2026-10-19, rated
+            # from step C of understanding the hire, once match-eval has shown what they change.
+            continue
         if thin:
             v, d = "ask", "no career profile yet"
         elif cat == "role":

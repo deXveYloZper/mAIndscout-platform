@@ -382,7 +382,7 @@ def job_side(session: Session, job: Job, requirements: list[dict]):
         side.facts = profiles.company_facts(session, session.get(Company, job.hiring_company_id))
     for p in requirements:
         cat = p.get("category")
-        if cat == "role" and p.get("role_family"):
+        if cat == "role" and p.get("role_family") and p.get("strength") != "anti":  # a seniority limit is not the role
             side.family, side.level = p["role_family"], p.get("level")
         elif cat == "employment" and p.get("employment"):
             side.employment = p["employment"]

@@ -1062,6 +1062,19 @@ def add_intake(job_id: uuid.UUID, body: IntakeBody, org_id: uuid.UUID = Depends(
     return {**result, "job": queries.job_page(session, org_id, job_id)}
 
 
+@app.post("/v1/jobs/{job_id}/role-brief")
+def read_role_brief(job_id: uuid.UUID, reread_notes: bool = False, org_id: uuid.UUID = Depends(get_org),
+                    session: Session = Depends(get_session), llm: LLMClient = Depends(get_llm)):
+    """Read the role brief (what the hire will really do, from the ad, the notes and research; about a cent), and with
+    `reread_notes` read the notes again first with today's reader."""
+    from maindscout.api import hiring, role_brief
+
+    notes = hiring.reread_intakes(session, org_id, job_id, llm) if reread_notes else None
+    result = role_brief.read(session, org_id, job_id, llm)
+    session.commit()
+    return {**result, "notes": notes, "brief": role_brief.view(session, job_id)}
+
+
 class RequirementBody(BaseModel):
     category: str
     strength: str

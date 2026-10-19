@@ -45,6 +45,8 @@ Plan section 4.6 and phase I5: replace keyword triage with a comparison of what 
   - Target companies: whether they worked there.
   - "Not from" a company (2026-10-19): against when they work there now or left less than 6 months ago
     (`recent_months` on the requirement). An earlier leaver is fine, with the date they left.
+  - A limit on seniority (role, strength anti) and "not from" companies of a size (employer, anti, with a staff
+    count) are read since 2026-10-19 but rate nobody yet. Step C defines them, after match-eval.
   - Employment: contract jobs read contractor patterns. A current contractor for a permanent job is a question.
   - Where someone lives and visas are always "Ask".
   - A language the profile or CV does not list is "Ask", never a gap (2026-10-18: many profiles list no languages).

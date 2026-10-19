@@ -41,6 +41,7 @@ The cockpit must never touch the database. Every action goes through one guarded
 | `GET /v1/companies?q=` · `GET /v1/companies/{id}` · `POST /v1/companies/{id}/merge` | Companies the desk knows, a company with the people we know there and its public facts, merge ([companies.md](companies.md)) |
 | `GET /v1/candidates/{id}` (profile) | The person page also carries `profile` and `classifications` ([career-profiles.md](career-profiles.md)) |
 | `POST /v1/jobs/{id}/intake` · `POST /v1/jobs/{id}/requirements` · `POST /v1/requirements/{id}/strength` | Intake notes, a requirement typed by the recruiter, change how much a requirement matters ([hiring-profiles.md](hiring-profiles.md)) |
+| `POST /v1/jobs/{id}/role-brief[?reread_notes=true]` | Read the role brief (situation, core work, team, hands-on, market, reports to, level, with questions), first reading the notes again if asked ([role-brief.md](role-brief.md)) |
 | `GET /v1/jobs/{id}/people/{cid}/brief` · `POST /v1/brief/{item}/answer` · `…/asked` · `…/dismiss` | The Brief and its answers ([brief.md](brief.md)) |
 | `POST /v1/imports` · `…/import` · `…/quote/accept` · `GET /v1/export/people.csv` | Import with allowance and quote; free export ([imports.md](imports.md)) |
 | `GET/DELETE /v1/mailbox` · `POST /v1/mailbox/connect/{provider}` · `GET /v1/mailbox/callback/{provider}` · `POST /v1/mailbox/sync` | Connect Gmail or Outlook; look for sent and replies ([messages.md](messages.md)) |

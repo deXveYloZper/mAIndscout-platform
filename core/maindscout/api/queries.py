@@ -135,7 +135,8 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
     stopped = set(session.scalars(select(Candidate.id).where(
         Candidate.id.in_([p.candidate_id for p in pairs] or [None]), Candidate.do_not_contact_at.is_not(None))))
     archived = []
-    from maindscout.api import outreach, roles
+    from maindscout.api import outreach, role_brief, roles
+    from maindscout.domain import groups
 
     # Phase 1c: people found by sourcing stay on the Sourcing tab until the owner decides; only a count shows here.
     suggested = outreach.undecided(session, org_id, job.id)
@@ -157,6 +158,9 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
         "id": str(job.id), "title": job.title, "hiring_company": job.hiring_company, "state": job.state,
         "source_document_id": str(job.source_document_id) if job.source_document_id else None,
         "requirements": [claim_view(c, ev[c.id]) for c in reqs],
+        # Step B (2026-10-19): what the desk searches and rates by, what is for the call, and what is context.
+        "requirement_groups": {str(c.id): list(groups.group(c.approved_view or c.payload)) for c in reqs},
+        "role_brief": role_brief.view(session, job.id),
         "process_stale": any(c.flags.get("job_process_stale") for c in reqs),
         "rematching": _rematching(session, job.id),
         "people": people,

@@ -13,7 +13,9 @@ const SOURCE: Record<string, string> = { ad: "from the ad", intake: "from the in
 function detail(r: ClaimView, targets: Record<string, number>) {
   const p = r.payload;
   const bits: React.ReactNode[] = [];
-  if (p.category === "role") {
+  if (p.category === "role" && p.strength === "anti") {
+    bits.push(<span key="r">{p.level ? `${p.level} and above` : "too senior"}</span>);  // a limit on seniority
+  } else if (p.category === "role") {
     bits.push(<span key="r">{FAMILY_LABEL[p.role_family] ?? p.role_family}{p.level ? `, ${p.level}` : ""}{p.min_years != null ? `, ${p.min_years}+ years` : ""}</span>);
   }
   if (p.employer_kinds?.length) bits.push(<span key="e">{p.employer_kinds.map((k: string) => EMPLOYER_KIND_LABEL[k] ?? k).join(", ")}</span>);

@@ -33,11 +33,17 @@ def _norm(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
 
 
+def _words(text: str) -> str:
+    """An ask in words, without a leading article ("the salary will peak…" is "salary will peak…", 2026-10-19).
+    Never used for company names ("The National Chamber…")."""
+    return re.sub(r"^(the|a|an) ", "", _norm(text))
+
+
 def key_for(job_id, p: dict[str, Any]) -> str:
     """One requirement per subject: the same subject read again (or from the intake) is the same requirement."""
     cat = p["category"]
     if cat == "role":
-        part = "role"  # a job has one role
+        part = "role" if p.get("strength") != "anti" else "role|anti"  # one role, and one limit on seniority
     elif cat == "employer":
         size = f"|{p.get('min_staff') or ''}-{p.get('max_staff') or ''}" if p.get("min_staff") or p.get("max_staff") else ""
         part = ",".join(sorted(p.get("employer_kinds") or [])) + size + f"|{'anti' if p['strength'] == 'anti' else 'want'}"
@@ -50,9 +56,9 @@ def key_for(job_id, p: dict[str, Any]) -> str:
     elif cat == "location" and (p.get("mobility") or {}).get("facet") == "residence":
         part = "residence"  # one "must live in" per job: the hiring manager's word replaces the ad's
     elif cat == "skill":
-        part = p.get("normalized_token") or _norm(p["text_raw"])
+        part = p.get("normalized_token") or _words(p["text_raw"])
     else:
-        part = _norm(p["text_raw"])
+        part = _words(p["text_raw"])
     return f"{job_id}|{cat}|{part}"
 
 
@@ -84,8 +90,18 @@ def _payload(session: Session, item: engine.Item, source: str) -> dict[str, Any]
 def _write(session: Session, job: Job, items: list[engine.Item], source: str, evidence: dict[str, Any]) -> dict[str, int]:
     written = replaced = seen = 0
     today = date.today()
+    current = list(session.scalars(select(Claim).where(Claim.org_id == job.org_id, Claim.subject_id == job.id,
+                                                       Claim.claim_type == "JobRequirementClaim", Claim.status.in_(LIVE))))
+    said = {_words((c.approved_view or c.payload).get("text_raw") or "") for c in current}
+    role_family = next((p["role_family"] for c in current for p in [c.approved_view or c.payload]
+                        if p.get("category") == "role" and p.get("strength") != "anti" and p.get("role_family")), None)
     for item in items:
         p = _payload(session, item, source)
+        if p["category"] == "role" and p["strength"] == "anti" and p.get("role_family") in (None, "other") and role_family:
+            p["role_family"] = role_family  # a limit on seniority is about this job's kind of work
+        if p["category"] == "other" and _words(p["text_raw"]) in said:
+            seen += 1  # the same ask is already on the role under another kind ("early-stage startup experience")
+            continue
         key = key_for(job.id, p)
         live = session.scalar(select(Claim).where(Claim.org_id == job.org_id, Claim.subject_id == job.id,
                                                   Claim.claim_type == "JobRequirementClaim", Claim.natural_key == key,
@@ -166,6 +182,28 @@ def add_intake(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, text: str
         "type": "intake_note", "locator": {"intake_id": str(intake.id)}, "authority": "human_assertion", "origin": "relayed"})
     return {"intake_id": str(intake.id), **result, "hiring_company": hiring_company, "rejected": outcome.rejected,
             "usd": outcome.cost.get("usd", 0)}
+
+
+def reread_intakes(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, client: LLMClient) -> dict[str, Any]:
+    """Read the role's notes again with today's reader (about a cent each): asks an older reader dropped are added
+    (2026-10-19: "not too senior", "not from big brands" and "up to 200 people" had been lost). What a person already
+    decided stays."""
+    job = session.get(Job, job_id)
+    if job is None or job.org_id != org_id:
+        raise LookupError(f"No job {job_id}")
+    out = {"written": 0, "replaced": 0, "seen": 0, "rejected": [], "usd": 0.0}
+    for intake in session.scalars(select(JobIntake).where(JobIntake.job_id == job.id).order_by(JobIntake.created_at)):
+        costs.ensure_budget(session, org_id)
+        outcome = engine.read(intake.text, client, "intake")
+        costs.record(session, org_id, "hiring_intake", outcome.cost, subject_type="job", subject_id=job.id)
+        items = [i for i in outcome.items if i.kind != "hiring_company"]
+        r = _write(session, job, items, "intake", {
+            "type": "intake_note", "locator": {"intake_id": str(intake.id)}, "authority": "human_assertion", "origin": "relayed"})
+        for k in ("written", "replaced", "seen"):
+            out[k] += r[k]
+        out["rejected"] += outcome.rejected
+        out["usd"] += outcome.cost.get("usd", 0) or 0
+    return out
 
 
 def residence(session: Session, job: Job) -> list[Claim]:

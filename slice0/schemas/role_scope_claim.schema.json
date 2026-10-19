@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maindscout.local/schemas/role_scope_claim.schema.json",
+  "title": "RoleScopeClaim payload",
+  "description": "One line of a role brief: what the hire will really do, read from the ad, the hiring manager's notes and public research on the hiring company (owner, 2026-10-19: 'read between the lines'). Each line says where it comes from; a reading of ours may carry one question for whoever uploaded the job. Never personality, culture or fit, never a person's name.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["facet", "words", "basis"],
+  "properties": {
+    "facet": {
+      "type": "string",
+      "enum": ["situation", "core_work", "team", "hands_on", "market", "reports_to", "level"],
+      "description": "situation: where the company stands that matters for the hire; core_work: the work at the heart of the role; team: around the hire; hands_on: how much of the work they do themselves; market: the company's presence in the market the role serves; reports_to: to whom and where; level: the level the scope implies."
+    },
+    "value": {
+      "type": ["string", "null"],
+      "description": "team: works_alone | small_team | leads_a_team | joins_a_team; hands_on: hands_on | mixed | manages_managers; market: entering | growing | established; level: a career-profile level. Null for the facets said in words only."
+    },
+    "words": { "type": "string", "minLength": 1, "maxLength": 400 },
+    "basis": {
+      "type": "string",
+      "enum": ["ad", "notes", "research", "reading"],
+      "description": "Where it comes from. ad, notes and research are quoted (the quote is the evidence); reading is ours, inferred."
+    },
+    "question": {
+      "type": ["string", "null"],
+      "maxLength": 300,
+      "description": "For a reading that changes whom to look for: the one question that would settle it."
+    },
+    "why": { "type": ["string", "null"], "maxLength": 300, "description": "Why the question matters, in a few words." }
+  }
+}
