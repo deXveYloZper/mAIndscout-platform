@@ -394,7 +394,8 @@ export type Suggestion = { candidate_id: string; name: string | null; band: Band
   gaps?: PersonOnJob["gaps"]; coverage?: PersonOnJob["coverage"];
   found_by: { channel: string; target: string | null; tier: string | null; query: string | null; at: string | null; new_to_desk: boolean;
     at_target?: "now" | "before" | null };
-  evidence?: EvidenceCheck | null; checkable?: boolean };
+  evidence?: EvidenceCheck | null; checkable?: boolean;
+  plus?: { requirement: string; verdict: string }[] };
 
 /** The deeper look at a strong match's public work (owner, 2026-10-17). */
 export type EvidenceCheck = { status: "queued" | "running" | "done" | "failed" | "skipped"; at: string | null;

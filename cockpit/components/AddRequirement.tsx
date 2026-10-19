@@ -42,9 +42,13 @@ export function AddRequirement({ action }: { action: (s: FormState, f: FormData)
         </fieldset>
       )}
       {kind === "domain" && (
-        <select name="domains" multiple size={5} aria-label="Industries">
-          {DOMAINS.map((d) => <option key={d}>{d}</option>)}
-        </select>
+        <div className="row">
+          <select name="domains" multiple size={5} aria-label="Industries">
+            {DOMAINS.map((d) => <option key={d}>{d}</option>)}
+          </select>
+          <input name="company_words" size={30} aria-label="Industry as companies describe themselves"
+            placeholder="or as companies describe themselves: leather goods, bags" />
+        </div>
       )}
       {kind === "employment" && (
         <select name="employment" aria-label="Employment">

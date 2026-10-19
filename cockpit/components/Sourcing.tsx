@@ -88,6 +88,12 @@ const OUTCOME: Record<string, string> = {
   confirmed: "Their public work supports this match", mixed: "Their public work both supports and weakens this match",
   weakened: "Their public work speaks against this match", nothing_found: "No public work about them beyond their profile",
 };
+/** A requirement in a few words, for a tag ("Experience at a small or mid-size brand (…)" -> "small or mid-size brand"). */
+function shortReq(text: string): string {
+  const t = text.replace(/^(experience (at|in|with)|background (at|in))\s+(a |an )?/i, "").replace(/\s*\(.*?\)\s*/g, " ").trim();
+  return t.length > 34 ? `${t.slice(0, 32).trimEnd()}…` : t;
+}
+
 const BECAUSE: Record<string, string> = { left_the_field: "left this kind of work", works_elsewhere_now: "works elsewhere now",
   says_otherwise: "says so themselves" };
 const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u; } };
@@ -147,6 +153,14 @@ function SuggestionCard({ jobId, s, since }: { jobId: string; s: Suggestion; sin
         {s.contact?.reply?.text && <p className="hint">&ldquo;{s.contact.reply.text}&rdquo;</p>}
         {s.employer && <p className="hint">Works at: {facts(s.employer)}</p>}
         {s.stage === "to_review" && <p className="hint">{reasonWords(s.reason)} · {foundBy(s.found_by)}</p>}
+        {deciding && s.plus && s.plus.length > 0 && (
+          <p className="hint plusline" title="The role's strong-plus items: suggestions meeting more of them come first">
+            Strong plus:{" "}
+            {s.plus.map((r, i) => (
+              <span key={i} className={`plustag ${r.verdict}`}>{shortReq(r.requirement)}{r.verdict === "partial" ? " (partly)" : r.verdict === "ask" ? " (ask)" : ""}</span>
+            ))}
+          </p>
+        )}
         <EvidenceLine jobId={jobId} s={s} deciding={deciding} />
         <Triage jobId={jobId} s={s} />
       </div>

@@ -312,6 +312,16 @@
     "relocation": {
       "type": "boolean",
       "description": "location from the intake notes: true when moving there is fine ('or willing to move to Milan')."
+    },
+    "company_words": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 40
+      },
+      "description": "domain only: an industry in the words companies use of themselves (their offering, about text, categories), for a niche the fixed list does not have, e.g. leather goods, bags (owner, 2026-10-19)."
     }
   }
 }

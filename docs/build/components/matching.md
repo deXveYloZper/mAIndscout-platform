@@ -31,6 +31,8 @@ Plan section 4.6 and phase I5: replace keyword triage with a comparison of what 
     when there is a career profile, not their whole career: under three quarters of the years is a gap, from three
     quarters partly met (2026-10-18).
   - Background: years at start-ups, scale-ups, consultancies and so on, from employer mix; a year is enough (2026-10-18).
+  - Industry in the companies' own words (2026-10-19): a requirement with `company_words` ("leather goods", "bags")
+    counts years at employers whose own profile says it; a year is enough; unknown employers make it a question.
   - Industry: years from domain exposure; a year is enough (2026-10-18, it was two). For a luxury role, years in an
     industry other than luxury itself (hotels, travel…) count only at luxury companies.
   - Target companies: whether they worked there.

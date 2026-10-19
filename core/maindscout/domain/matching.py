@@ -118,6 +118,13 @@ def _role(p: dict[str, Any], profile: dict[str, Any]) -> tuple[str, str]:
     return v, "; ".join(parts)
 
 
+# Kinds of employer in plain words. Without a funding round, size decides the kind (domain/profile.stint_category):
+# up to 50 people is a start-up, up to 1,000 a scale-up, so an established 62-person brand reads as a scale-up.
+KIND_WORDS = {"startup": "start-ups or small companies (up to 50 people)",
+              "scaleup": "scale-ups or mid-size companies (51-1,000 people)", "large": "large companies",
+              "consultancy": "consultancies", "agency": "agencies", "public_sector": "the public sector", "non_profit": "non-profits"}
+
+
 def _employer(p: dict[str, Any], profile: dict[str, Any]) -> tuple[str, str]:
     mix = profile["dimensions"]["employer_mix"]
     years = mix.get("years") or {}
@@ -127,7 +134,7 @@ def _employer(p: dict[str, Any], profile: dict[str, Any]) -> tuple[str, str]:
         return "ask", "the kinds of employer are not known yet"
     have = sum(known.get(k, 0) for k in kinds)
     total = sum(years.values()) or 1
-    names = ", ".join(k.replace("_", " ") for k in kinds)
+    names = " or ".join(KIND_WORDS.get(k, k.replace("_", " ")) for k in kinds)
     if p.get("strength") == "anti":
         share = have / total
         return ("against", f"{_years(have)} of the last 10 at {names}") if share >= 0.5 else ("strong", f"mostly not at {names}")
@@ -158,9 +165,47 @@ def _tier_years(stints: list[Stint], wanted: list[str]) -> dict[str, float]:
     return {d: round(span_years(v), 1) for d, v in spans.items()}
 
 
+def _company_words(p: dict[str, Any], stints: list[Stint]) -> tuple[str, str]:
+    """A niche industry in the companies' own words ("leather goods", "bags"): years at employers that say they make
+    or sell it, from their profiles. A year is enough."""
+    from datetime import date
+
+    from maindscout.domain.profile import NOT_EXPERIENCE, _span
+    from maindscout.domain.profile import _years as span_years
+
+    words = [w.strip().lower() for w in p.get("company_words") or [] if w.strip()]
+    stems = [re.escape(w[:-1] if w.endswith("s") else w) + "s?" for w in words]
+    pattern = re.compile(r"\b(" + "|".join(stems) + r")\b", re.I)
+    spans, names, known = [], [], False
+    for s in stints:
+        span = _span(s, date.today())
+        if s.facts is None or not s.facts.words:
+            continue
+        known = True
+        if span is None or s.employment in NOT_EXPERIENCE or not pattern.search(s.facts.words):
+            continue
+        spans.append(span)
+        if s.company not in names:
+            names.append(s.company)
+    label = ", ".join(words[:3])
+    if not known:
+        return "ask", f"what their employers make is not known yet ({label})"
+    have = round(span_years(spans), 1) if spans else 0.0
+    at = f" ({', '.join(names[:3])})" if names else ""
+    if p.get("strength") == "anti":
+        return ("against", f"{_years(have)} at companies making {label}{at}") if have >= 2 else ("strong", f"little or no time in {label}")
+    if have >= 1:
+        return "strong", f"{_years(have)} at companies making {label}{at}"
+    if have > 0:
+        return "partial", f"{_years(have)} at companies making {label}{at}"
+    return "gap", f"no time at companies making {label}"
+
+
 def _domain(p: dict[str, Any], profile: dict[str, Any], stints: list[Stint] | None = None, luxury: bool = False) -> tuple[str, str]:
     from maindscout.domain.tiers import INHERENT
 
+    if p.get("company_words"):
+        return _company_words(p, stints or [])
     dom = profile["dimensions"]["domain_exposure"]
     years = dom.get("years") or {}
     wanted = p.get("domains") or []

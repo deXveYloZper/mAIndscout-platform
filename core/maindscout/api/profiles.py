@@ -164,6 +164,9 @@ def company_facts_many(session: Session, companies: list[Company]) -> dict[uuid.
     for c in companies:
         if out.get(c.id) is not None:
             out[c.id].luxury = tiers.luxury_company(c.exa_profile, out[c.id].domains)
+            p = c.exa_profile or {}
+            out[c.id].words = " ".join([p.get("offering") or "", p.get("about") or "", p.get("industry") or "",
+                                        " ".join(p.get("categories") or []), " ".join(out[c.id].domains)]).lower()
     return out
 
 

@@ -318,8 +318,10 @@ def add_requirement(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, fiel
     p = {k: v for k, v in fields.items() if v not in (None, "", [])}
     if p.get("category") == "employer" and not p.get("employer_kinds"):
         raise ValueError("Tick a background (start-up, agency, …). For an industry such as luxury, choose Industry instead.")
-    if p.get("category") == "domain" and not p.get("domains"):
-        raise ValueError("Choose the industry from the list.")
+    if p.get("company_words"):
+        p["company_words"] = list(dict.fromkeys(w.strip().lower() for w in p["company_words"] if w and w.strip()))[:12]
+    if p.get("category") == "domain" and not p.get("domains") and not p.get("company_words"):
+        raise ValueError("Choose the industry from the list, or write it as companies describe themselves (e.g. leather goods, bags).")
     p.setdefault("distinctive", False)
     p["source"] = "recruiter"
     if p.get("category") == "skill" and not p.get("normalized_token"):

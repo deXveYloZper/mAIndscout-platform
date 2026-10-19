@@ -371,7 +371,11 @@ export async function addRequirement(jobId: string, _: FormState, form: FormData
   if (category === "role") Object.assign(body, { role_family: form.get("role_family") || null, level: form.get("level") || null,
     min_years: form.get("min_years") ? Number(form.get("min_years")) : null });
   if (category === "employer") body.employer_kinds = list("employer_kinds");
-  if (category === "domain") body.domains = list("domains");
+  if (category === "domain") {
+    body.domains = list("domains");
+    const words = String(form.get("company_words") || "").split(",").map((w) => w.trim()).filter(Boolean);
+    if (words.length) body.company_words = words;
+  }
   if (category === "target_company") body.companies = text_raw.split(",").map((s) => s.trim()).filter(Boolean);
   if (category === "employment") body.employment = form.get("employment") || "permanent";
   if (category === "skill") body.normalized_token = text_raw.toLowerCase();

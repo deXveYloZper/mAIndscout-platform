@@ -52,6 +52,13 @@ ads:
     & Gabbana, Valentino and Armani looked as if nobody worked in Italy and were never searched. 36 companies
     were read again (about $0.001 each).
 
+13. **An industry in the companies' own words** (owner, 2026-10-19, for "leather goods"): a requirement may name a niche
+    the fixed industry list does not have, as companies describe themselves (`company_words` on the requirement, schema
+    updated). A person's years count at employers whose own profile (offering, about, industry, categories) says it.
+    It can be typed on the hiring profile (Industry, "or as companies describe themselves").
+14. **Within a band, suggestions meeting more of the role's strong-plus items come first,** and each card lists those
+    items: met, partly, missing or to ask. Still no score: the order follows what the card shows.
+
 ## Not changed
 A role with no core skill (most marketing and sales roles) still starts everyone as possible. Strong comes from the
 full match over a career profile (kind of work, level, years, industry, background, the role's skills and languages),

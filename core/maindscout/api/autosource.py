@@ -588,6 +588,13 @@ def _strategy_note(session: Session, job_id: uuid.UUID) -> dict[str, Any] | None
     return None
 
 
+def _plus(pair: CandidateJob) -> dict[str, Any]:
+    """The role's strong-plus items and how this person meets each (strong / partial / gap / ask), from their match."""
+    rows = [{"requirement": r.get("requirement"), "verdict": r.get("verdict")}
+            for r in ((pair.match or {}).get("rows") or []) if r.get("strength") == "strong_plus"]
+    return {"rows": rows, "met": sum(1 for r in rows if r["verdict"] == "strong")}
+
+
 # The Sourcing tab's lists, in the order of the workflow (outreach.stage).
 LISTS = ("to_review", "to_contact", "later", "contacted", "replied", "call_booked", "passed")
 
@@ -633,7 +640,8 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
             continue
         by_stage.setdefault(st, []).append(x)
     waiting = by_stage.get("to_review", [])
-    waiting.sort(key=lambda x: (x.triage_band != "priority", -(hits[x.candidate_id].created_at.timestamp())))
+    # Within a band, those who meet more of the role's strong-plus items first (each card says which); never a score.
+    waiting.sort(key=lambda x: (x.triage_band != "priority", -_plus(x)["met"], -(hits[x.candidate_id].created_at.timestamp())))
     for st, rows_ in by_stage.items():
         if st == "passed":  # the latest first, so a pass made by mistake is easy to undo
             rows_.sort(key=lambda x: (x.contact or {}).get("decided_at") or "", reverse=True)
@@ -672,6 +680,7 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
                           "follow_up_due": bool(st == "contacted" and follow["due"] and follow["due"] <= now and not follow["drafted"]),
                           **facts[x.candidate_id], **_gap_summary(rows.get(x.candidate_id, [])),
                           "evidence": checks.get(x.candidate_id), "checkable": h.channel == "exa_people",
+                          "plus": _plus(x)["rows"],
                           "found_by": {"channel": h.channel, "target": h.target, "tier": h.tier, "query": q.text if q else None,
                                        "at_target": at,
                                        "at": h.created_at.isoformat() if h.created_at else None, "new_to_desk": h.new_to_desk}})

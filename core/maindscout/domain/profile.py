@@ -121,6 +121,7 @@ class CompanyFacts:
     status: str | None = None  # active | acquired | merged | shut_down | public
     domains: list[str] = field(default_factory=list)
     luxury: bool | None = None  # a luxury company by its own words (domain/tiers.py); None when not known
+    words: str = ""  # what it says it does (offering, about, industry, categories), lowercased: for niche industries
 
 
 @dataclass

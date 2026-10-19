@@ -5,6 +5,8 @@ descriptions are read, and a language a profile does not list is asked, never a 
 
 import uuid
 
+import pytest
+
 from sqlalchemy import select
 
 from maindscout.api import autosource, discovery, hiring
@@ -296,3 +298,45 @@ def test_a_company_whose_people_turn_strong_after_the_run_is_not_exhausted(sessi
     session.flush()
     state = strategy.company_state(session, job.id, p)[str(company_id)]
     assert state["relevant"] == 1 and not state["exhausted"], "the search's strong people count as they stand now"
+
+
+# --- a niche industry in the companies' own words; sorting by the role's strong-plus items (owner, 2026-10-19) ------
+
+
+def test_a_niche_industry_is_read_from_what_the_employers_say_they_make():
+    from datetime import date
+
+    from maindscout.domain import profile
+
+    S, F = profile.Stint, profile.CompanyFacts
+    leather = F(words="premium full-grain leather bags, iphone cases and wallets")
+    fashion = F(words="timeless italian luxury collections for men, women and children")
+    req = {"category": "domain", "strength": "strong_plus", "text_raw": "Experience in leather goods",
+           "domains": [], "company_words": ["leather goods", "bags", "wallets"]}
+    prof = {"reading": {"label": "clear"}, "dimensions": {"domain_exposure": {"years": {}}}}
+    at_leather = [S("1", "Testa Pelletteria", "Marketing Manager", date(2023, 1, 1), None, family="marketing", facts=leather)]
+    verdict, detail = matching._domain(req, prof, at_leather)
+    assert verdict == "strong" and "Testa Pelletteria" in detail
+    at_fashion = [S("2", "Moda Testworks", "Marketing Manager", date(2019, 1, 1), None, family="marketing", facts=fashion)]
+    assert matching._domain(req, prof, at_fashion)[0] == "gap"
+    assert matching._domain(req, prof, [S("3", "Unknown Srl", "Marketing Manager", date(2019, 1, 1), None)])[0] == "ask"
+
+
+def test_a_niche_industry_can_be_typed_on_the_hiring_profile(session, job):
+    c = hiring.add_requirement(session, job.org_id, job.id, {"category": "domain", "strength": "strong_plus",
+                                                             "text_raw": "Experience in leather goods",
+                                                             "company_words": [" Leather goods", "bags", "bags"]}, "owner@desk.test")
+    assert c.payload["company_words"] == ["leather goods", "bags"] and c.status == "approved"
+    with pytest.raises(ValueError):
+        hiring.add_requirement(session, job.org_id, job.id, {"category": "domain", "strength": "nice", "text_raw": "x"}, "owner@desk.test")
+
+
+def test_suggestions_meeting_more_strong_plus_items_come_first():
+    from types import SimpleNamespace
+
+    from maindscout.api.autosource import _plus
+
+    rows = lambda *v: {"rows": [{"requirement": f"plus {i}", "strength": "strong_plus", "verdict": x} for i, x in enumerate(v)]}  # noqa: E731
+    three = _plus(SimpleNamespace(match=rows("strong", "strong", "strong")))
+    two = _plus(SimpleNamespace(match=rows("strong", "gap", "strong")))
+    assert (three["met"], two["met"]) == (3, 2) and [r["verdict"] for r in two["rows"]] == ["strong", "gap", "strong"]
