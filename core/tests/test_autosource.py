@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy import func, select
 
-from maindscout.api import autosource, consent, costs, discovery, erasure, messages, review, sourcing, sourcing_stats
+from maindscout.api import autosource, consent, costs, discovery, erasure, messages, queries, review, sourcing_stats
 from maindscout.db.models import (
     Candidate,
     CandidateJob,
@@ -280,8 +280,8 @@ def test_stop_and_erasure_are_never_suggested_again(client, session, job, blobs,
     assert person_named(session, "Ben Testperson") is None
 
 
-def test_the_desk_search_skips_stop_and_off_limits_people_too(session, job, blobs):
-    """"Find more people" (the older desk search) follows the same two rules as a run."""
+def test_the_pool_step_skips_stop_and_off_limits_people_too(session, job, blobs):
+    """The desk's own people, searched first in every run, follow the same two rules as the web search."""
     eve = profile("eve-testperson-demo", "Eve Testperson", "InSAR Engineer", MUNICH, "DE",
                   [("InSAR Engineer", "Radar Testworks", "May 2021", "Present", "2021-05-01", None)], skills=["insar"])
     skills = discovery.skill_tokens(session, job)
@@ -292,10 +292,11 @@ def test_the_desk_search_skips_stop_and_off_limits_people_too(session, job, blob
     ada, cara, eve_id = ids["Ada Testperson"], ids["Cara Testperson"], ids["Eve Testperson"]
     consent.stop(session, job.org_id, ada, "owner@desk.test")
     assert autosource.never_sourced(session, job.org_id) == {ada, cara}, "Cara works at the hiring company, an active client"
-    campaign = sourcing.start(session, job.org_id, job.id, "owner@desk.test", source="desk")
+    autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", mode="weekly")
+    run = autosource.run(session, blobs, job.org_id, job.id, "manual", None)  # no web client: the pool step only
     on_job = set(session.scalars(select(CandidateJob.candidate_id).where(CandidateJob.job_id == job.id)))
     assert eve_id in on_job and not on_job & {ada, cara}
-    assert campaign.added == 1
+    assert run.report["pool"]["added"] == 1
 
 
 def test_the_clock_runs_only_plans_that_are_due(session, job, blobs):
@@ -331,7 +332,7 @@ def test_linkedin_message_permission_and_results_and_spend(session, job, blobs):
     pair = session.scalar(select(CandidateJob).where(CandidateJob.job_id == job.id, CandidateJob.candidate_id == ada))
     assert pair.pair_state == "contacted"
     consent.record(session, job.org_id, ada, "owner@desk.test", this_role=True, other_roles=True, job_id=job.id, how="message")
-    assert consent.may_put_forward(session, job.org_id, ada, job.id)
+    assert queries.gap_page(session, job.org_id, job.id, ada)["permission"] == {"this_role": True, "other_roles": True}
     review.set_state(session, job.org_id, job.id, ada, "submitted", "owner@desk.test", note="to the hiring manager")
     review.set_state(session, job.org_id, job.id, ada, "interviewing", "owner@desk.test")
 

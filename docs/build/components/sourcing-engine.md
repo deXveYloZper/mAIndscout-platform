@@ -63,7 +63,8 @@ How the build follows those rules (the CV path for found profiles, separate budg
   - **not for them**: they said they would not consider this kind of job;
   - **outside countries**: they are outside the role's countries.
 
-  Refused people stay in the pool; they are just not suggested. The older desk search ("Find more people", [sourcing feeder](sourcing.md)) also skips stopped and off-limits people (`never_sourced`).
+  Refused people stay in the pool; they are just not suggested. The run's own pool step ([sourcing.md](sourcing.md))
+  skips stopped and off-limits people too (`never_sourced`).
 - **Budgets.** Each role has a monthly budget (default $5), and the desk has one too (default $50; only an owner changes it). Before each search, a run checks both, with a margin of $0.01 per search. Sourcing spend is kept separate from the model budget, so a busy search month never stops the desk reading CVs ([tasks and costs](tasks-and-costs.md)).
 - **The clock** (`__main__`) checks every 10 minutes; `SOURCING_AUTO=false` turns it off.
   - When runs are due: daily plans after 24 hours, weekly after 7 days, continuous every hour while the role is short of its target.

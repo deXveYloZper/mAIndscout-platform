@@ -19,7 +19,17 @@ One command that runs every PDF in the test folder (`~/Downloads/test_artifacts`
 - **Every CV:** processed; nothing approved without a human; has a career history; has a name or an identity note; every snippet is exactly at its location; span failures at most 40%; no appearance or protected attributes; a band and a reason (never a number) on every job. Plus: **no two different people merged** (copies of the same CV may rightly be one person; two different names on one record fail). Pieced snippets are checked piece by piece.
 - **File matching:** an oracle finds its file by exact name, else by the person's name; the words every CV file shares ("CV", "resume", numbers) are ignored, so "CV - Dmitry Chernyshov" no longer matches another Dmitry.
 - **Slice 1 gate checks** (case `slice-1-gate`): no composite on any pair or snapshot; gap table is rows, never a number; mobility never excludes anyone; typing a missing must-have moves the band and the reason (then rejecting moves it back); a pair cannot be deleted. Acts are rolled back with the eval database.
-- **Slice 2 gate checks** (case `slice-2-gate`): on copies of the real jobs, distinctive tokens do not pull generalists into priority; sourced people get the same band and reason as uploaded; a campaign stops at its cap; **nothing sends mail** (since Slice 4 the desk writes drafts into the user's own mailbox; no route or mailbox call sends one).
+- **Slice 2 gate checks** (case `slice-2-gate`), on copies of the real jobs, through the pool look every sourcing run
+  starts with:
+  - distinctive tokens do not pull generalists into priority;
+  - sourced people get the same band and reason as uploaded ones;
+  - **nothing sends mail** (since Slice 4 the desk writes drafts into the user's own mailbox; no route or mailbox call
+    sends one).
+  "A campaign stops at its cap" went with the campaigns (2026-10-19).
+- **Model recordings:** the saved CV readings date from 2026-10-08 and no longer match the CV reader's requests (the
+  lists its answer is built from have changed since). A run without the real model therefore fails on the first CV.
+  The same holds for `tests/test_live_artifacts.py` (45 tests, skipped) and the browser tests in replay mode. One paid
+  re-recording refreshes them.
 - **Verdict:** GREEN only with zero FAIL and zero NOT CHECKED. `--with-tests` adds the pytest result.
 - **Reports:** `core/eval-reports/golden-<time>.md` names the files (git-ignored, real people); `…-summary.md` hides file names and emails and can be committed (see [../../evals/](../../evals/)).
 

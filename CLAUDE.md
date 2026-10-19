@@ -76,6 +76,14 @@ point to a person, never be a contact source), a workflow engine (Temporal, Lang
 Tests green (`python -m pytest` in `core/`, `npm run e2e:free` in `cockpit/`). Only the owner declares a gate green, in
 `docs/decisions/`; a coding agent never does.
 
+The core suite runs in Docker, with the real files mounted so their tests run too:
+```
+docker compose --profile core run --rm -T -v "<test_artifacts folder>:/artifacts:ro" -e TEST_ARTIFACTS=/artifacts core python -m pytest -q
+```
+Since the 2026-10-19 review, 563 tests pass and 45 are skipped: `test_live_artifacts.py` needs `RUN_LIVE=1`, and its
+recordings are stale (see [golden eval](docs/build/components/golden-eval.md)). A test must exercise code the product
+runs: when a feature goes, its tests go too, or move to the path that replaced it.
+
 ## Documentation is part of done
 
 Docs live in `docs/build/` (start at its README). In the same commit as any change: update the component page (what,

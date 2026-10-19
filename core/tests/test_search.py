@@ -5,10 +5,11 @@ import uuid
 from sqlalchemy import select
 
 from maindscout.api import demo, search, sourcing
-from maindscout.db.models import Candidate, CandidateJob, Company, Job
+from maindscout.db.models import Candidate, CandidateJob, Company, Job, SourcingHit
 from maindscout.domain.profile import build
-from tests.test_sourcing import campaign  # noqa: F401
 from tests.test_api import client, drop_cv, fake, make_job  # noqa: F401 (fixtures)
+from tests.test_autosource import blobs  # noqa: F401
+from tests.test_sourcing import pool_run
 from tests.test_profile_rubric import AS_OF, stint
 
 
@@ -58,23 +59,22 @@ def test_alumni_of_a_company_and_the_search_route(client, fake, session):
     assert r.status_code == 200 and r.json()["people"] == [], "no career profile yet: not searchable"
 
 
-def test_a_job_with_a_hiring_profile_is_sourced_by_profile_and_target_alumni_first(client, fake, session):
+def test_a_job_with_a_hiring_profile_is_sourced_from_the_pool_by_profile(client, fake, session, blobs):
     org = org_of(client)
     demo.seed(session, org, count=30)
     job = make_job(client)
     client.post(f"/v1/jobs/{job}/requirements", json={"category": "role", "strength": "must", "text_raw": "Software engineer",
                                                      "role_family": "software_engineering"})
     query = sourcing.profile_query(session, session.get(Job, uuid.UUID(job)))
-    assert query["filters"]["family"] == "software_engineering"
-    r = campaign(session, client, job, json={"cap": 10, "target": 50})
-    assert r.status_code == 201, r.text
-    c = r.json()
-    assert c["source"] == "profile" and c["query"]["words"] and 0 < c["added"] <= 10
+    assert query["filters"]["family"] == "software_engineering" and query["words"]
+    run = pool_run(session, job, blobs)
+    assert 0 < run.report["pool"]["added"] <= 40
+    hits = session.scalars(select(SourcingHit).where(SourcingHit.job_id == uuid.UUID(job))).all()
+    assert {h.channel for h in hits} == {"pool"}
     on_job = session.scalars(select(CandidateJob).where(CandidateJob.job_id == uuid.UUID(job))).all()
     assert all(p.match_tier for p in on_job), "everyone found goes through matching"
 
 
-def test_a_job_without_a_hiring_profile_still_sources_by_keywords(client, fake, session):
-    job = make_job(client)
-    r = campaign(session, client, job, json={})
-    assert r.status_code == 201 and r.json()["source"] == "desk"
+def test_a_job_without_a_hiring_profile_searches_the_pool_by_its_skills(client, fake, session):
+    job = session.get(Job, uuid.UUID(make_job(client)))
+    assert sourcing.profile_query(session, job) is None and sourcing.query_tokens(session, job) == ["insar"]

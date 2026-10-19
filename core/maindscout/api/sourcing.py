@@ -1,27 +1,21 @@
-"""Sourcing feeder (Slice 2): refill a thin priority queue on a live job, through the same triage as uploads.
-
-Sourcing is not a second product. A campaign derives a query from the job's must-haves, asks one source
-adapter for people, and puts each one on the job with the ordinary pair + triage path. Being sourced never
-changes a band (P13: a sourcing signal must not become a scoring feature); it is only noted in the pair's
-history. Campaigns stop at their cap, when priority reaches the target, or when a human stops them.
+"""The pool step of every sourcing run (autosource.run, step 1): the desk's own people, found by the role's distinctive
+skills (DeskAdapter) or by its hiring profile (ProfileAdapter), and put on the role through the ordinary pair + matching
+path. Being found never changes a band (P13: a sourcing signal must not become a scoring feature); it is only noted in
+the pair's history. (Slice 2's campaigns, which wrapped these adapters, were removed with their endpoint: 2026-10-13
+the endpoint, 2026-10-19 the code. Old `campaign` rows stay as history.)
 """
 
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
 from typing import Protocol
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from maindscout.api.process import _ensure_pair
-from maindscout.db.models import Campaign, Candidate, CandidateJob, CareerProfile, Claim, Job
+from maindscout.db.models import Candidate, CandidateJob, Claim, Job
 from maindscout.intelligence.triage import supports
 
-DEFAULT_TARGET = 5
-DEFAULT_CAP = 25
-MAX_CAP = 200
 LIVE = ("proposed", "approved")
 
 
@@ -129,87 +123,3 @@ def query_tokens(session: Session, job: Job) -> list[str]:
     must = [r for r in reqs if r.get("category") == "skill" and r.get("strength") in ("must", "deal_breaker") and r.get("normalized_token")]
     distinctive = sorted({r["normalized_token"] for r in must if r.get("distinctive")})
     return distinctive or sorted({r["normalized_token"] for r in must})
-
-
-def priority_count(session: Session, job_id: uuid.UUID) -> int:
-    return session.scalar(select(func.count()).select_from(CandidateJob).where(
-        CandidateJob.job_id == job_id, CandidateJob.triage_band == "priority")) or 0
-
-
-def start(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str, source: str = "auto",
-          cap: int = DEFAULT_CAP, target: int = DEFAULT_TARGET) -> Campaign:
-    job = session.get(Job, job_id)
-    if job is None or job.org_id != org_id:
-        raise LookupError(f"No job {job_id}")
-    if source == "auto":  # the hiring profile when it gives something to search by and people have profiles
-        source = "profile" if profile_query(session, job) and session.scalar(select(func.count()).select_from(CareerProfile)) else "desk"
-    if source not in ADAPTERS:
-        raise SourcingError(f"Unknown source {source!r}; available: {sorted(ADAPTERS)}")
-    if not 1 <= cap <= MAX_CAP or not 1 <= target <= 100:
-        raise SourcingError(f"cap must be 1-{MAX_CAP} and target 1-100")
-    if priority_count(session, job.id) >= target:
-        raise SourcingError(f"This job already has {target} or more priority people; sourcing is for a thin queue")
-    if session.scalar(select(Campaign.id).where(Campaign.job_id == job.id, Campaign.status == "running")):
-        raise SourcingError("A campaign is already running for this job")
-    if source == "profile":
-        query = profile_query(session, job)
-        if query is None:
-            raise SourcingError("This job's hiring profile gives nothing to search by yet (no role, background, industry or target companies)")
-    else:
-        tokens = query_tokens(session, job)
-        if not tokens:
-            raise SourcingError("This job has no must-have skills to search for yet")
-        query = {"tokens": tokens}
-    campaign = Campaign(org_id=org_id, job_id=job.id, source=source, query=query, cap=cap,
-                        target_priority=target, created_by=actor)
-    session.add(campaign)
-    session.flush()
-    return run(session, campaign)
-
-
-def run(session: Session, campaign: Campaign) -> Campaign:
-    """Look at people one by one until the cap, the target, or the source runs out."""
-    from maindscout.api import autosource
-
-    job = session.get(Job, campaign.job_id)
-    adapter = ADAPTERS[campaign.source]
-    skip = frozenset(autosource.never_sourced(session, campaign.org_id))  # "stop", and people at off-limits companies
-    while campaign.status == "running":
-        if priority_count(session, job.id) >= campaign.target_priority:
-            return _end(campaign, "stopped", "target_reached")
-        if campaign.spent >= campaign.cap:
-            return _end(campaign, "stopped", "cap")
-        batch = adapter.find(session, campaign.org_id, job, campaign.query, limit=1, exclude=skip)
-        if not batch:
-            return _end(campaign, "exhausted", None)
-        campaign.spent += 1
-        pair = _ensure_pair(session, campaign.org_id, batch[0], job,
-                            cause={"act": "sourced", "campaign_id": str(campaign.id), "source": campaign.source})
-        campaign.added += 1
-        if pair.triage_band == "priority":
-            campaign.priority_added += 1
-        session.flush()
-    return campaign
-
-
-def stop(session: Session, org_id: uuid.UUID, campaign_id: uuid.UUID, actor: str) -> Campaign:
-    campaign = session.get(Campaign, campaign_id)
-    if campaign is None or campaign.org_id != org_id:
-        raise LookupError(f"No campaign {campaign_id}")
-    if campaign.status == "running":
-        _end(campaign, "stopped", "human")
-    session.flush()
-    return campaign
-
-
-def _end(campaign: Campaign, status: str, reason: str | None) -> Campaign:
-    campaign.status, campaign.stop_reason, campaign.ended_at = status, reason, datetime.now(timezone.utc)
-    return campaign
-
-
-def as_dict(c: Campaign) -> dict:
-    return {"id": str(c.id), "job_id": str(c.job_id), "source": c.source, "query": c.query, "cap": c.cap,
-            "target_priority": c.target_priority, "spent": c.spent, "added": c.added, "priority_added": c.priority_added,
-            "status": c.status, "stop_reason": c.stop_reason, "created_by": c.created_by,
-            "created_at": c.created_at.isoformat() if c.created_at else None,
-            "ended_at": c.ended_at.isoformat() if c.ended_at else None}

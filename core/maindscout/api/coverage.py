@@ -166,27 +166,6 @@ def reevaluate_company(session: Session, company_id: uuid.UUID) -> int:
     return len(rows)
 
 
-def set_open_countries(session: Session, org_id, job_id: uuid.UUID, countries: list[str], actor: str) -> list[str]:
-    """Open a job to countries beyond the desk's coverage (ISO codes or country names). Re-checks its people."""
-    job = session.get(Job, job_id)
-    if job is None or job.org_id != org_id:
-        raise LookupError(f"No job {job_id}")
-    codes: list[str] = []
-    for raw in countries:
-        raw = raw.strip()
-        if not raw:
-            continue
-        code = raw.upper() if re.fullmatch(r"[A-Za-z]{2}", raw) else geo.country_in(raw)
-        if not code or not re.fullmatch(r"[A-Z]{2}", code):
-            raise ValueError(f"Not a country we recognise: {raw!r}")
-        if code not in codes:
-            codes.append(code)
-    job.open_countries = sorted(codes)
-    session.flush()
-    reevaluate_job(session, job, {"act": "job_countries", "job_id": str(job.id)}, actor)
-    return job.open_countries
-
-
 def summary(session: Session, job: Job) -> dict[str, Any]:
     desk = desk_countries()
     return {"desk": sorted(desk), "from_ad": sorted(ad_countries(session, job) - desk),

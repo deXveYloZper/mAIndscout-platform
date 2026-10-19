@@ -305,11 +305,6 @@ def facts(session: Session, company: Company) -> list[dict[str, Any]]:
     return out
 
 
-def context_for_step(raw_name: str, location: str | None) -> str:
-    """Company-only context from a career step: never the person's title or name."""
-    return f"named '{raw_name}' on a CV" + (f"; location given: {location}" if location else "")
-
-
 def _as_fact(claim: Claim) -> tuple[str, Any] | None:
     p = claim.payload
     return {"CompanyFoundedClaim": lambda: ("founded", p.get("founded")), "TeamSizeClaim": lambda: ("headcount", p.get("raw")),

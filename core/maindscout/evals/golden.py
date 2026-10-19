@@ -525,9 +525,22 @@ def _clone_job(w: World, org_id: uuid.UUID, jid: uuid.UUID, label: str) -> Job:
     return clone
 
 
-def slice2_checks(w: World, org_id: uuid.UUID) -> list[Check]:
+def _pool_look(s, org_id: uuid.UUID, job: Job, limit: int = 25) -> None:
+    """The pool step every sourcing run starts with (autosource.run, step 1): the desk's own people, by the role's
+    hiring profile or its distinctive skills, put on the role through the ordinary pairing."""
     from maindscout.api import sourcing
 
+    query = sourcing.profile_query(s, job)
+    source = "profile" if query else "desk"
+    query = query or {"tokens": sourcing.query_tokens(s, job)}
+    if source == "desk" and not query["tokens"]:
+        return
+    for cid in sourcing.ADAPTERS[source].find(s, org_id, job, query, limit=limit):
+        process._ensure_pair(s, org_id, cid, job, cause={"act": "sourced", "channel": "pool", "by": "golden eval"})
+    s.flush()
+
+
+def slice2_checks(w: World, org_id: uuid.UUID) -> list[Check]:
     s, case, out = w.session, "slice-2-gate", []
 
     def add(name: str, ok: bool, detail: str) -> None:
@@ -540,11 +553,11 @@ def slice2_checks(w: World, org_id: uuid.UUID) -> list[Check]:
 
     # Distinctive tokens do not pull generalists into priority; sourced people get the same band as uploaded ones.
     clone = _clone_job(w, org_id, catalyst, "sourcing check")
-    c = sourcing.start(s, org_id, clone.id, "eval", cap=25, target=5)
+    _pool_look(s, org_id, clone)
     found = list(s.scalars(select(CandidateJob).where(CandidateJob.job_id == clone.id)))
     generalists = [p for p in found if p.triage_band == "priority" and not (p.triage_reason or "").startswith("supported:")]
     add("distinctive tokens do not pull software generalists into priority", not generalists,
-        f"query {c.query['tokens']}; looked at {c.spent}, added {c.added}, {c.priority_added} priority, all with evidence")
+        f"pool look added {len(found)}, {sum(p.triage_band == 'priority' for p in found)} priority, all with evidence")
     mismatched = []
     for pair in found:
         upload = s.scalar(select(CandidateJob).where(CandidateJob.job_id == catalyst, CandidateJob.candidate_id == pair.candidate_id))
@@ -552,11 +565,7 @@ def slice2_checks(w: World, org_id: uuid.UUID) -> list[Check]:
             mismatched.append(str(pair.candidate_id))
     add("a sourced person is banded exactly like the same person uploaded", not mismatched and bool(found),
         f"{len(found)} sourced, same band and reason as on the original job" if not mismatched else f"differs for {mismatched}")
-
-    # A campaign stops at its cap.
-    capped = sourcing.start(s, org_id, _clone_job(w, org_id, procure, "cap check").id, "eval", cap=1, target=50)
-    add("a campaign stops at its cap", (capped.spent, capped.status, capped.stop_reason) == (1, "stopped", "cap"),
-        f"looked at {capped.spent} of cap {capped.cap}; {capped.status} ({capped.stop_reason})")
+    # (Slice 2's "a campaign stops at its cap" went with the campaigns, 2026-10-19: a run stops at its plan's target.)
 
     # There is no mail path.
     from maindscout.api.app import app

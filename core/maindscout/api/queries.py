@@ -367,12 +367,6 @@ def _gap_rows_many(session: Session, org_id: uuid.UUID, job: Job, candidate_ids:
     return out
 
 
-def gap_counts(session: Session, org_id: uuid.UUID, job: Job, candidate_id: uuid.UUID) -> dict[str, int]:
-    from maindscout.domain import gaps
-
-    return gaps.counts(_gap_rows(session, org_id, job, candidate_id))
-
-
 def gap_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, candidate_id: uuid.UUID) -> dict[str, Any]:
     """A person against a job: every requirement as evidence / missing / conflict / question. No number."""
     from maindscout.domain import gaps

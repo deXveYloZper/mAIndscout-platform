@@ -112,25 +112,6 @@ test("CVs dropped on a job are read one by one and each is banded", async ({ pag
   expect((await bandCount(page, "priority")) + (await bandCount(page, "review_later"))).toBe(1);
 });
 
-test("a job can be opened to more countries, and nobody here is archived", async ({ page }) => {
-  await page.goto(catalystUrl);
-  await expect(page.locator(".bandtiles .band-archived .value")).toHaveText("0");
-  await tab(page, "Countries");
-  const field = page.getByLabel("Also accept people living or working in");
-  await field.fill("Brazil, Atlantis");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByRole("alert").filter({ hasText: "Atlantis" })).toBeVisible();
-  await field.fill("Brazil");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
-  await page.reload();
-  await tab(page, "Countries");
-  await expect(page.getByLabel("Also accept people living or working in")).toHaveValue("Brazil");
-  await page.getByLabel("Also accept people living or working in").fill("");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Cleared" })).toBeVisible();
-});
-
 test("a person on a job opens as a gap table, with no overall score", async ({ page }) => {
   await page.goto(catalystUrl);
   await openPerson(page, "Ioannis Gkanatsios");
@@ -220,24 +201,6 @@ test("intake notes from the hiring manager become a hiring profile, each with it
   await expect(page.locator(".hiring h3.group", { hasText: "Strong plus" })).toBeVisible();
   // Personality, culture or fit never becomes a requirement.
   await expect(page.locator(".hiring ul.reqs").filter({ hasText: /culture/i })).toHaveCount(0);
-});
-
-test("a thin job is refilled from the desk's own people, banded by the same rules", async ({ page }) => {
-  await page.goto("/jobs");
-  await page.getByRole("link", { name: /AI Product Engineer/ }).click();
-  await tab(page, "Find more");
-  await expect(page.getByText(/priority is thin: 0 of 5/)).toBeVisible();
-  await page.getByRole("button", { name: "Find more people" }).click();
-  await expect(page.getByRole("status")).toContainText(/Looked at \d+, added \d+/, { timeout: 60_000 });
-  await expect(page.locator(".campaigns li").first()).toContainText("desk");
-  // People found on the desk now sit on this job in the usual piles, with the usual reasons (any band).
-  await tab(page, "People");
-  for (const key of ["priority", "review_later", "do_not_submit"] as const) {
-    await band(page, key);
-    if (await page.locator(".personcard").count()) break;
-  }
-  await page.locator(".personcard a.pc-name").first().click();
-  await expect(page.locator(".history")).toContainText("sourced");
 });
 
 test("the desk is searched in plain words, best matches first, each with its reasons", async ({ page }) => {

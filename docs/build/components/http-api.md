@@ -38,7 +38,6 @@ The cockpit must never touch the database. Every action goes through one guarded
 | `POST /v1/claims/{id}/approve` · `/reject` | Human act on one claim |
 | `POST /v1/claims` | Human-typed fact, born approved (`replaces` supersedes the claim it corrects) |
 | `POST /v1/decisions/{id}/resolve` | Answer a card (see [review.md](review.md)) |
-| `POST /v1/jobs/{id}/campaigns` · `GET /v1/jobs/{id}/campaigns` · `POST /v1/campaigns/{id}/stop` | Refill a thin priority queue from the desk; list; stop ([sourcing.md](sourcing.md)) |
 | `GET /v1/companies?q=` · `GET /v1/companies/{id}` · `POST /v1/companies/{id}/merge` | Companies the desk knows, a company with the people we know there and its public facts, merge ([companies.md](companies.md)) |
 | `GET /v1/candidates/{id}` (profile) | The person page also carries `profile` and `classifications` ([career-profiles.md](career-profiles.md)) |
 | `POST /v1/jobs/{id}/intake` · `POST /v1/jobs/{id}/requirements` · `POST /v1/requirements/{id}/strength` | Intake notes, a requirement typed by the recruiter, change how much a requirement matters ([hiring-profiles.md](hiring-profiles.md)) |
