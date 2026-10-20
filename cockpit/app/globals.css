@@ -190,7 +190,8 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 20px 0; }
 }
 .btn.menu-btn { display: none; }
 .findbar {
-  display: flex; align-items: center; gap: 10px; flex: 1; max-width: 520px; height: 36px; padding: 0 12px;
+  /* min-width 0: shrink below its text so a 375 px phone keeps the account button on screen (its text ends in "…") */
+  display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; max-width: 520px; height: 36px; padding: 0 12px;
   border-radius: var(--r); background: var(--bg-raise-2); border: 1px solid var(--line);
   color: var(--cream-faint); cursor: pointer; text-align: left;
   transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease);

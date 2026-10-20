@@ -114,6 +114,8 @@ def natural_key(subject_id, claim_type: str, p: dict, valid_from: str | None = N
         return f"{sid}|answer|{p['topic']}|{p.get('job_id') or ''}"
     if claim_type == "PreferenceClaim":
         return f"{sid}|pref|{p['facet']}"
+    if claim_type == "RoleScopeClaim":
+        return f"{sid}|scope|{p['facet']}"  # the same key the brief reader writes (api/role_brief.py)
     raise ValueError(f"No natural key for {claim_type}")
 
 

@@ -83,7 +83,12 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
 - **Sign-in** (`/login`, `/invite/[token]`, `/account`, `/members` for owners) ([access.md](access.md)): every page needs a signed-in user; the header shows who, a desk switcher (more than one desk) and Sign out.
 - **Original files** are streamed through `/files/[id]`, which only accepts a document id. Only a real PDF or plain text opens in the browser; anything else downloads (`nosniff`, sandboxing CSP), so an uploaded HTML or SVG never runs on the desk's origin. `lib/api.ts` is `server-only`: the code that handles the session can never be bundled into the browser.
 - **Bound to this machine** (`next dev` and `next start` with `-H 127.0.0.1`): sign-in is built ([access](access.md)), but there is no HTTPS yet, so the cockpit must not be reachable from the network until hosting is decided (next build, phase 3).
-- Same palette and fonts as the public site; dense layout; works at phone width.
+- Same palette and fonts as the public site; dense layout; works at phone width. The top bar's search box shrinks
+  below its own text (`min-width: 0`), so a 375 px phone keeps the account button on screen (2026-10-20: every page
+  was 3 px too wide).
+- A page that loads a person, a role or a brief by id treats "not found" from any of its requests as the Not found
+  page (`apiOr404` on each). Before 2026-10-20 the person's calls or brief request could answer first and show
+  "Something went wrong" instead.
 
 ## Depends on
 [http-api.md](http-api.md) only.

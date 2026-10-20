@@ -112,6 +112,17 @@ Tracing the 57 strong people through each step showed where it went wrong:
 4. **Three groups** for the requirements: what the desk searches and rates by, what is for the conversation (it becomes
    a call question, nothing to confirm), and context. The screens come with step E, preview first.
 
+## The owner's calls on step B (2026-10-20)
+- "cancel them": 13 queued deeper checks were taken off the queue. They were never run, so a person still strong after
+  step C is checked then. All 13 turned out to be the InSAR role's web finds, not the returning Valentino leavers
+  this build had guessed.
+- "small team": Bonaventura's brief line `team` was corrected from "leads a team" to "small team" (one specialist and
+  agencies). It is approved, keeps the ad's sentence as its evidence, and is never replaced by a new reading. This
+  is also the first hand correction of a brief line: `RoleScopeClaim` got its natural key.
+- "re-record": see [golden eval](../build/components/golden-eval.md).
+- "then do the preview": step E's preview of the hiring profile and the suggestion card, built from the two roles' real
+  data. It is a local page, not committed, because it names real people.
+
 ## Not changed
 - The kinds start-up and scale-up keep their meaning (a stage; by size only when no funding is known).
 - Industry years still count every real job.

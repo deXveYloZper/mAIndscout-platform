@@ -180,10 +180,11 @@ test("a stale advertisement warns before anyone is submitted", async ({ page }) 
   await expect(page).toHaveURL(/\/jobs\//, { timeout: 120_000 });
   await expect(page.getByText(/process dates have passed/)).toBeVisible();
   await expect(page.locator(".eyebrow").first()).toContainText(/Procure Ai/i);
-  // Residence, visa and relocation are three separate facts, never one location score.
+  // Residence, visa and relocation are three separate facts, never one location score (where people must live has had
+  // its own panel since 2026-10-14; visa and relocation share another).
   await tab(page, "Hiring profile");
-  const mobility = page.locator(".panel", { hasText: "Mobility (three separate facts)" }).locator("ul.reqs");
-  await expect(mobility).toContainText("Must live in or work from: Germany, United Kingdom");
+  await expect(page.locator(".panel", { hasText: "Where people must live" })).toContainText("Germany, United Kingdom");
+  const mobility = page.locator(".panel", { hasText: "Visa and relocation" }).locator("ul.reqs");
   await expect(mobility).toContainText("Visa sponsorship: not offered");
   await expect(mobility).toContainText("Relocation assistance: not offered");
 });
@@ -247,7 +248,7 @@ test("the jobs list shows both jobs with their piles and what waits for review",
 
 test("the job inbox defaults to priority people; the all-jobs inbox shows the blocking questions", async ({ page }) => {
   await page.goto(catalystUrl);
-  await page.getByRole("link", { name: /inbox clear|to review/ }).click();
+  await page.getByRole("link", { name: /\b(No questions|\d+ questions?)\b/ }).click();  // the job's inbox button
   await expect(page.getByRole("link", { name: "Priority people" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByText("Nothing waiting.")).toBeVisible(); // Ioannis has nothing blocking
   await page.getByRole("link", { name: "Everyone on this job" }).click();

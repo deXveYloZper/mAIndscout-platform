@@ -76,13 +76,14 @@ point to a person, never be a contact source), a workflow engine (Temporal, Lang
 Tests green (`python -m pytest` in `core/`, `npm run e2e:free` in `cockpit/`). Only the owner declares a gate green, in
 `docs/decisions/`; a coding agent never does.
 
-The core suite runs in Docker, with the real files mounted so their tests run too:
+The core suite runs in Docker, with the real files mounted and the live-file tests replayed from their recordings (free;
+re-recorded 2026-10-20, see [golden eval](docs/build/components/golden-eval.md)):
 ```
-docker compose --profile core run --rm -T -v "<test_artifacts folder>:/artifacts:ro" -e TEST_ARTIFACTS=/artifacts core python -m pytest -q
+docker compose --profile core run --rm -T -v "<test_artifacts folder>:/artifacts:ro" -e TEST_ARTIFACTS=/artifacts -e RUN_LIVE=1 -e LLM_REPLAY=replay core python -m pytest -q
 ```
-Since the 2026-10-19 review, 563 tests pass and 45 are skipped: `test_live_artifacts.py` needs `RUN_LIVE=1`, and its
-recordings are stale (see [golden eval](docs/build/components/golden-eval.md)). A test must exercise code the product
-runs: when a feature goes, its tests go too, or move to the path that replaced it.
+A test must exercise code the product runs: when a feature goes, its tests go too, or move to the path that replaced
+it. A suite that skips quietly is not green: a recording that no longer matches fails loudly in replay mode, and is
+recorded again (paid, the owner's call).
 
 ## Documentation is part of done
 

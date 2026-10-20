@@ -44,8 +44,12 @@ The owner, 2026-10-19:
     `None` means "said in words only" (e.g. "any level").
   - Personality, culture or fit is dropped.
   - Questions only for readings that change whom to look for, one per line, five in all.
-- **Storage:** one `RoleScopeClaim` per facet. It is proposed, with evidence by basis: `document_span` for the ad,
-  `intake_note` for the notes, `research_result` for research, `inference` for a reading.
+- **Storage:** one `RoleScopeClaim` per facet (natural key `job_id|scope|facet`). It is proposed, with evidence by
+  basis: `document_span` for the ad, `intake_note` for the notes, `research_result` for research, `inference` for a
+  reading.
+- **A person's correction** (`review.assert_claim` with `replaces`) is approved and keeps the source's quote as its
+  evidence. The first was the owner's on 2026-10-20: Bonaventura's team, from "leads a team" to "small team" (one
+  specialist and agencies).
   - A new reading replaces the machine's older lines.
   - A line a person approved stays.
   - A machine line the new reading no longer gives is superseded.

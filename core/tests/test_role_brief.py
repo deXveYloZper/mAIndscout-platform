@@ -136,6 +136,20 @@ def test_notes_keep_sizes_level_limits_and_every_ask():
     assert vague[0].kind == "other", "an ask the lists cannot hold is kept for the conversation, never dropped"
 
 
+def test_a_person_can_correct_a_brief_line_and_a_new_reading_keeps_it(session, job):
+    from maindscout.api import review
+
+    briefs.read(session, job.org_id, job.id, FakeClient({"facets": [facet("team", "leads_a_team", "Leads a team.", "reading")],
+                                                         "questions": []}))
+    old = session.scalar(select(Claim).where(Claim.subject_id == job.id, Claim.claim_type == "RoleScopeClaim"))
+    review.assert_claim(session, job.org_id, "owner@desk.test", subject_type="job", subject_id=job.id, claim_type="RoleScopeClaim",
+                        payload={**old.payload, "value": "small_team", "words": "Leads one specialist."}, replaces=old.id)
+    briefs.read(session, job.org_id, job.id, FakeClient({"facets": [facet("team", "leads_a_team", "Leads a team.", "reading")],
+                                                         "questions": []}))
+    rows = briefs.view(session, job.id)
+    assert [(r["facet"], r["value"], r["status"]) for r in rows] == [("team", "small_team", "approved")]
+
+
 def test_a_seniority_limit_is_its_own_requirement(job):
     assert hiring.key_for(job.id, {"category": "role", "strength": "anti"}).endswith("|role|role|anti")
     assert hiring.key_for(job.id, {"category": "role", "strength": "must"}).endswith("|role|role")
