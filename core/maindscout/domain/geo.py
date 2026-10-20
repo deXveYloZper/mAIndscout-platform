@@ -82,6 +82,38 @@ def name_of(code: str) -> str:
     return names[0].title() if names else code
 
 
+# Cities whose English and local names differ, so "Milano, Lombardia" is in Milan. Only for comparing a person's place
+# with the cities a role names (the suggestion card's "to settle on the call"); countries decide everything else.
+CITY_NAMES: list[set[str]] = [
+    {"milan", "milano"}, {"rome", "roma"}, {"turin", "torino"}, {"florence", "firenze"}, {"naples", "napoli"},
+    {"venice", "venezia"}, {"genoa", "genova"}, {"munich", "münchen", "muenchen"}, {"cologne", "köln", "koeln"},
+    {"nuremberg", "nürnberg", "nuernberg"}, {"vienna", "wien"}, {"prague", "praha"}, {"warsaw", "warszawa"},
+    {"lisbon", "lisboa"}, {"seville", "sevilla"}, {"copenhagen", "københavn", "kobenhavn"}, {"gothenburg", "göteborg"},
+    {"brussels", "bruxelles", "brussel"}, {"antwerp", "antwerpen", "anvers"}, {"the hague", "den haag", "'s-gravenhage"},
+    {"geneva", "genève", "geneve", "genf"}, {"zurich", "zürich", "zuerich"}, {"athens", "athina", "athína"},
+    {"bucharest", "bucurești", "bucuresti"}, {"krakow", "kraków", "cracow"}, {"gdansk", "gdańsk"},
+]
+
+
+def only_country(place: str | None) -> bool:
+    """Does a place name a country and nothing else ("Italy", "United Kingdom"), so the city is not known?"""
+    p = (place or "").strip().strip(",").strip()
+    return bool(p) and (p.lower() in {n for names in NAMES.values() for n in names} or p in SHORT)
+
+
+def in_city(place: str | None, cities: list[str]) -> bool | None:
+    """Is a free-text place in one of `cities`? None when it cannot be told (no place, no cities)."""
+    if not place or not cities:
+        return None
+    lowered = place.lower()
+    for city in cities:
+        c = city.strip().lower()
+        names = next((group for group in CITY_NAMES if c in group), {c})
+        if any(re.search(rf"(?<![\w-]){re.escape(n)}(?![\w-])", lowered) for n in names if n):
+            return True
+    return False
+
+
 @dataclass(frozen=True)
 class Verdict:
     outside: bool

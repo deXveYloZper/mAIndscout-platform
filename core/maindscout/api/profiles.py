@@ -308,6 +308,29 @@ def latest_readings(session: Session, candidate_ids: list) -> dict[uuid.UUID, st
     return {cid: label for cid, label in session.execute(newest)}
 
 
+def latest_work(session: Session, candidate_ids: list) -> dict[uuid.UUID, dict[str, Any]]:
+    """Many people's kind of work, years in it and level, from their latest profiles in one query (the suggestion
+    card's "11.5 years in marketing, manager")."""
+    from sqlalchemy.dialects.postgresql import distinct_on
+
+    if not candidate_ids:
+        return {}
+    dims = CareerProfile.profile["dimensions"]
+    newest = (select(CareerProfile.candidate_id, dims["relevant_years"]["label"].astext, dims["relevant_years"]["main_years"].astext,
+                     dims["seniority"]["label"].astext)
+              .where(CareerProfile.candidate_id.in_(candidate_ids))
+              .ext(distinct_on(CareerProfile.candidate_id))
+              .order_by(CareerProfile.candidate_id, CareerProfile.computed_at.desc(), CareerProfile.id.desc()))
+    out: dict[uuid.UUID, dict[str, Any]] = {}
+    for cid, label, years, level in session.execute(newest):
+        try:
+            y = float(years) if years is not None else None
+        except ValueError:
+            y = None
+        out[cid] = {"label": label, "years": y, "level": level}
+    return out
+
+
 def run(session: Session, org_id, candidate_id, client_factory, task_id: uuid.UUID | None = None,
         search_factory=None) -> dict[str, Any]:
     """The background task: classify what is new (paid, once), then build (free)."""

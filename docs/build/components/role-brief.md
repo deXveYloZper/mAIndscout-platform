@@ -61,6 +61,16 @@ The owner, 2026-10-19:
   - context: where the job is, and the posting's dates.
 - **API:** `POST /v1/jobs/{id}/role-brief` reads it (`?reread_notes=true` reads the notes again with today's reader
   first). `GET /v1/jobs/{id}` adds `role_brief` and `requirement_groups`.
+- **Answering a question** (step E, 2026-10-20; `role_brief.answer`, `POST /v1/jobs/{id}/role-brief/answer`
+  with `facet` and `answer`):
+  - the answer is kept with the role's notes as `The desk asked: "…" The answer: …` and read like any notes, so each
+    requirement in it keeps its quote;
+  - then the brief is read again, so the answer becomes a line from the notes and the question goes;
+  - two model calls, about two cents;
+  - an empty answer is refused before anything is spent; a question already answered (or never asked) is refused.
+- **On the page** (step E): the hiring profile opens with the brief, each line with its source ("the ad", "your
+  notes", "research", "our reading", or "you" for a line a person decided) and its quote; then the questions, each
+  with an answer box. "Read the brief" reads it when there is none yet, "Read again" after new notes.
 
 ## First readings (2026-10-19, $0.008 for both)
 - **AI Product Engineer (Procure AI):**
@@ -79,10 +89,13 @@ The owner, 2026-10-19:
 [talent-release radar](talent-release-radar.md) (news lines).
 
 ## Used by
-The job page API (the hiring profile shows it next). Step C uses its listed values (team, hands-on, level) in the
-level fit and the move check, after match-eval.
+The hiring profile ([cockpit](cockpit.md)). Step C uses its listed values (team, hands-on, level) in the level fit and
+the move check, after match-eval.
 
 ## Tests
+`core/tests/test_cards.py`: an answer is read like notes and the question goes; an empty answer costs nothing; the
+answer endpoint returns the new brief.
+
 `core/tests/test_role_brief.py` (18):
 - a quote is kept only where it is written;
 - only readings that change whom to look for are asked;
@@ -95,6 +108,7 @@ level fit and the move check, after match-eval.
 - limits rate nobody until step C.
 
 ## Known limits
-- Not shown in the cockpit yet: the screens come with step E, preview first.
-- Answering a question is done by adding intake notes; there is no answer form yet.
-- Read on request only: after the owner's review it will run when an ad or notes arrive.
+- Read on request only: after the owner's review it will run when an ad or notes arrive. New notes do not re-read it
+  by themselves ("Read again").
+- The answer box has been tested with a stand-in model, not yet with a real answer: the first is Bonaventura's
+  question (who the role reports to, and where).

@@ -4,7 +4,7 @@
 **Code:** `core/maindscout/intelligence/hiring.py` (reads an ad or intake notes, with checks; no database), `core/maindscout/api/hiring.py` (storing, intake, recruiter edits, hiring company, target companies), task `profile_job`, migration `0014` (`job_intake`), cockpit `components/HiringProfile.tsx`, `IntakeForm.tsx`, `AddRequirement.tsx`
 
 ## What
-What a job really asks for, in one place on the job page, grouped by how much it matters: **must**, **strong plus**, **nice to have**, **not wanted**. It's built from three sources:
+What a job really asks for, in one place on the job page. Each requirement says how much it matters (**must**, **strong plus**, **nice to have**, **not wanted**), and since step E (2026-10-20) the page shows them in three groups: what the desk searches and rates by, what is for the call, and context. It's built from three sources:
 - **the ad**, read once more for what the first reading leaves out: the role (kind of work, level, years only when written), permanent or contract, and any background, industry or target companies it asks for;
 - **intake notes**: the recruiter pastes what the hiring manager said, and requirements are read from them;
 - **the recruiter**, who can add requirements and change how much any requirement matters.
@@ -42,6 +42,23 @@ Plan section 4.5 and phase I4: matching (I5) needs to know what the hiring manag
 - **Three groups** ([role brief](role-brief.md), `domain/groups.py`): what the desk searches and rates by, what is for
   the conversation (asked on the call, nothing to confirm), and context. The job page API gives each requirement's
   group.
+- **On the page** (step E, owner 2026-10-20: "too much information… why do we need to confirm a sentence that we
+  cannot actually use in sourcing?"). Before, every requirement had a strength menu, Save, a source link, and Approve
+  and Reject when unconfirmed: about 79 controls on the marketing role. Now, under the role brief and its questions:
+  - **What we search and rate by:** one line each, with its strength, its source ("the ad", "your notes", "typed")
+    and "new" when the desk read it. "Where people must live" is the first line; its "change" opens the role's
+    countries, the one place they are kept. A must-have with no evidence that puts people in Do not submit says
+    "decides the band".
+  - **Confirm all:** the lines the desk read, approved together (`hiring.confirm`, `POST /v1/jobs/{id}/requirements/confirm`
+    with their ids). Everyone on the role is re-matched once at the end (`review.job_batched`), not once per line. A
+    line someone already decided is left as it is.
+  - **change**, on any line: how much it matters (Save, which also confirms it), Remove (the desk misread it), and the
+    quote it came from.
+  - **For the call, nothing to confirm:** what no profile shows (judgment, how they lead, pay, visa and relocation).
+    Each becomes a question on the call brief. An ask already listed to search by (the ad's long sentence and the
+    strong plus that says the same) is shown once.
+  - **Context:** where the job is, the posting's dates, then the notes from the hiring manager (open when there are
+    none yet) and Add a requirement, folded.
 - **Never personality, culture or "fit":** such items are dropped whatever the model says (owner's rule, 2026-10-03).
 - **One requirement per subject.** A job has one role and one employment requirement. If the intake states a different value or strength than the ad, the intake's reading replaces the ad's (the ad's is kept as superseded). What a person approved is never replaced by a machine reading.
 - **Stored as `JobRequirementClaim`s.**
@@ -66,7 +83,8 @@ Plan section 4.5 and phase I4: matching (I5) needs to know what the hiring manag
   - `recent_months`: on a "not from" company, how recently a leaver still counts as from it; the default is 6
     (2026-10-19).
 - Table `job_intake` (0014).
-- `POST /v1/jobs/{id}/intake {text}`, `POST /v1/jobs/{id}/requirements`, `POST /v1/requirements/{claim_id}/strength`.
+- `POST /v1/jobs/{id}/intake {text}`, `POST /v1/jobs/{id}/requirements`, `POST /v1/requirements/{claim_id}/strength`,
+  `POST /v1/jobs/{id}/requirements/confirm {ids}` (step E).
 - `GET /v1/jobs/{id}` adds `hiring` (`company`, `intakes`, `targets`).
 
 ## Tests
@@ -83,7 +101,11 @@ Plan section 4.5 and phase I4: matching (I5) needs to know what the hiring manag
 - an intake "role" without level or years isn't the role;
 - a background left empty is read from the quote.
 
-e2e: intake notes become a hiring profile with quotes, and "culture fit" is left out.
+`core/tests/test_cards.py`: Confirm all approves what the desk read, re-matches the role once, leaves a decided line
+alone, and refuses another role's claims.
+
+e2e: intake notes become a hiring profile with quotes, and "culture fit" is left out; what the desk read is confirmed
+together, and any line can be changed on its own; every control on the hiring profile has a name, and it fits a phone.
 
 ## Known limits
 - Where someone must live, and visas, stay with the ad's mobility facts and are asked on the call. Intake items about them are left out.

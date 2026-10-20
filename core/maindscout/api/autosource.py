@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -539,13 +540,17 @@ def due(session: Session, now: datetime | None = None) -> list[tuple[uuid.UUID, 
 def _people_facts(session: Session, org_id: uuid.UUID, ids: list[uuid.UUID]) -> dict[uuid.UUID, dict[str, Any]]:
     from maindscout.api import company_profiles
 
-    out: dict[uuid.UUID, dict[str, Any]] = {i: {"current": None, "location": None, "profile": None, "employer": None} for i in ids}
+    out: dict[uuid.UUID, dict[str, Any]] = {i: {"current": None, "title": None, "company": None, "location": None,
+                                                "profile": None, "employer": None, "links": []} for i in ids}
+    pages: dict[uuid.UUID, list[str]] = {i: [] for i in ids}
     for c in session.scalars(select(Claim).where(Claim.org_id == org_id, Claim.subject_id.in_(ids or [None]),
                                                  Claim.status.in_(LIVE),
-                                                 Claim.claim_type.in_(("CareerStepClaim", "LocationClaim", "ContactClaim")))):
+                                                 Claim.claim_type.in_(("CareerStepClaim", "LocationClaim", "ContactClaim")))
+                             .order_by(Claim.created_at)):
         p, row = c.approved_view or c.payload, out[c.subject_id]
         if c.claim_type == "CareerStepClaim" and c.valid_to is None and not row["current"]:
-            row["current"] = f"{p.get('title_raw')} at {(p.get('company') or {}).get('raw_name')}"
+            row["title"], row["company"] = p.get("title_raw"), (p.get("company") or {}).get("raw_name")
+            row["current"] = f"{row['title']} at {row['company']}"
             company_id = (p.get("company") or {}).get("company_id")
             if company_id:  # where they work, in facts: kind, size, stage (phase 1b)
                 row["employer"] = company_profiles.summary(session.get(Company, uuid.UUID(company_id)))
@@ -553,6 +558,16 @@ def _people_facts(session: Session, org_id: uuid.UUID, ids: list[uuid.UUID]) -> 
             row["location"] = p.get("place_raw")
         elif c.claim_type == "ContactClaim" and p.get("kind") == "linkedin" and not row["profile"]:
             row["profile"] = p.get("value")
+        elif (c.claim_type == "ContactClaim" and p.get("kind") == "url" and p.get("value")
+              and p.get("attributable") is not False and p.get("attribution") in (None, "subject")):
+            pages[c.subject_id].append(p["value"])  # their own pages (a portfolio, GitHub), never a CV template's site
+    for i, row in out.items():  # the card's quick links: LinkedIn first, then up to two pages of their own
+        seen: set[str] = set()
+        for kind, value in [("linkedin", row["profile"])] + [("page", v) for v in pages[i]]:
+            key = re.sub(r"^https?://(www\.)?", "", value or "").rstrip("/").lower()
+            if value and key not in seen and len(row["links"]) < 3:
+                seen.add(key)
+                row["links"].append({"kind": kind, "url": value if value.startswith("http") else f"https://{value}"})
     return out
 
 
@@ -654,6 +669,14 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
     from maindscout.api import evidence as evidence_checks
 
     checks = evidence_checks.summaries(session, job.id, ids)  # the deeper look at strong matches (owner, 2026-10-17)
+    # The card in a few words (step E, 2026-10-20): why, what a possible is short of, what to settle on the call.
+    from maindscout.api import profiles as career
+    from maindscout.domain import cards
+
+    work = career.latest_work(session, ids)
+    lives = hiring.residence(session, job)
+    lives_ids = {str(c.id) for c in lives}
+    cities = list(dict.fromkeys(x for c in lives for x in (c.approved_view or c.payload).get("cities") or []))
     queries = {q.id: q for q in session.scalars(select(SourcingQuery).where(SourcingQuery.job_id == job.id))}
     now = datetime.now(timezone.utc).isoformat()
     lists: dict[str, list[dict[str, Any]]] = {st: [] for st in LISTS}
@@ -671,10 +694,18 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
         machine = ((x.contact or {}).get("machine") or {}).get("band") or x.triage_band
         st = outreach.stage(x)
         follow = _follow_up(session, track)
+        reach = outreach.reach(session, org_id, x.candidate_id, job)
+        match_rows = (x.match or {}).get("rows") or []
+        home = next(((r.status, r.detail) for r in rows.get(x.candidate_id, []) if r.requirement_id in lives_ids), None)
+        place = facts[x.candidate_id]["location"]
         lists[st].append({"candidate_id": str(x.candidate_id), "name": who.get(x.candidate_id), "band": x.triage_band,
                           "reason": x.triage_reason, "match_tier": x.match_tier, "state": x.pair_state, "stage": st,
                           "hint": "looks strong" if machine == "priority" else "possible",
-                          "reach": outreach.reach(session, org_id, x.candidate_id, job),
+                          "reach": reach,
+                          "why": cards.why(match_rows, work.get(x.candidate_id), x.match_tier),
+                          "short_of": cards.short_of(match_rows),
+                          "settle": cards.settle(home, place, cities, reach),
+                          "place": cards.place_words(place),
                           "contact": track or None,
                           "follow_up": follow,
                           "follow_up_due": bool(st == "contacted" and follow["due"] and follow["due"] <= now and not follow["drafted"]),

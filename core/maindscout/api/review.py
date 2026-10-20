@@ -66,6 +66,10 @@ def retriage_after(session: Session, claim: Claim, act: str, actor: str) -> None
     if batch is not None and claim.subject_type == "candidate":  # a bulk approval: once, at the end (see batched)
         batch.setdefault(claim.subject_id, set()).add(claim.claim_type)
         return
+    jobs = session.info.get("job_batch")
+    if jobs is not None and claim.subject_type == "job":  # several requirements confirmed together (see job_batched)
+        jobs.setdefault(claim.subject_id, set()).add((claim.payload.get("mobility") or {}).get("facet") == "residence")
+        return
     if claim.subject_type == "candidate":
         retriage_candidate(session, claim.org_id, claim.subject_id, cause, actor)
         if claim.claim_type in ("LocationClaim", "CareerStepClaim"):
@@ -104,6 +108,28 @@ def batched(session: Session, org_id: uuid.UUID, cause: dict[str, Any], actor: s
         if types & {"LocationClaim", "CareerStepClaim"}:
             coverage.evaluate(session, org_id, candidate_id, cause, actor)
         retriage_candidate(session, org_id, candidate_id, cause, actor)
+
+
+@contextmanager
+def job_batched(session: Session, org_id: uuid.UUID, cause: dict[str, Any], actor: str):
+    """Several of a role's requirements changed in one act ("Confirm all"): everyone on the role is re-matched once
+    at the end, not once per requirement."""
+    from maindscout.api import coverage
+
+    if session.info.get("job_batch") is not None:
+        yield
+        return
+    session.info["job_batch"] = {}
+    try:
+        yield
+        touched = session.info["job_batch"]
+    finally:
+        session.info.pop("job_batch", None)
+    for job_id, residence in touched.items():
+        session.flush()
+        rematch_job(session, org_id, job_id, cause, actor)
+        if True in residence:
+            coverage.reevaluate_job(session, session.get(Job, job_id), cause, actor)
 
 
 def in_batch(session: Session, candidate_id: uuid.UUID) -> bool:

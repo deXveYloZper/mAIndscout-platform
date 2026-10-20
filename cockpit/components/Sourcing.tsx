@@ -3,11 +3,11 @@ import { Pin, PinOff, Radar, Undo2, X } from "lucide-react";
 import { addSourcingTarget, buildStrategy, changeSourcingTarget, checkDeeper, draftLinkedIn, runSourcingNow, setSourcingMode,
   setSourcingPlan, widenSourcing } from "@/app/actions";
 import { Refresh } from "@/components/CallsClient";
-import { ProfileLink, Triage } from "@/components/Outreach";
+import { QuickLinks, Triage } from "@/components/Outreach";
 import { AddTarget, OneClick, PlanSettings, PlanWords } from "@/components/SourcingForms";
 import type { CompanyProfile, EvidenceCheck, SourcingMode, SourcingPage, SourcingStats, SourcingTarget, Suggestion, TalentDna,
   Widening } from "@/lib/api";
-import { MODE_LABEL, reasonWords, TIER_WORDS } from "@/lib/format";
+import { MODE_LABEL, reasonWords } from "@/lib/format";
 import { ActForm } from "@/components/ActForm";
 
 /* The role's sourcing (docs/next/PLAN.md, phase 1): how often it searches, the market map, suggestions to contact,
@@ -130,48 +130,80 @@ function EvidenceLine({ jobId, s, deciding }: { jobId: string; s: Suggestion; de
   );
 }
 
+const EV_TAG: Record<string, string> = { confirmed: "public work supports it", mixed: "public work: mixed", weakened: "public work speaks against it" };
+
+/** "Communication Manager · Prada Group (12,213 people) · Milan, Italy": the job, the company and its size, where. */
+function MainLine({ s }: { s: Suggestion }) {
+  const n = s.employer?.employees;
+  if (!s.title && !s.company) return <p className="main">{[s.current, s.place ?? s.location].filter(Boolean).join(" · ") || "role and place not on the profile"}</p>;
+  return (
+    <p className="main">
+      {s.title}{s.title && s.company ? " · " : ""}
+      {s.company && <strong>{s.company}</strong>}
+      {s.company && <span className="num"> ({n ? `${n.toLocaleString("en-GB")} people` : "size not known"})</span>}
+      {(s.place ?? s.location) ? ` · ${s.place ?? s.location}` : ""}
+    </p>
+  );
+}
+
+/** A suggestion in a few lines (step E, owner 2026-10-20): one verdict, their public profile a click away, the job and
+    the company's size, why, what a possible is short of, what to settle on the call, the buttons. The rest is under
+    Details; nothing is gone. */
 function SuggestionCard({ jobId, s, since }: { jobId: string; s: Suggestion; since?: string | null }) {
   const fresh = Boolean(since && s.found_by.at && s.found_by.at >= since);
   const track = trackLine(s);
   const deciding = s.stage === "to_review" || s.stage === "later";
+  const strong = s.hint === "looks strong";
+  const ev = s.evidence?.status === "done" ? s.evidence.outcome : null;
+  const open = s.stage !== "passed";
   return (
     <li className={`personcard${s.follow_up_due ? " due" : ""}`}>
       <div className="pc-main">
         <div className="pc-head">
           <Link href={`/jobs/${jobId}/people/${s.candidate_id}`} className="pc-name">{s.name ?? "name not read"}</Link>
-          {deciding && <span className={`tiertag ${s.hint === "looks strong" ? "strong" : "possible"}`}
-            title="The desk's reading of a public profile: a hint, not a band">{s.hint}</span>}
-          {s.reach && <span className="blocktag" title={s.reach}>a reach</span>}
-          {s.match_tier && s.match_tier !== "unclear" && <span className={`tiertag ${s.match_tier}`}>{TIER_WORDS[s.match_tier]}</span>}
-          {fresh && <span className="pill accent">just found</span>}
-          {s.stage === "to_review" && (s.found_by.new_to_desk ? <span className="pill">new</span> : <span className="chip small">already on the desk</span>)}
+          {deciding && <span className={`cardverdict ${strong ? "strong" : "possible"}`}
+            title="The desk's reading of their profile against this role: a guide, not a band">{strong ? "Strong" : "Possible"}</span>}
+          {ev && EV_TAG[ev] && <span className={`tag ${ev === "confirmed" ? "key" : "warn"}`} title={OUTCOME[ev]}>{EV_TAG[ev]}</span>}
+          <QuickLinks jobId={jobId} s={s} />
           {s.follow_up_due && <span className="pill accent">follow up</span>}
         </div>
-        <p className="reason">{[s.current, s.location].filter(Boolean).join(" · ") || "role and place not on the profile"}</p>
-        {s.reach && <p className="hint">Possible, a reach: {s.reach}</p>}
+        <MainLine s={s} />
+        {s.why && s.why.length > 0 && <p className="why">{s.why.join(" · ")}</p>}
+        {open && !strong && s.short_of && s.short_of.length > 0 && <p className="shortof"><span className="linetag">short of</span>{s.short_of.join(" · ")}</p>}
+        {open && s.settle?.map((x, i) => <p key={i} className="settle"><span className="linetag" title="Only the call can settle it">to settle on the call</span>{x}</p>)}
         {track && <p className="reason">{track}</p>}
         {s.contact?.reply?.text && <p className="hint">&ldquo;{s.contact.reply.text}&rdquo;</p>}
-        {s.employer && <p className="hint">Works at: {facts(s.employer)}</p>}
-        {s.stage === "to_review" && <p className="hint">{reasonWords(s.reason)} · {foundBy(s.found_by)}</p>}
-        {deciding && s.plus && s.plus.length > 0 && (
-          <p className="hint plusline" title="The role's strong-plus items: suggestions meeting more of them come first">
-            Strong plus:{" "}
-            {s.plus.map((r, i) => (
-              <span key={i} className={`plustag ${r.verdict}`}>{shortReq(r.requirement)}{r.verdict === "partial" ? " (partly)" : r.verdict === "ask" ? " (ask)" : ""}</span>
-            ))}
-          </p>
-        )}
-        <EvidenceLine jobId={jobId} s={s} deciding={deciding} />
         <Triage jobId={jobId} s={s} />
+        <details className="pc-details">
+          <summary>Details</summary>
+          <div className="pc-more">
+            <p className="hint">
+              {s.reason ? reasonWords(s.reason) : null}
+              {fresh && <span className="pill accent">just found</span>}
+              {s.stage === "to_review" && (s.found_by.new_to_desk ? <span className="pill">new to the desk</span> : <span className="chip small">already on the desk</span>)}
+            </p>
+            {s.employer && <p className="hint">Works at: {facts(s.employer)}</p>}
+            <p className="hint">{foundBy(s.found_by)}</p>
+            {s.plus && s.plus.length > 0 && (
+              <p className="hint plusline" title="The role's strong-plus items: suggestions meeting more of them come first">
+                Strong plus:{" "}
+                {s.plus.map((r, i) => (
+                  <span key={i} className={`plustag ${r.verdict}`}>{shortReq(r.requirement)}{r.verdict === "partial" ? " (partly)" : r.verdict === "ask" ? " (ask)" : ""}</span>
+                ))}
+              </p>
+            )}
+            <EvidenceLine jobId={jobId} s={s} deciding={deciding} />
+            <p className="hint"><Link href={`/jobs/${jobId}/people/${s.candidate_id}`}>Every requirement, with its evidence</Link></p>
+          </div>
+        </details>
       </div>
-      <div className="pc-side">
-        <ProfileLink jobId={jobId} s={s} />
-        {s.profile && (s.stage === "to_contact" || (s.stage === "contacted" && s.follow_up_due)) && (
+      {s.profile && (s.stage === "to_contact" || (s.stage === "contacted" && s.follow_up_due)) && (
+        <div className="pc-side">
           <ActForm action={draftLinkedIn.bind(null, jobId, s.candidate_id)}>
             <button className="btn small">{s.stage === "contacted" ? "Follow-up draft" : "Draft LinkedIn message"}</button>
           </ActForm>
-        )}
-      </div>
+        </div>
+      )}
     </li>
   );
 }
@@ -207,8 +239,6 @@ function Workflow({ jobId, s, since }: { jobId: string; s: SourcingPage; since: 
           )}
         </>
       )}
-      <p className="hint">Open the profile, come back, decide: reach out (they become Priority, your choice), maybe later, or not for this
-        role (the reason teaches the desk your taste). Nobody found on the web is in the role&apos;s Priority until you choose them.</p>
 
       {(["to_contact", "contacted", "replied", "call_booked"] as const).map((k) => s.lists[k].length > 0 && (
         <div key={k}>
@@ -228,9 +258,14 @@ function Workflow({ jobId, s, since }: { jobId: string; s: SourcingPage; since: 
           <Cards jobId={jobId} rows={s.lists.passed} />
         </details>
       )}
-      <p className="hint">Public data only: a guide to who to contact. Their CV, contact details and permission come from them. A follow-up
-        is due 4 days after contact without a reply. Once your mailbox is connected, LinkedIn&apos;s emails about people you contacted
-        there (an accepted invitation, a message) move them on by themselves.</p>
+      <details className="howto">
+        <summary className="sub">How this works</summary>
+        <p className="hint">Open their profile, come back, decide: reach out (they become Priority, your choice), later, or not for this
+          role (the reason teaches the desk your taste). Nobody found on the web is in the role&apos;s Priority until you choose them.</p>
+        <p className="hint">Public data only: a guide to who to contact. Their CV, contact details and permission come from them. A
+          follow-up is due 4 days after contact without a reply. Once your mailbox is connected, LinkedIn&apos;s emails about people
+          you contacted there (an accepted invitation, a message) move them on by themselves.</p>
+      </details>
     </section>
   );
 }

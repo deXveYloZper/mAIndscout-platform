@@ -323,6 +323,42 @@ export async function addIntake(jobId: string, _: FormState, form: FormData): Pr
   }
 }
 
+/** "Confirm all" on the hiring profile: the requirements the desk read, approved together; everyone re-matched once. */
+export async function confirmRequirements(jobId: string, ids: string[]): Promise<FormState> {
+  try {
+    const r = await apiJson<{ confirmed: number; already: number }>(`/v1/jobs/${jobId}/requirements/confirm`, { ids });
+    revalidatePath(`/jobs/${jobId}`);
+    return { message: `Confirmed ${r.confirmed}.` };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Read the role brief (about a cent): what the hire will really do, from the ad, the notes and research. */
+export async function readRoleBrief(jobId: string): Promise<FormState> {
+  try {
+    const r = await apiJson<{ lines?: number; questions?: number; skipped?: string }>(`/v1/jobs/${jobId}/role-brief`, {});
+    revalidatePath(`/jobs/${jobId}`);
+    if (r.skipped) return { error: `Not read: ${r.skipped}.` };
+    return { message: `Read ${r.lines} lines${r.questions ? `, ${r.questions} question${r.questions === 1 ? "" : "s"} for you` : ""}.` };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** The uploader's answer to one of the brief's questions: read like notes from the hiring manager, then the brief again. */
+export async function answerBriefQuestion(jobId: string, facet: string, _: FormState, form: FormData): Promise<FormState> {
+  const answer = String(form.get("answer") ?? "").trim();
+  if (!answer) return { error: "Write the answer first." };
+  try {
+    await apiJson(`/v1/jobs/${jobId}/role-brief/answer`, { facet, answer });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return { message: "Read. The brief and the requirements are updated." };
+}
+
 /** Close a role (on hold, filled, cancelled) or open it again. */
 export async function setJobState(jobId: string, _: FormState, form: FormData): Promise<FormState> {
   try {

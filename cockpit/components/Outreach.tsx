@@ -29,16 +29,26 @@ function useStep(jobId: string, candidateId: string) {
   return { pending, error, go };
 }
 
-/** Opens LinkedIn in a new tab and marks the suggestion seen, so coming back to the desk shows where you were. */
-export function ProfileLink({ jobId, s }: { jobId: string; s: Suggestion }) {
+const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u; } };
+
+/** Their public profile one click from the name (owner, 2026-10-20): LinkedIn first, then pages of their own (a
+    portfolio, GitHub). Opening one marks the suggestion seen, so coming back to the desk shows where you were. */
+export function QuickLinks({ jobId, s }: { jobId: string; s: Suggestion }) {
   const { go } = useStep(jobId, s.candidate_id);
-  if (!s.profile) return null;
+  const links = s.links ?? (s.profile ? [{ kind: "linkedin" as const, url: link(s.profile) }] : []);
+  if (!links.length) return null;
   const seen = Boolean(s.contact?.viewed_at);
   return (
-    <a className={`btn small ${seen ? "ghost" : ""}`} href={link(s.profile)} target="_blank" rel="noreferrer"
-       onClick={() => { if (!seen) go("viewed"); }}>
-      <ExternalLink aria-hidden="true" />{seen ? "Profile (seen)" : "Open profile"}
-    </a>
+    <span className="quicklinks">
+      {links.map((l) => (
+        <a key={l.url} className={`quicklink${seen ? " seen" : ""}`} href={l.url} target="_blank" rel="noreferrer"
+           title={`${l.kind === "linkedin" ? "Their LinkedIn profile" : "Their own page"}, in a new tab${seen ? " (opened before)" : ""}`}
+           onClick={() => { if (!seen) go("viewed"); }}>
+          {l.kind === "linkedin" ? "LinkedIn" : host(l.url)}<ExternalLink aria-hidden="true" />
+        </a>
+      ))}
+      {seen && <span className="quickseen" title="You opened their profile">seen</span>}
+    </span>
   );
 }
 
@@ -68,7 +78,7 @@ export function Triage({ jobId, s }: { jobId: string; s: Suggestion }) {
       <>
         <div className="row" role="group" aria-label="Decide">
           <button className="btn small primary" disabled={pending} onClick={() => go("decide", { choice: "reach_out" })}>Reach out</button>
-          {s.stage === "to_review" && <button className="btn small" disabled={pending} onClick={() => go("decide", { choice: "later" })}>Maybe later</button>}
+          {s.stage === "to_review" && <button className="btn small" disabled={pending} onClick={() => go("decide", { choice: "later" })}>Later</button>}
           <button className="btn small ghost" disabled={pending} aria-expanded={passing} onClick={() => setPassing(!passing)}>Not for this role</button>
           {s.stage === "later" && undo}
         </div>

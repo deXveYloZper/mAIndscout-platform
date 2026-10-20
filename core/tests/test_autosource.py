@@ -392,6 +392,11 @@ def test_sourcing_routes(client, session, job, blobs):
     assert [s["name"] for s in page["suggestions"]][0] == "Ada Testperson"
     first = page["suggestions"][0]
     assert first["profile"].endswith("ada-testperson-demo") and first["found_by"]["channel"] == "exa_people"
+    # The card in a few words (step E): the quick link to their public profile, where they are, why, what to settle.
+    assert first["links"][0]["kind"] == "linkedin" and first["links"][0]["url"].startswith("https://")
+    assert first["links"][0]["url"].endswith("ada-testperson-demo") and len(first["links"]) == 1
+    assert first["place"] and first["title"] == "InSAR Engineer" and first["company"] == "Orbital Testworks"
+    assert isinstance(first["why"], list) and isinstance(first["short_of"], list) and isinstance(first["settle"], list)
     drafted = client.post("/v1/messages", json={"kind": "candidate_outreach", "candidate_id": str(ada), "job_id": str(job.id),
                                                 "channel": "linkedin"})
     assert drafted.status_code == 201 and drafted.json()["to"].endswith("ada-testperson-demo")

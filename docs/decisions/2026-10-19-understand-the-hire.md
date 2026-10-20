@@ -123,6 +123,24 @@ Tracing the 57 strong people through each step showed where it went wrong:
 - "then do the preview": step E's preview of the hiring profile and the suggestion card, built from the two roles' real
   data. It is a local page, not committed, because it names real people.
 
+## Step E (built 2026-10-20, the owner's "go" on the preview)
+The owner approved the preview with one addition: "ensure the cards also have quick access to the persons public
+profile/link/linkedin". Nothing in matching changed: the same people, the same verdicts, fewer words.
+1. **The suggestion card** ([outreach](../build/components/outreach.md)): one verdict; "LinkedIn ↗" beside the name,
+   then up to two pages of the person's own (opening one marks the card seen); the job, the company and its size, and
+   where; why (their work and level, then the strong-plus items they meet); what a possible match is short of; what
+   to settle on the call (a reach; living outside the role's country or city); Reach out, Later, Not for this role;
+   Details for everything else.
+   - The lines are written by code from the stored match (`domain/cards.py`), never a score and nothing the match does
+     not say. The one new reading is the city: a role that names one (Milan) flags someone who lives elsewhere in the
+     country. A profile that gives only the country says "city not known" rather than "lives elsewhere".
+2. **The hiring profile** ([hiring profiles](../build/components/hiring-profiles.md)): the brief on top, each line with
+   its source; its questions with an answer box (read like notes, then the brief again); what we search and rate by,
+   with one "Confirm all" and a "change" on each line; for the call, nothing to confirm; context, with the notes and
+   Add a requirement folded. About 79 controls on the marketing role became one button and a "change" per line.
+3. **Checked by hand** on both roles, at laptop and phone width, with a throwaway sign-in. The Sourcing tab's market
+   map was found too wide on a phone (up to 139 px, before step E) and fixed.
+
 ## Not changed
 - The kinds start-up and scale-up keep their meaning (a stage; by size only when no funding is known).
 - Industry years still count every real job.

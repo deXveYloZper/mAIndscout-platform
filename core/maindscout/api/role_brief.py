@@ -115,3 +115,20 @@ def view(session: Session, job_id: uuid.UUID) -> list[dict[str, Any]]:
                      "quote": ev.snippet if ev is not None and p["basis"] != "reading" else None,
                      "question": p.get("question"), "why": p.get("why"), "status": c.status})
     return sorted(rows, key=lambda r: order.index(r["facet"]) if r["facet"] in order else 99)
+
+
+def answer(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, facet: str, text: str, actor: str,
+           client: LLMClient) -> dict[str, Any]:
+    """The uploader's answer to one of the brief's questions (step E, 2026-10-20): kept with the role's notes and read
+    like any notes (each requirement with its quote), then the brief read again, so the answer becomes a line from
+    the notes and the question goes. Two model calls, about two cents."""
+    from maindscout.api import hiring
+
+    line = next((r for r in view(session, job_id) if r["facet"] == facet and r.get("question")), None)
+    if line is None:
+        raise LookupError("That question is no longer open: reload the page")
+    said = " ".join(text.split())
+    if len(said) < 2:
+        raise ValueError("Write the answer first.")
+    notes = hiring.add_intake(session, org_id, job_id, f'The desk asked: "{line["question"]}" The answer: {said}', actor, client)
+    return {"notes": notes, **read(session, org_id, job_id, client)}

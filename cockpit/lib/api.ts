@@ -130,6 +130,9 @@ export type JobPage = JobSummary & {
   found_only_here: number;
   archived: { candidate_id: string; name: string | null; reason: string | null }[];
   coverage: { desk: string[]; from_ad: string[]; opened: string[]; names: Record<string, string> };
+  /** Each requirement's group: searched and rated by, for the conversation, or context (domain/groups.py). */
+  requirement_groups?: Record<string, [RequirementGroup, string]>;
+  role_brief?: BriefLine[];
   stages: Record<string, number>;
   hiring: {
     company: { id: string; name: string; kind?: string | null; stage?: string | null; team?: string | null; founded?: string | null;
@@ -138,6 +141,12 @@ export type JobPage = JobSummary & {
     targets: Record<string, number>;
   };
 };
+
+export type RequirementGroup = "search" | "conversation" | "context";
+
+/** A line of the role brief (step B): what the hire will really do, where it comes from, and a question when we guessed. */
+export type BriefLine = { id: string; facet: string; value: string | null; words: string; basis: "ad" | "notes" | "research" | "reading";
+  quote: string | null; question: string | null; why: string | null; status: "proposed" | "approved" };
 
 export type PersonPage = {
   id: string;
@@ -391,6 +400,10 @@ export type ContactTrack = {
 export type Suggestion = { candidate_id: string; name: string | null; band: Band; reason: string | null; match_tier: string | null;
   stage: OutreachStage; hint: "looks strong" | "possible"; reach: string | null; contact: ContactTrack | null; follow_up_due: boolean;
   state: string; current: string | null; location: string | null; profile: string | null; employer: CompanyProfile | null;
+  title?: string | null; company?: string | null; place?: string | null;
+  /** The card in a few words (step E, 2026-10-20): their public pages, why they fit, what a possible is short of,
+      what only the call can settle. */
+  links?: { kind: "linkedin" | "page"; url: string }[]; why?: string[]; short_of?: string[]; settle?: string[];
   gaps?: PersonOnJob["gaps"]; coverage?: PersonOnJob["coverage"];
   found_by: { channel: string; target: string | null; tier: string | null; query: string | null; at: string | null; new_to_desk: boolean;
     at_target?: "now" | "before" | null };

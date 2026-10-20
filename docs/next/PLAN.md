@@ -9,7 +9,8 @@ staged search (talent DNA, tiered target list, batches, exhaustion, widening wit
 **Phase 1e APPROVED** 2026-10-19 by the owner ("agree. tread carefully, what we do not want is to have worse results
 once this is implemented. Go"): understand the hire before searching (role brief, grouped requirements, kind of work,
 level, move check, a search by size, less text) and measure every rule change first. Steps A–F in
-[the decision](../decisions/2026-10-19-understand-the-hire.md); step A built 2026-10-19.
+[the decision](../decisions/2026-10-19-understand-the-hire.md); steps A and B built 2026-10-19, step E (less text,
+after the owner's word on its preview) 2026-10-20.
 Phases 2–6 stay drafts until the owner approves them. Revised the same day with the owner's answers (section 10).
 Written after a survey of what is built ([STATUS](../build/STATUS.md)).
 
@@ -292,7 +293,7 @@ contradictory.
   never "Priority".
 
 **F2. Fast triage on each card, without leaving the page.**
-- "Open profile" opens LinkedIn in a new tab, and the card is marked viewed.
+- "Open profile" opens LinkedIn in a new tab, and the card is marked viewed (since step E, "LinkedIn ↗" beside the name).
 - Back on the desk, one click (or a key) decides:
   - **Reach out**: the person goes to the to-contact list and becomes Priority, by the owner's hand.
   - **Maybe later**: Review later, kept for this role.

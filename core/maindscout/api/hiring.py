@@ -206,6 +206,30 @@ def reread_intakes(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, clien
     return out
 
 
+def confirm(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, ids: list[str], actor: str) -> dict[str, Any]:
+    """"Confirm all" (step E, 2026-10-20): the requirements the desk read, as the recruiter saw them, approved together;
+    everyone on the role is re-matched once. A line someone already decided is left as it is."""
+    from maindscout.api import review
+
+    job = session.get(Job, job_id)
+    if job is None or job.org_id != org_id:
+        raise LookupError(f"No job {job_id}")
+    todo: list[Claim] = []
+    for i in dict.fromkeys(ids):
+        try:
+            c = session.get(Claim, uuid.UUID(str(i)))
+        except ValueError:
+            c = None
+        if c is None or c.org_id != org_id or c.subject_id != job.id or c.claim_type != "JobRequirementClaim":
+            raise LookupError(f"No requirement {i} on this role")
+        if c.status == "proposed":
+            todo.append(c)
+    with review.job_batched(session, org_id, {"act": "confirm_all", "job_id": str(job.id), "n": len(todo)}, actor):
+        for c in todo:
+            review.approve_claim(session, org_id, c.id, actor)
+    return {"confirmed": len(todo), "already": len(dict.fromkeys(ids)) - len(todo)}
+
+
 def residence(session: Session, job: Job) -> list[Claim]:
     """The role's live "must live in" requirements (normally one)."""
     return [c for c in session.scalars(select(Claim).where(Claim.subject_id == job.id, Claim.claim_type == "JobRequirementClaim",

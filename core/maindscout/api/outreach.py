@@ -98,7 +98,7 @@ def reach(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID, job: Job
                                                  Claim.valid_to.is_(None))):
         title = (c.approved_view or c.payload).get("title_raw") or ""
         if MANAGES.search(title):
-            return f"{title} now: above this role. Ask whether they would go back to hands-on work."
+            return f"{title} now, above this role: ask whether they would go back to hands-on work"
     return None
 
 

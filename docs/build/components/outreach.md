@@ -12,8 +12,8 @@
 
 ## What
 The owner works a role's suggestions without leaving the page:
-1. open the LinkedIn profile, come back;
-2. decide in one click: **Reach out**, **Maybe later**, or **Not for this role** (with a reason);
+1. open the LinkedIn profile (the card's "LinkedIn ↗", beside the name), come back;
+2. decide in one click: **Reach out**, **Later** (maybe later), or **Not for this role** (with a reason);
 3. say how they were contacted; the follow-up comes due after 4 days;
 4. record the reply and the call. LinkedIn's own emails move the track on once the mailbox is connected.
 
@@ -42,7 +42,18 @@ The owner (2026-10-13): "we should also think about ease of use and fast workflo
     - asked to stop (the "stop" list: never contacted or suggested again).
   - Then the call booked. After that the ordinary pipeline takes over (screened, submitted, …).
   - The Sourcing tab lists people by stage: to review, to contact, contacted (follow-ups due marked), replied, call booked. Maybe later and passed are folded away. A counter line shows them all.
-- **A reach** (`reach`). Someone whose current title is head, director, VP, C-level, founder or engineering manager, suggested for a role whose own title is not a management one ("all levels" means junior to senior individual contributors, owner 2026-10-13). They are shown as "a reach", with "ask whether they would go back to hands-on work", and never blocked. A reach the owner has not chosen does not count towards the target, so it never holds the search back.
+- **A reach** (`reach`). Someone whose current title is head, director, VP, C-level, founder or engineering manager, suggested for a role whose own title is not a management one ("all levels" means junior to senior individual contributors, owner 2026-10-13). The card says it as a thing to settle on the call ("Head of X now, above this role: ask whether they would go back to hands-on work"), and they are never blocked. A reach the owner has not chosen does not count towards the target, so it never holds the search back.
+- **The card in a few lines** (step E of [understand the hire](../../decisions/2026-10-19-understand-the-hire.md), owner 2026-10-20: "there is too much information"; `domain/cards.py`, built by `autosource.page` from the stored match, never a score):
+  - the name, **one verdict** (Strong or Possible, the machine's hint) and, when done, what their public work said;
+  - **their public profile one click away**: "LinkedIn ↗", then up to two pages of their own (a portfolio, GitHub; never a CV template's site). Opening one marks the suggestion seen, as "Open profile" did (owner, 2026-10-20: "ensure the cards also have quick access to the persons public profile");
+  - the job, the company and its size, where: "Communication Manager · Prada Group (12,213 people) · Milan, Italy";
+  - **why:** years in their kind of work and their level, then each strong plus they meet, in the match's own words made short ("4.7 years at leather goods companies (Prada Group)");
+  - **short of**, on a possible match: the must-haves only partly met or missing, then the strong-plus items they miss;
+  - **to settle on the call:** a reach, and living outside the role's country or city ("lives in Rome, Italy; the role is in Milan"; a profile that names only the country says "city not known"). Cities match under their local names too (Milano is Milan);
+  - Reach out, Later, Not for this role;
+  - **Details**, folded: the match's reason, "just found" and "new to the desk", the employer's facts, which search found them, the strong-plus tags, the deeper check with its findings, pages and cost, and a link to every requirement with its evidence.
+
+  The help paragraphs under the lists fold into "How this works".
 - **LinkedIn's emails** (`read_linkedin`, run by the mailbox sync).
   - The desk asks the mailbox only for mail **from linkedin.com that names someone contacted on LinkedIn** and still waiting (`after:` the first contact). Gmail or Outlook does the search, so no other email is fetched; a result not from LinkedIn is dropped unread.
   - "… accepted your invitation" records the acceptance. "… sent you a message" records a reply with LinkedIn's preview text; the owner then says what it means (interested, not now, …). English, German and French wordings are read.
@@ -59,6 +70,9 @@ The owner (2026-10-13): "we should also think about ease of use and fast workflo
 - The channels are a LinkedIn request, a LinkedIn message, InMail, email, phone, or another way.
 
 ## Tests
+`core/tests/test_cards.py`: the card's lines from real detail wordings (why, short of, to settle), cities under their
+local names, a place that is only a country; `test_autosource.py`: the card's quick link, job, company and place.
+
 `core/tests/test_phase1c.py`:
 - a suggestion stays off the role's bands and the job counts until the owner chooses; decide, undo (the machine's reason comes back), pass with a reason, maybe later;
 - contacted (the follow-up after 4 days, shown when due), a reply stops follow-ups, the call booked, all on the timeline;

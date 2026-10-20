@@ -29,7 +29,7 @@ Local setup: [core/README.md](../../core/README.md).
 | Evidence checks: a strong web find's public work (their links, their name with their company) read against the role; supported skills become proposed facts, what weakens is shown (2026-10-17) | built, not yet run on a real person | [evidence-checks.md](components/evidence-checks.md) |
 | Employer evidence: what a company uses, read from its own job adverts; a skill nobody wrote down is "likely" for its people in that area of work (2026-10-17) | built, not yet run on a real company | [employer-evidence.md](components/employer-evidence.md) |
 | Roles: close (on hold, filled, cancelled), reopen, delete a role added by mistake (x-ray B6) | built | [roles.md](components/roles.md) |
-| Outreach workflow: suggestions until the owner decides, one-click triage with undo, the contact track (contacted, follow-up, reply, call), reaches, LinkedIn's emails read for contacted people only (next build, phase 1c) | built; the email reading waits for the owner's mailbox | [outreach.md](components/outreach.md) |
+| Outreach workflow: suggestions until the owner decides, each a card in a few lines with LinkedIn one click away, one-click triage with undo, the contact track (contacted, follow-up, reply, call), reaches, LinkedIn's emails read for contacted people only (next build, phase 1c) | built; the email reading waits for the owner's mailbox | [outreach.md](components/outreach.md) |
 | Sourcing strategy: talent DNA, tiered target list, batches until exhausted, snowball, widening the owner decides (next build, phase 1b) | built | [sourcing-strategy.md](components/sourcing-strategy.md) |
 | Company knowledge: identity keys, Exa profiles for breadth, Grok research for depth, cross-check (next build, phase 1b) | built | [company-knowledge.md](components/company-knowledge.md) |
 | Sourcing results and spend: funnel per strategy, cost per relevant / interview / placement, flags (next build, phase 1) | built | [sourcing-results.md](components/sourcing-results.md) |
@@ -42,7 +42,7 @@ Local setup: [core/README.md](../../core/README.md).
 | Company research: targeted public facts with sources (I2) | built | [company-research.md](components/company-research.md) |
 | Coverage gate: archive people outside the desk's countries; light research for big consultancies | built | [coverage-gate.md](components/coverage-gate.md) |
 | Career profiles: classify steps, rubric dimensions, QS rank, questions for the call (I3) | built | [career-profiles.md](components/career-profiles.md) |
-| Hiring profiles: ad + intake notes + recruiter edits, by strength; hiring company; target companies (I4) | built | [hiring-profiles.md](components/hiring-profiles.md) |
+| Hiring profiles: ad + intake notes + recruiter edits, by strength, shown in three groups with Confirm all; hiring company; target companies (I4) | built | [hiring-profiles.md](components/hiring-profiles.md) |
 | Matching v2: verdict per requirement, tier by visible rules, band follows the tier (I5) | built | [matching.md](components/matching.md) |
 | People search and sourcing v2: profile filters, target-company alumni, demo desk (I6) | built | [people-search.md](components/people-search.md) |
 | The Brief: call checklist, answers become approved facts, person-wide inheritance (Slice 3) | built | [brief.md](components/brief.md) |

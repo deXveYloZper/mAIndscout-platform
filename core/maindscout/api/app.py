@@ -1075,6 +1075,37 @@ def read_role_brief(job_id: uuid.UUID, reread_notes: bool = False, org_id: uuid.
     return {**result, "notes": notes, "brief": role_brief.view(session, job_id)}
 
 
+class BriefAnswerBody(BaseModel):
+    facet: str
+    answer: str
+
+
+@app.post("/v1/jobs/{job_id}/role-brief/answer")
+def answer_role_brief(job_id: uuid.UUID, body: BriefAnswerBody, org_id: uuid.UUID = Depends(get_org),
+                      session: Session = Depends(get_session), actor: str = Depends(get_actor), llm: LLMClient = Depends(get_llm)):
+    """Answer one of the brief's questions: read like notes from the hiring manager, then the brief again (two cents)."""
+    from maindscout.api import role_brief
+
+    result = role_brief.answer(session, org_id, job_id, body.facet, body.answer, actor, llm)
+    session.commit()
+    return {**result, "brief": role_brief.view(session, job_id)}
+
+
+class ConfirmBody(BaseModel):
+    ids: list[str]
+
+
+@app.post("/v1/jobs/{job_id}/requirements/confirm")
+def confirm_requirements(job_id: uuid.UUID, body: ConfirmBody, org_id: uuid.UUID = Depends(get_org),
+                         session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Confirm the requirements the desk read, together: each approved as read, everyone re-matched once."""
+    from maindscout.api import hiring
+
+    result = hiring.confirm(session, org_id, job_id, body.ids, actor)
+    session.commit()
+    return result
+
+
 class RequirementBody(BaseModel):
     category: str
     strength: str

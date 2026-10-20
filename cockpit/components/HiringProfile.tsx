@@ -1,14 +1,29 @@
 import Link from "next/link";
-import { addIntake, addRequirement, approveClaim, rejectClaim, setHiringCompany, setStrength } from "@/app/actions";
+import { addIntake, addRequirement, answerBriefQuestion, confirmRequirements, readRoleBrief, rejectClaim, setHiringCompany,
+  setJobCountries, setStrength } from "@/app/actions";
 import { AddRequirement } from "@/components/AddRequirement";
+import { AnswerForm, Fold } from "@/components/BriefForms";
 import { Snippet } from "@/components/Claim";
+import { CountriesForm } from "@/components/CountriesForm";
 import { HiringCompanyForm } from "@/components/HiringCompanyForm";
 import { IntakeForm } from "@/components/IntakeForm";
-import type { ClaimView, JobPage } from "@/lib/api";
-import { EMPLOYER_KIND_LABEL, FAMILY_LABEL, KIND_LABEL, STRENGTH_GROUPS, STRENGTHS } from "@/lib/format";
+import { OneClick } from "@/components/SourcingForms";
+import type { BriefLine, ClaimView, JobPage, RequirementGroup } from "@/lib/api";
+import { countryName, EMPLOYER_KIND_LABEL, FAMILY_LABEL, STRENGTHS } from "@/lib/format";
 import { ActForm } from "@/components/ActForm";
 
-const SOURCE: Record<string, string> = { ad: "from the ad", intake: "from the intake notes", recruiter: "added by a person" };
+/* The hiring profile in three groups (step E of understanding the hire, owner 2026-10-20): what the desk searches and
+   rates by, confirmed once; what is for the call, nothing to confirm; and context. The role brief and its questions
+   on top. Every requirement's quote and controls are one click away ("change"). */
+
+const SOURCE: Record<string, string> = { ad: "the ad", intake: "your notes", recruiter: "typed" };
+const BASIS: Record<string, string> = { ad: "the ad", notes: "your notes", research: "research", reading: "our reading" };
+const FACET: Record<string, string> = { situation: "Situation", core_work: "Core work", team: "Team", hands_on: "Hands-on",
+  market: "Market", reports_to: "Reports to", level: "Level" };
+const STRENGTH: Record<string, [string, string]> = { must: ["Must", "must"], deal_breaker: ["Must", "must"],
+  strong_plus: ["Strong plus", "plus"], nice: ["Nice", "nice"], anti: ["Not wanted", "anti"], unknown: ["Listed", "nice"] };
+const ORDER = ["must", "deal_breaker", "strong_plus", "nice", "unknown", "anti"];
+const MOBILITY: Record<string, string> = { visa_sponsorship: "Visa sponsorship", relocation_assistance: "Relocation assistance" };
 
 function detail(r: ClaimView, targets: Record<string, number>) {
   const p = r.payload;
@@ -17,9 +32,12 @@ function detail(r: ClaimView, targets: Record<string, number>) {
     bits.push(<span key="r">{p.level ? `${p.level} and above` : "too senior"}</span>);  // a limit on seniority
   } else if (p.category === "role") {
     bits.push(<span key="r">{FAMILY_LABEL[p.role_family] ?? p.role_family}{p.level ? `, ${p.level}` : ""}{p.min_years != null ? `, ${p.min_years}+ years` : ""}</span>);
+  } else if (p.min_years != null) {
+    bits.push(<span key="y">{p.min_years}+ years</span>);
   }
+  if (p.education_level) bits.push(<span key="l">{p.education_level}</span>);
   if (p.employer_kinds?.length) bits.push(<span key="e">{p.employer_kinds.map((k: string) => EMPLOYER_KIND_LABEL[k] ?? k).join(", ")}</span>);
-  if (p.min_staff || p.max_staff) {
+  if ((p.min_staff || p.max_staff) && !/\d/.test(p.text_raw ?? "")) {  // "up to 200 people" already says it
     const n = (x: number) => x.toLocaleString("en-GB");
     bits.push(<span key="s">{p.min_staff && p.max_staff ? `${n(p.min_staff)}-${n(p.max_staff)} people`
       : p.max_staff ? `up to ${n(p.max_staff)} people` : `over ${n(p.min_staff - 1)} people`}</span>);
@@ -46,10 +64,156 @@ function detail(r: ClaimView, targets: Record<string, number>) {
   return bits.length ? <span className="reqdetail"> · {bits.reduce<React.ReactNode[]>((a, b, i) => (i ? [...a, " · ", b] : [b]), [])}</span> : null;
 }
 
-/** What the job really asks for: the ad, the hiring manager's word, and the recruiter's own edits, by strength. */
-export function HiringProfile({ job, requirements }: { job: JobPage; requirements: ClaimView[] }) {
-  const path = `/jobs/${job.id}`;
+const WORDS_SKIP = new Set(["experience", "with", "and", "the", "another", "strongly", "preferred", "for", "from", "that"]);
+const words = (t: string | undefined) => new Set((t ?? "").toLowerCase().match(/[a-z]{3,}/g)?.filter((w) => !WORDS_SKIP.has(w)) ?? []);
+
+/** The same ask already listed to search by (the ad's long luxury sentence and the luxury strong plus): shown once. */
+function duplicate(r: ClaimView, others: ClaimView[]): boolean {
+  const w = words(r.payload.text_raw);
+  if (!w.size) return false;
+  return others.some((o) => {
+    const v = words(o.payload.text_raw);
+    const shared = [...w].filter((x) => v.has(x)).length;
+    return v.size > 0 && shared >= 0.8 * Math.min(w.size, v.size);
+  });
+}
+
+function Change({ r, path, strength = true }: { r: ClaimView; path: string; strength?: boolean }) {
+  return (
+    <details className="change">
+      <summary>change</summary>
+      <div className="changebox">
+        {strength && (
+          <div className="row">
+            <ActForm action={setStrength.bind(null, r.id, path)} className="row">
+              <select name="strength" defaultValue={r.payload.strength} aria-label="How much it matters">
+                {STRENGTHS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                {!STRENGTHS.some(([v]) => v === r.payload.strength) && <option value={r.payload.strength}>{r.payload.strength}</option>}
+              </select>
+              <button className="btn small" title="Save how much it matters (this confirms it too)">Save</button>
+            </ActForm>
+            <ActForm action={rejectClaim.bind(null, r.id, path, "wrong")}><button className="btn small ghost" title="The desk misread it: it stops counting">Remove</button></ActForm>
+          </div>
+        )}
+        <Snippet ev={r.evidence[0]} />
+      </div>
+    </details>
+  );
+}
+
+function Line({ r, job, quiet }: { r: ClaimView; job: JobPage; quiet?: boolean }) {
+  const p = r.payload;
+  const [label, cls] = STRENGTH[p.strength] ?? ["Listed", "nice"];
+  const m = p.mobility;
+  return (
+    <li className={`reqline${quiet ? " quiet" : ""}`}>
+      {!quiet && <span className={`st st-${cls}`}>{label}</span>}
+      <span className="rtext">
+        {m ? <><strong>{MOBILITY[m.facet] ?? m.facet}:</strong> {m.offered === true ? "offered" : m.offered === false ? "not offered" : "not stated"}</> : p.text_raw}
+        {!quiet && p.distinctive && <span className="tag key" title="Zero evidence of this puts a person in Do not submit">decides the band</span>}
+        {!quiet && detail(r, job.hiring.targets)}
+      </span>
+      <span className="rsrc">{SOURCE[p.source ?? "ad"] ?? "the ad"}
+        {!quiet && r.status === "proposed" && <span className="waiting" title="Read by the desk, waiting for your confirmation">new</span>}</span>
+      <Change r={r} path={`/jobs/${job.id}`} strength={!m} />
+    </li>
+  );
+}
+
+/** "Where people must live" as a line to search by: the role's countries, edited here, the one place they are kept. */
+function Residence({ job, r }: { job: JobPage; r: ClaimView | undefined }) {
+  const lives: string[] = r?.payload.mobility?.countries ?? [];
+  return (
+    <li className="reqline">
+      <span className="st st-must">{r ? "Must" : "Listed"}</span>
+      <span className="rtext">
+        Where people must live: {lives.length ? lives.map(countryName).join(", ") : "not stated"}
+        {r?.payload.cities?.length ? ` (${r.payload.cities.join(", ")})` : ""}
+        {r?.payload.relocation ? " · moving there is welcome" : ""}
+        <span className="reqdetail"> · {lives.length ? "sourcing searches and suggests only there" : "sourcing uses the ad's places, or where the client's team works"}</span>
+      </span>
+      <span className="rsrc">{r ? SOURCE[r.payload.source ?? "ad"] ?? "the ad" : ""}
+        {r?.status === "proposed" && <span className="waiting" title="Read by the desk, waiting for your confirmation">new</span>}</span>
+      <details className="change">
+        <summary>change</summary>
+        <div className="changebox">
+          <CountriesForm action={setJobCountries.bind(null, job.id)} current={lives.map(countryName).join(", ")} />
+          <p className="hint">The one place for the role&apos;s countries: sourcing searches and suggests only here, and people living here
+            are never archived as outside the desk&apos;s coverage (the desk covers the EU / EEA, the UK, Switzerland, the US and Canada).
+            Where someone lives never puts them in Do not submit by itself; it becomes a question to ask. Decided by where people live
+            and work now, never by nationality.</p>
+          {r && <Snippet ev={r.evidence[0]} />}
+        </div>
+      </details>
+    </li>
+  );
+}
+
+function Brief({ job, lines }: { job: JobPage; lines: BriefLine[] }) {
+  if (!lines.length) {
+    return (
+      <section className="panel rolebrief">
+        <h3>What this hire will really do</h3>
+        <p className="sub">Not read yet. The desk reads it from the ad, your notes and public research on the company, each line saying
+          where it comes from, with a question or two when it has to guess (about a cent).</p>
+        <OneClick action={readRoleBrief.bind(null, job.id)} label="Read the brief" busy="Reading…" primary />
+      </section>
+    );
+  }
+  return (
+    <section className="panel rolebrief">
+      <div className="row spread">
+        <h3>What this hire will really do</h3>
+        <OneClick action={readRoleBrief.bind(null, job.id)} label="Read again" busy="Reading…" />
+      </div>
+      <dl className="brieflines">
+        {lines.map((b) => (
+          <div key={b.id} className="bline">
+            <dt>{FACET[b.facet] ?? b.facet}</dt>
+            <dd>
+              {b.words}{" "}
+              <span className={`srcchip ${b.status === "approved" ? "you" : b.basis}`}>{b.status === "approved" ? "you" : BASIS[b.basis] ?? b.basis}</span>
+              {b.quote && <span className="quote">&ldquo;{b.quote}&rdquo;</span>}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+function Questions({ job, lines }: { job: JobPage; lines: BriefLine[] }) {
+  const asked = lines.filter((b) => b.question);
+  if (!lines.length) return null;
+  if (!asked.length) return <p className="hint noquestions">No questions for you: the ad and your notes say what the search needs.</p>;
+  return (
+    <section className="panel questions">
+      <h3>{asked.length === 1 ? "A question for you" : `${asked.length} questions for you`}</h3>
+      {asked.map((q) => (
+        <div key={q.id} className="question">
+          <p className="qtext">{q.question}</p>
+          {q.why && <p className="qwhy">Why it matters: {q.why}</p>}
+          <AnswerForm action={answerBriefQuestion.bind(null, job.id, q.facet)} id={`answer-${q.facet}`} />
+        </div>
+      ))}
+    </section>
+  );
+}
+
+/** What the job really asks for, in three groups, with the role brief on top. */
+export function HiringProfile({ job }: { job: JobPage }) {
   const company = job.hiring.company;
+  const lines = job.role_brief ?? [];
+  const group = (r: ClaimView): RequirementGroup => job.requirement_groups?.[r.id]?.[0] ?? "search";
+  const residence = job.requirements.find((r) => r.payload.mobility?.facet === "residence");
+  const rest = job.requirements.filter((r) => r !== residence);
+  const search = rest.filter((r) => group(r) === "search")
+    .sort((a, b) => ORDER.indexOf(a.payload.strength) - ORDER.indexOf(b.payload.strength));
+  const call = rest.filter((r) => group(r) === "conversation" && !duplicate(r, search));
+  const places = rest.filter((r) => r.payload.category === "location" && group(r) === "context");
+  const dates = rest.filter((r) => r.payload.category === "process");
+  const waiting = [...(residence?.status === "proposed" ? [residence] : []), ...search.filter((r) => r.status === "proposed")];
+  const total = search.length + (residence ? 1 : 0);
   return (
     <section className="hiring">
       <h2>Hiring profile</h2>
@@ -66,67 +230,65 @@ export function HiringProfile({ job, requirements }: { job: JobPage; requirement
         </div>
       ) : (
         <div className="panel">
-          <p className="warn">No hiring company: the ad does not name one. Say who is hiring (or put it in the intake notes), so the
+          <p className="warn">No hiring company: the ad does not name one. Say who is hiring (or put it in the notes), so the
             strategy can learn where their people came from and which companies are like them.</p>
           <HiringCompanyForm action={setHiringCompany.bind(null, job.id)} />
         </div>
       )}
-      <p className="hint"><strong>Approve</strong> keeps a requirement exactly as the desk read it. Changing how much it matters and
-        pressing <strong>Save</strong> keeps it with your strength (and approves it too).</p>
-      {STRENGTH_GROUPS.map(([title, strengths]) => {
-        const items = requirements.filter((r) => strengths.includes(r.payload.strength));
-        if (!items.length) return null;
-        return (
-          <section key={title}>
-            <h3 className="group">{title}</h3>
-            <ul className="reqs">
-              {items.map((r) => (
-                <li key={r.id}>
-                  <span className="tag">{KIND_LABEL[r.payload.category] ?? r.payload.category}</span>
-                  {r.payload.distinctive && <span className="tag key" title="Zero evidence of this puts a person in Do not submit">decides the band</span>}
-                  {r.payload.min_years != null && r.payload.category !== "role" && <span className="tag">{r.payload.min_years}+ years</span>}
-                  {r.payload.education_level && <span className="tag">{r.payload.education_level}</span>}
-                  {r.payload.text_raw}
-                  {detail(r, job.hiring.targets)}
-                  <span className="sub"> · {SOURCE[r.payload.source ?? "ad"] ?? "from the ad"}{r.status === "approved" ? ", approved" : ""}</span>
-                  <div className="row reqacts">
-                    <ActForm action={setStrength.bind(null, r.id, path)} className="row">
-                      <select name="strength" defaultValue={r.payload.strength} aria-label="How much it matters">
-                        {STRENGTHS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                        {!STRENGTHS.some(([v]) => v === r.payload.strength) && <option value={r.payload.strength}>{r.payload.strength}</option>}
-                      </select>
-                      <button className="btn small" title="Save how much it matters (this approves it too)">Save</button>
-                    </ActForm>
-                    {r.status === "proposed" && (
-                      <>
-                        <ActForm action={approveClaim.bind(null, r.id, path)}><button className="btn small" title="Keep it as the desk read it">Approve</button></ActForm>
-                        <ActForm action={rejectClaim.bind(null, r.id, path, "wrong")}><button className="btn small ghost">Reject</button></ActForm>
-                      </>
-                    )}
-                    <details><summary>source</summary><Snippet ev={r.evidence[0]} /></details>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
-        );
-      })}
 
-      <section className="panel">
-        <h3>Intake notes</h3>
-        <p className="hint">Paste what the hiring manager said. Each requirement read from it keeps its quote; what the hiring manager says replaces what the ad says. Personality, culture or &quot;fit&quot; is never turned into a requirement.</p>
-        <IntakeForm action={addIntake.bind(null, job.id)} />
-        {job.hiring.intakes.map((i) => (
-          <details key={i.id} className="band">
-            <summary>Notes from {i.at?.slice(0, 10)} ({i.by})</summary>
-            <p className="notes">{i.text}</p>
-          </details>
-        ))}
+      <Brief job={job} lines={lines} />
+      <Questions job={job} lines={lines} />
+
+      <section className="panel searchby">
+        <h3>What we search and rate by</h3>
+        <p className="sub">These decide who is found and how they are rated. Change any line; otherwise confirm them together.</p>
+        <ul className="reqs grouped">
+          <Residence job={job} r={residence} />
+          {search.map((r) => <Line key={r.id} r={r} job={job} />)}
+        </ul>
+        <div className="confirmbar">
+          {waiting.length > 0 ? (
+            <>
+              <span className="sub">{waiting.length} of these {total} {waiting.length === 1 ? "was" : "were"} read by the desk and {waiting.length === 1 ? "waits" : "wait"} for you</span>
+              <OneClick action={confirmRequirements.bind(null, job.id, waiting.map((r) => r.id))} label={`Confirm all ${waiting.length}`} busy="Confirming…" primary />
+            </>
+          ) : <span className="sub">All confirmed. A change re-rates everyone on the role.</span>}
+        </div>
       </section>
 
-      <section className="panel">
-        <h3>Add a requirement</h3>
-        <AddRequirement action={addRequirement.bind(null, job.id)} />
+      {call.length > 0 && (
+        <section className="panel forcall">
+          <h3>For the call <span className="sub">· nothing to confirm</span></h3>
+          <p className="sub">No profile shows these. Each becomes a question on the call brief of anyone you contact; the answer becomes evidence.</p>
+          <ul className="reqs grouped">{call.map((r) => <Line key={r.id} r={r} job={job} quiet />)}</ul>
+        </section>
+      )}
+
+      <section className="panel context">
+        <h3>Context</h3>
+        <ul className="reqs grouped">
+          {places.length > 0 && <li className="reqline quiet"><span className="rtext">Where the job is: {places.map((p) => p.payload.text_raw).join(" · ")}</span></li>}
+          {dates.map((d) => (
+            <li key={d.id} className="reqline quiet">
+              <span className="rtext">{d.payload.normalized_token} · {d.payload.text_raw}{d.flags.job_process_stale && <span className="pill">passed</span>}</span>
+            </li>
+          ))}
+        </ul>
+        <Fold className="fold" open={job.hiring.intakes.length === 0}
+          summary={<>Notes from the hiring manager{job.hiring.intakes.length ? ` (${job.hiring.intakes.length})` : ""} · add notes</>}>
+          <p className="hint">Paste what the hiring manager said. Each requirement read from it keeps its quote; what the hiring manager says
+            replaces what the ad says. Personality, culture or &quot;fit&quot; is never turned into a requirement.</p>
+          <IntakeForm action={addIntake.bind(null, job.id)} />
+          {job.hiring.intakes.map((i) => (
+            <details key={i.id} className="band">
+              <summary>Notes from {i.at?.slice(0, 10)} ({i.by})</summary>
+              <p className="notes">{i.text}</p>
+            </details>
+          ))}
+        </Fold>
+        <Fold className="fold" summary="Add a requirement">
+          <AddRequirement action={addRequirement.bind(null, job.id)} />
+        </Fold>
       </section>
     </section>
   );
