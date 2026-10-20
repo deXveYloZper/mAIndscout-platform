@@ -141,7 +141,8 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
     # Phase 1c: people found by sourcing stay on the Sourcing tab until the owner decides; only a count shows here.
     suggested = outreach.undecided(session, org_id, job.id)
     pairs = [p for p in pairs if p.candidate_id not in suggested]
-    gap_rows = _gap_rows_many(session, org_id, job, [p.candidate_id for p in pairs if p.candidate_id not in gone])
+    gap_rows = _gap_rows_many(session, org_id, job, [p.candidate_id for p in pairs if p.candidate_id not in gone],
+                              with_snippets=False)  # the page shows counts, never the quotes
     for p in pairs:
         if p.candidate_id in gone:
             archived.append({"candidate_id": str(p.candidate_id), "name": who.get(p.candidate_id),

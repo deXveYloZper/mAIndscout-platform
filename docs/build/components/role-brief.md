@@ -68,6 +68,8 @@ The owner, 2026-10-19:
   - then the brief is read again, so the answer becomes a line from the notes and the question goes;
   - two model calls, about two cents;
   - an empty answer is refused before anything is spent; a question already answered (or never asked) is refused.
+- **Telling the desk** (`role_brief.tell`, 2026-10-20): any text typed on the hiring profile goes the same way as an
+  answer: notes first, then the brief again if the role has one. An answer is this with the question in front.
 - **On the page** (step E): the hiring profile opens with the brief, each line with its source ("the ad", "your
   notes", "research", "our reading", or "you" for a line a person decided) and its quote; then the questions, each
   with an answer box. "Read the brief" reads it when there is none yet, "Read again" after new notes.

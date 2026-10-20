@@ -193,10 +193,11 @@ test("intake notes from the hiring manager become a hiring profile, each with it
   await page.goto("/jobs");
   await page.getByRole("link", { name: /AI Product Engineer/ }).click();
   await tab(page, "Hiring profile");
-  await page.getByLabel("Notes from the call with the hiring manager").fill(
+  // What the hiring manager said, typed in plain words on the profile (since 2026-10-20 one box for anything).
+  await page.getByLabel(/Tell the desk (anything|anything else) about the role/).fill(
     "Early-stage start-up experience is a strong plus. Procurement domain experience is a strong plus and can " +
     "substitute for start-up experience. Must be a great culture fit. Permanent role, not contract.");
-  await page.getByRole("button", { name: "Read the notes" }).click();
+  await page.getByRole("button", { name: "Add to the profile" }).click();
   await expect(page.getByRole("status").filter({ hasText: /Read \d+ requirement/ })).toBeVisible({ timeout: 90_000 });
   await expect(page.locator(".panel.searchby")).toContainText("your notes");
   await expect(page.locator(".panel.searchby .st", { hasText: "Strong plus" }).first()).toBeVisible();
@@ -213,15 +214,28 @@ test("what the desk read is confirmed together, and any line can be changed on i
   await expect(search).toContainText(/\d+ of these \d+ (was|were) read by the desk/);
   await expect(search.getByRole("button", { name: "Approve" })).toHaveCount(0);
   const line = search.locator("li.reqline").nth(1);
-  await line.locator("details.change > summary").click();
+  await line.getByRole("button", { name: "change" }).click();
   await expect(line.getByLabel("How much it matters")).toBeVisible();
   await expect(line.locator(".snippet")).toBeVisible();
-  await line.locator("details.change > summary").click();
+  // It closes without doing anything: Escape, or a click outside it.
+  await page.keyboard.press("Escape");
+  await expect(line.locator(".changebox")).toHaveCount(0);
+  await line.getByRole("button", { name: "change" }).click();
+  await page.locator("h2", { hasText: "Hiring profile" }).click();
+  await expect(line.locator(".changebox")).toHaveCount(0);
   await search.getByRole("button", { name: /^Confirm all \d+$/ }).click();
   await expect(search).toContainText("All confirmed", { timeout: 30_000 });
   await expect(search.locator(".waiting")).toHaveCount(0);
   // What no profile can show is for the call: nothing to confirm there.
   await expect(page.locator(".panel.forcall").getByRole("button", { name: /Confirm/ })).toHaveCount(0);
+  // A line in your own words: the years follow the words (read by code, nothing spent).
+  const level = search.locator("li.reqline", { hasText: "all levels" });
+  await level.getByRole("button", { name: "change" }).click();
+  await level.getByLabel("The requirement, in your words").fill("3 or more years of software engineering");
+  await level.getByRole("button", { name: "Save" }).click();
+  const edited = search.locator("li.reqline", { hasText: "3 or more years of software engineering" });
+  await expect(edited).toContainText("3+ years");
+  await expect(edited).toContainText("typed");
 });
 
 test("the desk is searched in plain words, best matches first, each with its reasons", async ({ page }) => {

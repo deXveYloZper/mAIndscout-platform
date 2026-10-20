@@ -193,6 +193,12 @@ def merge(session: Session, keep_id: uuid.UUID, drop_id: uuid.UUID, actor: str |
 
 def _ids_for(session: Session, company: Company) -> list[str]:
     """The company and everything merged into it."""
+    from maindscout.api import memo
+
+    return memo.cached(session, ("company_ids", company.id), lambda: _merged_ids(session, company))
+
+
+def _merged_ids(session: Session, company: Company) -> list[str]:
     ids, frontier = {company.id}, [company.id]
     while frontier:
         children = list(session.scalars(select(Company.id).where(Company.merged_into_id.in_(frontier))))

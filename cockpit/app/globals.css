@@ -584,17 +584,24 @@ table.gaps tr.conflict td:first-child { box-shadow: inset 2px 0 0 var(--red); }
 .reqline .rtext .tag, .reqline .rtext .pill { margin: 0 0 0 6px; }
 .reqline .rsrc { color: var(--cream-faint); font-size: 12px; white-space: nowrap; }
 .reqline .waiting { font: 500 10px var(--mono); color: var(--amber-text); border: 1px solid var(--amber-line); border-radius: 999px; padding: 0 6px; margin-left: 6px; }
-details.change { position: relative; justify-self: end; }
-details.change > summary { font-size: 12px; color: var(--cream-faint); }
-details.change > summary::before { content: none; }
-details.change > summary:hover, details.change[open] > summary { color: var(--amber-text); }
+.change { position: relative; justify-self: end; }
+.changelink { background: none; border: 0; padding: 0; font: inherit; font-size: 12px; color: var(--cream-faint); cursor: pointer; }
+.changelink:hover, .changelink[aria-expanded="true"] { color: var(--amber-text); }
+.changeclose { position: absolute; top: 6px; right: 8px; background: none; border: 0; color: var(--cream-faint); font-size: 14px;
+  cursor: pointer; padding: 4px 6px; line-height: 1; }
+.changeclose:hover { color: var(--cream); }
+.editreq { display: grid; gap: 6px; padding-right: 22px; }
+.editreq textarea { width: 100%; min-height: 48px; }
+.editreq .hint { margin: 0; }
+.tell { display: grid; gap: 6px; margin-top: 12px; }
+.tell textarea { width: 100%; min-height: 60px; }
 .changebox {
   position: absolute; right: 0; top: calc(100% + 6px); z-index: 10; width: min(460px, calc(100vw - 48px)); padding: 12px;
   display: grid; gap: 8px; background: var(--bg-raise-2); border-radius: var(--r); box-shadow: var(--shadow-pop); animation: pop var(--med) var(--ease);
 }
 .changebox .row { gap: 6px; flex-wrap: wrap; align-items: center; }
 .changebox .snippet { margin: 0; }
-.reqs li:has(details.change[open]) { position: relative; z-index: 30; }
+.reqs li:has(.changebox) { position: relative; z-index: 30; }
 .confirmbar { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 12px;
   padding-top: 12px; border-top: 1px solid var(--line-strong); }
 .forcall h3 .sub { font-weight: 400; font-size: 12px; }

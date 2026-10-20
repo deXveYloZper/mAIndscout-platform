@@ -93,9 +93,11 @@ def reach(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID, job: Job
     contributors. The role's own title decides whether it is one ("Head of Engineering" is its own job spec)."""
     if MANAGEMENT_ROLE.search(job.title or ""):
         return None
-    for c in session.scalars(select(Claim).where(Claim.org_id == org_id, Claim.subject_id == candidate_id,
-                                                 Claim.claim_type == "CareerStepClaim", Claim.status.in_(LIVE),
-                                                 Claim.valid_to.is_(None))):
+    from maindscout.api import memo
+
+    for c in memo.places_and_steps(session, org_id, candidate_id):
+        if c.claim_type != "CareerStepClaim" or c.valid_to is not None:
+            continue
         title = (c.approved_view or c.payload).get("title_raw") or ""
         if MANAGES.search(title):
             return f"{title} now, above this role: ask whether they would go back to hands-on work"

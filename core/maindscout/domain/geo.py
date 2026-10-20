@@ -54,19 +54,21 @@ _NA_REGION = re.compile(r",\s*(A[LKZR]|C[AOT]|D[EC]|FL|GA|HI|I[DLNA]|K[SY]|LA|M[
 _CA_REGION = re.compile(r",\s*(ON|QC|BC|AB|MB|SK|NS|NB|NL|PE)\b|\b(ontario|quebec|british columbia|alberta|manitoba)\b", re.I)
 
 
+_NAME_CODE = {n: code for code, names in NAMES.items() for n in names}
+_ORDER = {code: i for i, code in enumerate(NAMES)}
+_NAMES_RE = re.compile(r"(?<![\w-])(" + "|".join(re.escape(n) for n in sorted(_NAME_CODE, key=len, reverse=True)) + r")(?![\w-])")
+
+
 def country_in(text: str | None) -> str | None:
     """The country a free-text place names, or None. 'Pune, India' -> IN; 'London' alone -> None (we do not guess
     from cities, except US states / Canadian provinces written after a comma)."""
     if not text:
         return None
-    lowered = text.lower()
-    found = None
-    for code, names in NAMES.items():
-        for n in names:
-            if re.search(rf"(?<![\w-]){re.escape(n)}(?![\w-])", lowered):
-                found = found or code
-    if found:
-        return found
+    # One pattern for every name (2026-10-20: a loop of 300 searches per place made the Sourcing tab slow); the
+    # country earliest in NAMES still wins when a text names two.
+    codes = {_NAME_CODE[m.group(1)] for m in _NAMES_RE.finditer(text.lower())}
+    if codes:
+        return min(codes, key=_ORDER.__getitem__)
     for short, code in SHORT.items():
         if re.search(rf"(?<![\w.]){re.escape(short)}(?![\w])", text):
             return code

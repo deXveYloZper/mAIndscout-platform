@@ -61,12 +61,11 @@ def accepted(session: Session, org_id, candidate_id, extra_job: Job | None = Non
 
 def signals(session: Session, org_id, candidate_id) -> tuple[list[str], list[tuple[str, str]]]:
     """(countries the person lives in now, [(country, 'role' | 'employer') for each current job])."""
+    from maindscout.api import memo
+
     lives: list[str] = []
     works: list[tuple[str, str]] = []
-    for c in session.scalars(select(Claim).where(Claim.org_id == org_id, Claim.subject_id == candidate_id,
-                                                 Claim.status.in_(LIVE),
-                                                 Claim.claim_type.in_(("LocationClaim", "CareerStepClaim")))
-                             .order_by(Claim.created_at)):
+    for c in memo.places_and_steps(session, org_id, candidate_id):
         p = c.payload
         if c.claim_type == "LocationClaim":
             if p.get("kind", "current") == "current":

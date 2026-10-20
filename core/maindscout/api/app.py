@@ -1091,6 +1091,37 @@ def answer_role_brief(job_id: uuid.UUID, body: BriefAnswerBody, org_id: uuid.UUI
     return {**result, "brief": role_brief.view(session, job_id)}
 
 
+class TellBody(BaseModel):
+    text: str
+
+
+@app.post("/v1/jobs/{job_id}/tell")
+def tell_desk(job_id: uuid.UUID, body: TellBody, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+              actor: str = Depends(get_actor), llm: LLMClient = Depends(get_llm)):
+    """Anything about the role in your own words: read like notes, then the brief again."""
+    from maindscout.api import role_brief
+
+    result = role_brief.tell(session, org_id, job_id, body.text, actor, llm)
+    session.commit()
+    return result
+
+
+class EditBody(BaseModel):
+    text: str
+    strength: str | None = None
+
+
+@app.post("/v1/requirements/{claim_id}/edit")
+def edit_requirement(claim_id: uuid.UUID, body: EditBody, org_id: uuid.UUID = Depends(get_org),
+                     session: Session = Depends(get_session), actor: str = Depends(get_actor), llm: LLMClient = Depends(get_llm)):
+    """A requirement in your own words and how much it matters; its values follow the words."""
+    from maindscout.api import hiring
+
+    claim = hiring.edit_requirement(session, org_id, claim_id, body.text, body.strength, actor, llm)
+    session.commit()
+    return {"id": str(claim.id), "text": claim.payload["text_raw"], "strength": claim.payload["strength"]}
+
+
 class ConfirmBody(BaseModel):
     ids: list[str]
 

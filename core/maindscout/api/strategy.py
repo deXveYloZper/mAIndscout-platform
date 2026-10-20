@@ -230,6 +230,12 @@ def profile_queries(session: Session, job: Job, countries: list[str] | None = No
 
 def luxury(session: Session, job: Job) -> bool:
     """Does the role ask for luxury (its own requirements say so)? Then its companies must be luxury ones too."""
+    from maindscout.api import memo
+
+    return memo.cached(session, ("luxury", job.id), lambda: _luxury(session, job))
+
+
+def _luxury(session: Session, job: Job) -> bool:
     texts = []
     for c in session.scalars(select(Claim).where(Claim.subject_id == job.id, Claim.claim_type == "JobRequirementClaim",
                                                  Claim.status.in_(LIVE))):
@@ -421,11 +427,30 @@ def team_in(company: Company | None, countries: set[str]) -> bool | None:
 
 def closed(session: Session, company: Company | None) -> bool:
     """Shut down, by its public facts (a person may still approve or reject that fact)."""
+    from maindscout.api import memo
+
     if company is None:
         return False
-    status = session.scalar(select(Claim).where(Claim.org_id == PUBLIC_ORG_ID, Claim.subject_id == company.id,
-                                                Claim.claim_type == "CompanyStatusClaim", Claim.status.in_(LIVE)))
+    return memo.cached(session, ("closed", company.id), lambda: _shut_down(session.scalar(select(Claim).where(
+        Claim.org_id == PUBLIC_ORG_ID, Claim.subject_id == company.id, Claim.claim_type == "CompanyStatusClaim",
+        Claim.status.in_(LIVE)))))
+
+
+def _shut_down(status: Claim | None) -> bool:
     return bool(status) and (status.approved_view or status.payload).get("status") == "shut_down"
+
+
+def prefetch_closed(session: Session, companies_: list[Company]) -> None:
+    """Inside a page's memo: every company's status in one query."""
+    from maindscout.api import memo
+
+    if session.info.get("memo") is None or not companies_:
+        return
+    found = {c.subject_id: c for c in session.scalars(select(Claim).where(
+        Claim.org_id == PUBLIC_ORG_ID, Claim.subject_id.in_([c.id for c in companies_]),
+        Claim.claim_type == "CompanyStatusClaim", Claim.status.in_(LIVE)))}
+    for c in companies_:
+        memo.put(session, ("closed", c.id), _shut_down(found.get(c.id)))
 
 
 # A background the hiring profile does not want, as the kinds of company that give it.

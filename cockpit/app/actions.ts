@@ -308,27 +308,43 @@ export async function correctStep(candidateId: string, path: string, careerClaim
   return { message: "Saved. The profile was rebuilt." };
 }
 
-/** Paste the notes from the hiring manager call: requirements are read from them, each with its quote. */
-export async function addIntake(jobId: string, _: FormState, form: FormData): Promise<FormState> {
-  const text = String(form.get("text") ?? "").trim();
-  try {
-    const r = await apiJson<{ written: number; replaced: number; seen: number; hiring_company: string | null;
-      rejected: { item: string; reason: string }[] }>(`/v1/jobs/${jobId}/intake`, { text });
-    revalidatePath(`/jobs/${jobId}`);
-    const left = r.rejected.length ? ` Left out ${r.rejected.length}: ${r.rejected.map((x) => `${x.item} (${x.reason})`).join("; ")}.` : "";
-    const who = r.hiring_company ? ` Hiring company: ${r.hiring_company}.` : "";
-    return { message: `Read ${r.written} requirement${r.written === 1 ? "" : "s"} (${r.replaced} replacing what the ad said, ${r.seen} already there).${who}${left}` };
-  } catch (e) {
-    return fail(e);
-  }
-}
-
 /** "Confirm all" on the hiring profile: the requirements the desk read, approved together; everyone re-matched once. */
 export async function confirmRequirements(jobId: string, ids: string[]): Promise<FormState> {
   try {
     const r = await apiJson<{ confirmed: number; already: number }>(`/v1/jobs/${jobId}/requirements/confirm`, { ids });
     revalidatePath(`/jobs/${jobId}`);
     return { message: `Confirmed ${r.confirmed}.` };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** A requirement in the recruiter's own words and how much it matters; the desk reads changed words again. */
+export async function editRequirement(claimId: string, path: string, _: FormState, form: FormData): Promise<FormState> {
+  const text = String(form.get("text") ?? "").trim();
+  const strength = String(form.get("strength") ?? "") || null;
+  try {
+    await apiJson(`/v1/requirements/${claimId}/edit`, { text, strength });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(path);
+  return {};
+}
+
+/** Anything about the role in your own words: read like notes, then the brief again. */
+export async function tellDesk(jobId: string, _: FormState, form: FormData): Promise<FormState> {
+  const text = String(form.get("text") ?? "").trim();
+  if (!text) return { error: "Write something first." };
+  try {
+    const r = await apiJson<{ notes: { written: number; replaced: number; seen: number; rejected: { item: string; reason: string }[] };
+      lines?: number }>(`/v1/jobs/${jobId}/tell`, { text });
+    revalidatePath(`/jobs/${jobId}`);
+    const n = r.notes;
+    const read = n.written ? `Read ${n.written} requirement${n.written === 1 ? "" : "s"}${n.replaced ? ` (${n.replaced} replacing earlier ones)` : ""}: they wait for Confirm all.`
+      : n.seen ? "Nothing new: the profile already says it." : "No requirement in it; kept with the notes.";
+    const left = n.rejected.length ? ` Left out: ${n.rejected.map((x) => `${x.item} (${x.reason})`).join("; ")}.` : "";
+    return { message: `${read}${r.lines ? " The brief is read again." : ""}${left}` };
   } catch (e) {
     return fail(e);
   }
@@ -395,47 +411,6 @@ export async function setHiringCompany(jobId: string, _: FormState, form: FormDa
   }
   revalidatePath(`/jobs/${jobId}`);
   return { message: `${name} is the hiring company. Build the strategy on the Sourcing tab to use it.` };
-}
-
-/** A requirement the recruiter types: saved as approved. */
-export async function addRequirement(jobId: string, _: FormState, form: FormData): Promise<FormState> {
-  const category = String(form.get("category") || "");
-  const text_raw = String(form.get("text_raw") || "").trim();
-  const list = (name: string) => form.getAll(name).map(String).filter(Boolean);
-  if (!text_raw) return { error: "Describe the requirement in a few words." };
-  const body: Record<string, unknown> = { category, strength: String(form.get("strength") || "must"), text_raw };
-  if (category === "role") Object.assign(body, { role_family: form.get("role_family") || null, level: form.get("level") || null,
-    min_years: form.get("min_years") ? Number(form.get("min_years")) : null });
-  if (category === "employer") {
-    body.employer_kinds = list("employer_kinds");
-    const [low, high] = String(form.get("staff") || "-").split("-");
-    if (low) body.min_staff = Number(low);
-    if (high) body.max_staff = Number(high);
-  }
-  if (category === "target_company" && form.get("recent_months")) body.recent_months = Number(form.get("recent_months"));
-  if (category === "domain") {
-    body.domains = list("domains");
-    const words = String(form.get("company_words") || "").split(",").map((w) => w.trim()).filter(Boolean);
-    if (words.length) body.company_words = words;
-  }
-  if (category === "target_company") body.companies = text_raw.split(",").map((s) => s.trim()).filter(Boolean);
-  if (category === "employment") body.employment = form.get("employment") || "permanent";
-  if (category === "skill") body.normalized_token = text_raw.toLowerCase();
-  try {
-    await apiJson(`/v1/jobs/${jobId}/requirements`, body);
-  } catch (e) {
-    return fail(e);
-  }
-  revalidatePath(`/jobs/${jobId}`);
-  return { message: "Added as an approved requirement." };
-}
-
-/** Change how much a requirement matters. */
-export async function setStrength(claimId: string, path: string, form: FormData): Promise<FormState> {
-  const r = await attempt(() => apiJson(`/v1/requirements/${claimId}/strength`, { strength: String(form.get("strength")) }));
-  if (r.error) return r;
-  revalidatePath(path);
-  return {};
 }
 
 /** Capture an answer from the call (the outcome comes from the button pressed). */

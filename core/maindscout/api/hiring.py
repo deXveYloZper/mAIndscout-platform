@@ -159,14 +159,16 @@ def from_ad(session: Session, job_id: uuid.UUID, client: LLMClient, force: bool 
     return {**result, "rejected": len(outcome.rejected), "usd": outcome.cost.get("usd", 0)}
 
 
-def add_intake(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, text: str, actor: str, client: LLMClient) -> dict[str, Any]:
-    """Keep the recruiter's notes as written and read requirements from them (each with its quote)."""
+def add_intake(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, text: str, actor: str, client: LLMClient,
+               shortest: int = 20) -> dict[str, Any]:
+    """Keep the recruiter's notes as written and read requirements from them (each with its quote). `shortest`: a
+    line typed on the hiring profile ("Japanese is a must") may be short; pasted call notes are not."""
     job = session.get(Job, job_id)
     if job is None or job.org_id != org_id:
         raise LookupError(f"No job {job_id}")
     text = text.strip()
-    if len(text) < 20:
-        raise ValueError("Paste the notes from the call (a few sentences at least).")
+    if len(text) < shortest:
+        raise ValueError("Paste the notes from the call (a few sentences at least)." if shortest >= 20 else "Write a few words first.")
     costs.ensure_budget(session, org_id)
     intake = JobIntake(org_id=org_id, job_id=job.id, text=text[:20000], created_by=actor)
     session.add(intake)
@@ -406,6 +408,56 @@ def add_requirement(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, fiel
         p["companies"] = out
     return review.assert_claim(session, org_id, actor, subject_type="job", subject_id=job_id,
                                claim_type="JobRequirementClaim", payload=p)
+
+
+# Years said in words ("5 or more years", "5+ years", "at least 5 years"): read by code, never by the model.
+_YEARS = re.compile(r"(\d+(?:\.\d+)?)\s*\+?\s*(?:or more\s+|plus\s+)?years?", re.I)
+# The kinds the notes reader knows: a rewritten line of these is read again for its values (kind of work, size, …).
+_READ_AGAIN = set(CATEGORY)
+
+
+def edit_requirement(session: Session, org_id: uuid.UUID, claim_id: uuid.UUID, text: str, strength: str | None,
+                     actor: str, client: LLMClient) -> Claim:
+    """A requirement in the recruiter's own words (owner, 2026-10-20: "the ad says 7 years, but if I want 5 I have no
+    option"). The new wording is kept as theirs (approved, the old line superseded); its values follow the words:
+    years by code, the rest read again from the words (one model call, about a third of a cent) when the line is of
+    a kind the notes reader knows. Nothing else of the line changes."""
+    old = session.get(Claim, claim_id)
+    if old is None or old.org_id != org_id or old.claim_type != "JobRequirementClaim":
+        raise LookupError(f"No requirement {claim_id}")
+    before = old.approved_view or old.payload
+    said = " ".join((text or "").split())
+    if len(said) < 2:
+        raise ValueError("Write the requirement in a few words.")
+    strength = strength or before.get("strength")
+    if said == before.get("text_raw"):
+        return set_strength(session, org_id, claim_id, strength, actor)
+    p = {**before, "text_raw": said, "strength": strength, "source": "recruiter"}
+    years = _YEARS.search(said)
+    if "min_years" in before or before.get("category") == "seniority":
+        if years:
+            p["min_years"] = float(years.group(1))
+        else:
+            p.pop("min_years", None)
+    if before.get("category") in _READ_AGAIN and not before.get("mobility"):
+        costs.ensure_budget(session, org_id)
+        outcome = engine.read(said, client, "intake")
+        costs.record(session, org_id, "hiring_intake", outcome.cost, subject_type="job", subject_id=old.subject_id)
+        item = next((i for i in outcome.items if CATEGORY.get(i.kind) == before.get("category")), None)
+        if item is not None:
+            fresh = _payload(session, item, "recruiter")
+            for k in (*VALUE_FIELDS, "companies", "company_words"):
+                if k in fresh:
+                    p[k] = fresh[k]
+            for k in ("min_staff", "max_staff", "level"):
+                if k not in fresh:
+                    p.pop(k, None)  # "up to 200 people" rewritten as "small brands": the old size no longer applies
+            if years and "min_years" in before:
+                p["min_years"] = float(years.group(1))
+    from maindscout.api import review
+
+    return review.assert_claim(session, org_id, actor, subject_type="job", subject_id=old.subject_id,
+                               claim_type="JobRequirementClaim", payload=p, replaces=old.id)
 
 
 def set_strength(session: Session, org_id: uuid.UUID, claim_id: uuid.UUID, strength: str, actor: str) -> Claim:

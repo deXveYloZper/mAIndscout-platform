@@ -410,6 +410,10 @@ export type Suggestion = { candidate_id: string; name: string | null; band: Band
   evidence?: EvidenceCheck | null; checkable?: boolean;
   plus?: { requirement: string; verdict: string }[] };
 
+/** What a card's buttons and quick links need of a suggestion, and no more: a list of a hundred cards does not copy
+    every card's facts into the page again for its client parts (2026-10-20: the marketing tab was 1.25 MB). */
+export type CardKeys = Pick<Suggestion, "candidate_id" | "stage" | "contact" | "profile" | "links">;
+
 /** The deeper look at a strong match's public work (owner, 2026-10-17). */
 export type EvidenceCheck = { status: "queued" | "running" | "done" | "failed" | "skipped"; at: string | null;
   outcome: "confirmed" | "mixed" | "weakened" | "nothing_found" | null; reason: string | null;

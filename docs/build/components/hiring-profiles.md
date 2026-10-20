@@ -52,13 +52,21 @@ Plan section 4.5 and phase I4: matching (I5) needs to know what the hiring manag
   - **Confirm all:** the lines the desk read, approved together (`hiring.confirm`, `POST /v1/jobs/{id}/requirements/confirm`
     with their ids). Everyone on the role is re-matched once at the end (`review.job_batched`), not once per line. A
     line someone already decided is left as it is.
-  - **change**, on any line: how much it matters (Save, which also confirms it), Remove (the desk misread it), and the
-    quote it came from.
+  - **change**, on any line (a small box that closes with Escape, a click outside it or its ✕, without doing
+    anything): the line **in your own words** and how much it matters (Save), Remove, and the quote it came from.
+    Changed words are read again (`hiring.edit_requirement`, `POST /v1/requirements/{id}/edit {text, strength}`):
+    years by code ("5 or more years" makes it 5), the rest by the notes reader (a size, a kind of work; about a third
+    of a cent) for the kinds it knows. The new line is yours (typed, approved); the old one is kept as superseded
+    (owner, 2026-10-20: "the ad says 7 years, but if i want 5 i have no option").
   - **For the call, nothing to confirm:** what no profile shows (judgment, how they lead, pay, visa and relocation).
     Each becomes a question on the call brief. An ask already listed to search by (the ad's long sentence and the
     strong plus that says the same) is shown once.
-  - **Context:** where the job is, the posting's dates, then the notes from the hiring manager (open when there are
-    none yet) and Add a requirement, folded.
+  - **Tell the desk** (beside the brief's questions): anything about the role in plain words, a new must-have, a
+    correction, what the hiring manager said. It is kept with the notes and read like them (each requirement with its
+    quote, waiting for Confirm all), then the brief is read again (`role_brief.tell`, `POST /v1/jobs/{id}/tell`). It
+    replaced the field-by-field "Add a requirement" form and the separate notes box (owner, 2026-10-20: "why we cant
+    just write and our desk understand it?"); `POST /v1/jobs/{id}/requirements` stays in the API.
+  - **Context:** where the job is, the posting's dates, then your notes and what you told the desk, folded.
 - **Never personality, culture or "fit":** such items are dropped whatever the model says (owner's rule, 2026-10-03).
 - **One requirement per subject.** A job has one role and one employment requirement. If the intake states a different value or strength than the ad, the intake's reading replaces the ad's (the ad's is kept as superseded). What a person approved is never replaced by a machine reading.
 - **Stored as `JobRequirementClaim`s.**

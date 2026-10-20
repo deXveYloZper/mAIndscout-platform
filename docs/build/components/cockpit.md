@@ -5,7 +5,7 @@
 **Code:** `cockpit/` (Next.js 15, React 19, TypeScript, plain CSS on design tokens, Lucide icons). Design: [../../design/PLAN.md](../../design/PLAN.md).
 
 ## What
-Where the recruiter works: jobs list, job page with the three bands, person page, and the inbox. Runs on `http://localhost:3001` with `npm run dev` in `cockpit/`.
+Where the recruiter works: jobs list, job page with the three bands, person page, and the inbox. Runs on `http://localhost:3001`: `npm run desk` in `cockpit/` for daily use (builds, then serves; pages open in about a second), `npm run dev` only while changing the code (it compiles each page on first open: 10–60 s a page on the owner's laptop, 2026-10-20; [performance](performance.md)).
 
 ## Why
 The vision's working day: open a job, drop CVs on it, work the priority pile, answer only the questions the system may not decide itself (VISION "Attention"; HANDOFF Milestone E).
@@ -79,9 +79,11 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
   - the hiring company's facts;
   - the role brief, each line with its source, and its questions with an answer box ([role-brief.md](role-brief.md));
   - what we search and rate by (where people must live first, its "change" holding the role's countries), each line
-    with its strength, source and "change" (strength, Remove, the quote), and Confirm all;
+    with its strength, source and "change" (the line in your own words and its strength, Remove, the quote; the box
+    closes with Escape or a click outside), and Confirm all;
+  - "Tell the desk", beside the brief's questions: anything about the role in plain words, read like notes;
   - for the call, nothing to confirm (visa and relocation among them);
-  - context: where the job is, process dates, then notes from the hiring manager and Add a requirement, folded;
+  - context: where the job is, process dates, then your notes and what you told the desk, folded;
   - who we know at target companies, beside the named companies.
 - **Career profile ([career-profiles.md](career-profiles.md)):** on the person page, the reading, each dimension with its reason, notable items, questions for the call, and how each job was read with a "Correct" control.
 - **Coverage ([coverage-gate.md](coverage-gate.md)):** a job's "Archived: outside coverage" section and its "Countries this job accepts" panel; an archived person's note with "Bring back"; an "archived" tag in People.

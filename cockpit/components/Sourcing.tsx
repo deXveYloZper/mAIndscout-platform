@@ -5,7 +5,7 @@ import { addSourcingTarget, buildStrategy, changeSourcingTarget, checkDeeper, dr
 import { Refresh } from "@/components/CallsClient";
 import { QuickLinks, Triage } from "@/components/Outreach";
 import { AddTarget, OneClick, PlanSettings, PlanWords } from "@/components/SourcingForms";
-import type { CompanyProfile, EvidenceCheck, SourcingMode, SourcingPage, SourcingStats, SourcingTarget, Suggestion, TalentDna,
+import type { CardKeys, CompanyProfile, EvidenceCheck, SourcingMode, SourcingPage, SourcingStats, SourcingTarget, Suggestion, TalentDna,
   Widening } from "@/lib/api";
 import { MODE_LABEL, reasonWords } from "@/lib/format";
 import { ActForm } from "@/components/ActForm";
@@ -156,6 +156,7 @@ function SuggestionCard({ jobId, s, since }: { jobId: string; s: Suggestion; sin
   const strong = s.hint === "looks strong";
   const ev = s.evidence?.status === "done" ? s.evidence.outcome : null;
   const open = s.stage !== "passed";
+  const keys: CardKeys = { candidate_id: s.candidate_id, stage: s.stage, contact: s.contact, profile: s.profile, links: s.links };
   return (
     <li className={`personcard${s.follow_up_due ? " due" : ""}`}>
       <div className="pc-main">
@@ -164,7 +165,7 @@ function SuggestionCard({ jobId, s, since }: { jobId: string; s: Suggestion; sin
           {deciding && <span className={`cardverdict ${strong ? "strong" : "possible"}`}
             title="The desk's reading of their profile against this role: a guide, not a band">{strong ? "Strong" : "Possible"}</span>}
           {ev && EV_TAG[ev] && <span className={`tag ${ev === "confirmed" ? "key" : "warn"}`} title={OUTCOME[ev]}>{EV_TAG[ev]}</span>}
-          <QuickLinks jobId={jobId} s={s} />
+          <QuickLinks jobId={jobId} s={keys} />
           {s.follow_up_due && <span className="pill accent">follow up</span>}
         </div>
         <MainLine s={s} />
@@ -173,7 +174,7 @@ function SuggestionCard({ jobId, s, since }: { jobId: string; s: Suggestion; sin
         {open && s.settle?.map((x, i) => <p key={i} className="settle"><span className="linetag" title="Only the call can settle it">to settle on the call</span>{x}</p>)}
         {track && <p className="reason">{track}</p>}
         {s.contact?.reply?.text && <p className="hint">&ldquo;{s.contact.reply.text}&rdquo;</p>}
-        <Triage jobId={jobId} s={s} />
+        <Triage jobId={jobId} s={keys} />
         <details className="pc-details">
           <summary>Details</summary>
           <div className="pc-more">

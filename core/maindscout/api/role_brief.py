@@ -130,5 +130,17 @@ def answer(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, facet: str, t
     said = " ".join(text.split())
     if len(said) < 2:
         raise ValueError("Write the answer first.")
-    notes = hiring.add_intake(session, org_id, job_id, f'The desk asked: "{line["question"]}" The answer: {said}', actor, client)
-    return {"notes": notes, **read(session, org_id, job_id, client)}
+    return tell(session, org_id, job_id, f'The desk asked: "{line["question"]}" The answer: {said}', actor, client)
+
+
+def tell(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, text: str, actor: str, client: LLMClient) -> dict[str, Any]:
+    """Anything about the role in the recruiter's own words (owner, 2026-10-20: "why we cant just write and our desk
+    understand it?"): a new ask, a correction, what the hiring manager said. Kept with the role's notes and read like
+    them (each requirement with its quote, waiting for Confirm all), then the brief read again when the role has
+    one. One or two model calls, at most about two cents."""
+    from maindscout.api import hiring
+
+    notes = hiring.add_intake(session, org_id, job_id, text, actor, client, shortest=6)
+    has_brief = session.scalar(select(Claim.id).where(Claim.subject_id == job_id, Claim.claim_type == CLAIM,
+                                                      Claim.status.in_(LIVE)).limit(1)) is not None
+    return {"notes": notes, **(read(session, org_id, job_id, client) if has_brief else {})}

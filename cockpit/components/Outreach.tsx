@@ -3,7 +3,7 @@
 import { type ReactNode, useState, useTransition } from "react";
 import { ExternalLink, Undo2 } from "lucide-react";
 import { outreachStep } from "@/app/actions";
-import type { ContactChannel, ReplyOutcome, Suggestion } from "@/lib/api";
+import type { CardKeys, ContactChannel, ReplyOutcome } from "@/lib/api";
 
 /* The owner's fast workflow on a role's suggestions (docs/next/PLAN.md section 4c): open the profile, come back, decide in
    one click; then contacted, replied, call booked. Every step stays on the page. */
@@ -33,7 +33,7 @@ const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./,
 
 /** Their public profile one click from the name (owner, 2026-10-20): LinkedIn first, then pages of their own (a
     portfolio, GitHub). Opening one marks the suggestion seen, so coming back to the desk shows where you were. */
-export function QuickLinks({ jobId, s }: { jobId: string; s: Suggestion }) {
+export function QuickLinks({ jobId, s }: { jobId: string; s: CardKeys }) {
   const { go } = useStep(jobId, s.candidate_id);
   const links = s.links ?? (s.profile ? [{ kind: "linkedin" as const, url: link(s.profile) }] : []);
   if (!links.length) return null;
@@ -53,7 +53,7 @@ export function QuickLinks({ jobId, s }: { jobId: string; s: Suggestion }) {
 }
 
 /** The buttons for where this person is: decide, contacted how, their reply, the call. */
-export function Triage({ jobId, s }: { jobId: string; s: Suggestion }) {
+export function Triage({ jobId, s }: { jobId: string; s: CardKeys }) {
   const { pending, error, go } = useStep(jobId, s.candidate_id);
   const [passing, setPassing] = useState(false);
   const [callAt, setCallAt] = useState("");

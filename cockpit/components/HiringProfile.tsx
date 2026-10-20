@@ -1,15 +1,13 @@
 import Link from "next/link";
-import { addIntake, addRequirement, answerBriefQuestion, confirmRequirements, readRoleBrief, rejectClaim, setHiringCompany,
-  setJobCountries, setStrength } from "@/app/actions";
-import { AddRequirement } from "@/components/AddRequirement";
-import { AnswerForm, Fold } from "@/components/BriefForms";
+import { answerBriefQuestion, confirmRequirements, editRequirement, readRoleBrief, rejectClaim, setHiringCompany,
+  setJobCountries, tellDesk } from "@/app/actions";
+import { AnswerForm, Change, EditForm, Fold, TellForm } from "@/components/BriefForms";
 import { Snippet } from "@/components/Claim";
 import { CountriesForm } from "@/components/CountriesForm";
 import { HiringCompanyForm } from "@/components/HiringCompanyForm";
-import { IntakeForm } from "@/components/IntakeForm";
 import { OneClick } from "@/components/SourcingForms";
 import type { BriefLine, ClaimView, JobPage, RequirementGroup } from "@/lib/api";
-import { countryName, EMPLOYER_KIND_LABEL, FAMILY_LABEL, STRENGTHS } from "@/lib/format";
+import { countryName, EMPLOYER_KIND_LABEL, FAMILY_LABEL } from "@/lib/format";
 import { ActForm } from "@/components/ActForm";
 
 /* The hiring profile in three groups (step E of understanding the hire, owner 2026-10-20): what the desk searches and
@@ -78,26 +76,20 @@ function duplicate(r: ClaimView, others: ClaimView[]): boolean {
   });
 }
 
-function Change({ r, path, strength = true }: { r: ClaimView; path: string; strength?: boolean }) {
+function LineChange({ r, path, editable = true }: { r: ClaimView; path: string; editable?: boolean }) {
   return (
-    <details className="change">
-      <summary>change</summary>
-      <div className="changebox">
-        {strength && (
-          <div className="row">
-            <ActForm action={setStrength.bind(null, r.id, path)} className="row">
-              <select name="strength" defaultValue={r.payload.strength} aria-label="How much it matters">
-                {STRENGTHS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                {!STRENGTHS.some(([v]) => v === r.payload.strength) && <option value={r.payload.strength}>{r.payload.strength}</option>}
-              </select>
-              <button className="btn small" title="Save how much it matters (this confirms it too)">Save</button>
-            </ActForm>
-            <ActForm action={rejectClaim.bind(null, r.id, path, "wrong")}><button className="btn small ghost" title="The desk misread it: it stops counting">Remove</button></ActForm>
-          </div>
-        )}
-        <Snippet ev={r.evidence[0]} />
-      </div>
-    </details>
+    <Change>
+      {editable && (
+        <>
+          <EditForm action={editRequirement.bind(null, r.id, path)} text={r.payload.text_raw ?? ""} strength={r.payload.strength} />
+          <ActForm action={rejectClaim.bind(null, r.id, path, "wrong")}>
+            <button className="btn small ghost" title="The desk misread it, or it no longer applies: it stops counting">Remove this requirement</button>
+          </ActForm>
+        </>
+      )}
+      <p className="sub">Where it comes from:</p>
+      <Snippet ev={r.evidence[0]} />
+    </Change>
   );
 }
 
@@ -115,7 +107,7 @@ function Line({ r, job, quiet }: { r: ClaimView; job: JobPage; quiet?: boolean }
       </span>
       <span className="rsrc">{SOURCE[p.source ?? "ad"] ?? "the ad"}
         {!quiet && r.status === "proposed" && <span className="waiting" title="Read by the desk, waiting for your confirmation">new</span>}</span>
-      <Change r={r} path={`/jobs/${job.id}`} strength={!m} />
+      <LineChange r={r} path={`/jobs/${job.id}`} editable={!m} />
     </li>
   );
 }
@@ -134,17 +126,14 @@ function Residence({ job, r }: { job: JobPage; r: ClaimView | undefined }) {
       </span>
       <span className="rsrc">{r ? SOURCE[r.payload.source ?? "ad"] ?? "the ad" : ""}
         {r?.status === "proposed" && <span className="waiting" title="Read by the desk, waiting for your confirmation">new</span>}</span>
-      <details className="change">
-        <summary>change</summary>
-        <div className="changebox">
+      <Change label="Change where people must live">
           <CountriesForm action={setJobCountries.bind(null, job.id)} current={lives.map(countryName).join(", ")} />
           <p className="hint">The one place for the role&apos;s countries: sourcing searches and suggests only here, and people living here
             are never archived as outside the desk&apos;s coverage (the desk covers the EU / EEA, the UK, Switzerland, the US and Canada).
             Where someone lives never puts them in Do not submit by itself; it becomes a question to ask. Decided by where people live
             and work now, never by nationality.</p>
           {r && <Snippet ev={r.evidence[0]} />}
-        </div>
-      </details>
+      </Change>
     </li>
   );
 }
@@ -182,13 +171,12 @@ function Brief({ job, lines }: { job: JobPage; lines: BriefLine[] }) {
   );
 }
 
-function Questions({ job, lines }: { job: JobPage; lines: BriefLine[] }) {
+/** The desk's questions, each with an answer box, and a box for anything else in the recruiter's own words. */
+function TellMore({ job, lines }: { job: JobPage; lines: BriefLine[] }) {
   const asked = lines.filter((b) => b.question);
-  if (!lines.length) return null;
-  if (!asked.length) return <p className="hint noquestions">No questions for you: the ad and your notes say what the search needs.</p>;
   return (
     <section className="panel questions">
-      <h3>{asked.length === 1 ? "A question for you" : `${asked.length} questions for you`}</h3>
+      <h3>{asked.length ? (asked.length === 1 ? "A question for you" : `${asked.length} questions for you`) : "Tell the desk more"}</h3>
       {asked.map((q) => (
         <div key={q.id} className="question">
           <p className="qtext">{q.question}</p>
@@ -196,6 +184,8 @@ function Questions({ job, lines }: { job: JobPage; lines: BriefLine[] }) {
           <AnswerForm action={answerBriefQuestion.bind(null, job.id, q.facet)} id={`answer-${q.facet}`} />
         </div>
       ))}
+      {lines.length > 0 && !asked.length && <p className="hint noquestions">No questions for you: the ad and your notes say what the search needs.</p>}
+      <TellForm action={tellDesk.bind(null, job.id)} asked={asked.length > 0} />
     </section>
   );
 }
@@ -237,7 +227,7 @@ export function HiringProfile({ job }: { job: JobPage }) {
       )}
 
       <Brief job={job} lines={lines} />
-      <Questions job={job} lines={lines} />
+      <TellMore job={job} lines={lines} />
 
       <section className="panel searchby">
         <h3>What we search and rate by</h3>
@@ -264,7 +254,7 @@ export function HiringProfile({ job }: { job: JobPage }) {
         </section>
       )}
 
-      <section className="panel context">
+      {(places.length > 0 || dates.length > 0 || job.hiring.intakes.length > 0) && <section className="panel context">
         <h3>Context</h3>
         <ul className="reqs grouped">
           {places.length > 0 && <li className="reqline quiet"><span className="rtext">Where the job is: {places.map((p) => p.payload.text_raw).join(" · ")}</span></li>}
@@ -274,22 +264,17 @@ export function HiringProfile({ job }: { job: JobPage }) {
             </li>
           ))}
         </ul>
-        <Fold className="fold" open={job.hiring.intakes.length === 0}
-          summary={<>Notes from the hiring manager{job.hiring.intakes.length ? ` (${job.hiring.intakes.length})` : ""} · add notes</>}>
-          <p className="hint">Paste what the hiring manager said. Each requirement read from it keeps its quote; what the hiring manager says
-            replaces what the ad says. Personality, culture or &quot;fit&quot; is never turned into a requirement.</p>
-          <IntakeForm action={addIntake.bind(null, job.id)} />
-          {job.hiring.intakes.map((i) => (
-            <details key={i.id} className="band">
-              <summary>Notes from {i.at?.slice(0, 10)} ({i.by})</summary>
-              <p className="notes">{i.text}</p>
-            </details>
-          ))}
-        </Fold>
-        <Fold className="fold" summary="Add a requirement">
-          <AddRequirement action={addRequirement.bind(null, job.id)} />
-        </Fold>
-      </section>
+        {job.hiring.intakes.length > 0 && (
+          <Fold className="fold" summary={<>Your notes and what you told the desk ({job.hiring.intakes.length})</>}>
+            {job.hiring.intakes.map((i) => (
+              <details key={i.id} className="band">
+                <summary>{i.at?.slice(0, 10)} ({i.by})</summary>
+                <p className="notes">{i.text}</p>
+              </details>
+            ))}
+          </Fold>
+        )}
+      </section>}
     </section>
   );
 }

@@ -4,13 +4,14 @@ hiring profile, and answering the brief's questions. Synthetic data; nothing spe
 import pytest
 from sqlalchemy import select
 
-from maindscout.api import review
+from maindscout.api import hiring, review
 from maindscout.api import role_brief as briefs
 from maindscout.db.models import Claim, JobIntake
 from maindscout.domain import cards, geo
 from maindscout.intelligence.llm import FakeClient, LLMResult
 from tests.test_api import client, fake, make_job  # noqa: F401 (fixtures)
 from tests.test_autosource import job  # noqa: F401
+from tests.test_hiring import item
 from tests.test_role_brief import READING, facet
 
 
@@ -169,3 +170,41 @@ def test_the_answer_endpoint_returns_the_new_brief(client, session, job, monkeyp
     monkeypatch.setattr(briefs, "answer", lambda s, o, j, f, t, a, c: {"notes": None, "written": 1})
     r = client.post(f"/v1/jobs/{job.id}/role-brief/answer", json={"facet": "market", "answer": "yes, the first"})
     assert r.status_code == 200 and r.json()["written"] == 1 and isinstance(r.json()["brief"], list)
+
+
+# --- a requirement in your own words (owner, 2026-10-20) ----------------------------------------------------------
+
+
+def test_a_line_rewritten_in_your_words_keeps_your_words_and_its_years_follow(session, job):
+    old = hiring.add_requirement(session, job.org_id, job.id, {"category": "seniority", "strength": "must",
+                                                               "text_raw": "Approximately 7 or more years of marketing", "min_years": 7}, "owner@desk.test")
+    llm = ByName({})
+    new = hiring.edit_requirement(session, job.org_id, old.id, "5 or more years of marketing", "strong_plus", "owner@desk.test", llm)
+    assert (new.payload["text_raw"], new.payload["min_years"], new.payload["strength"]) == ("5 or more years of marketing", 5.0, "strong_plus")
+    assert new.status == "approved" and new.payload["source"] == "recruiter" and old.status == "superseded"
+    assert llm.calls == [], "years are read by code: nothing spent"
+
+
+def test_a_rewritten_line_is_read_again_for_its_values(session, job):
+    old = hiring.add_requirement(session, job.org_id, job.id, {"category": "employer", "strength": "strong_plus",
+                                                               "text_raw": "ideally from small up to 200 people", "max_staff": 200}, "owner@desk.test")
+    llm = ByName({"hiring_profile": {"items": [item("employer", "strong_plus", "From brands of up to 100 people",
+                                                    "from brands of up to 100 people", max_staff=100)]}})
+    new = hiring.edit_requirement(session, job.org_id, old.id, "from brands of up to 100 people", None, "owner@desk.test", llm)
+    assert (new.payload["max_staff"], new.payload["strength"], new.payload["text_raw"]) == (100, "strong_plus", "from brands of up to 100 people")
+    same = hiring.edit_requirement(session, job.org_id, new.id, "from brands of up to 100 people", "must", "owner@desk.test", llm)
+    assert same.payload["strength"] == "must" and len(llm.calls) == 1, "the same words: only the strength changes, nothing read"
+    with pytest.raises(ValueError):
+        hiring.edit_requirement(session, job.org_id, same.id, " ", None, "owner@desk.test", llm)
+
+
+def test_a_few_words_typed_on_the_profile_are_read_like_notes(session, job):
+    llm = ByName({"hiring_profile": {"items": [item("skill", "must", "Japanese", "Japanese is a must", skill_token="japanese")]}})
+    out = briefs.tell(session, job.org_id, job.id, "Japanese is a must", "owner@desk.test", llm)
+    assert out["notes"]["written"] == 1 and [n for n, _ in llm.calls] == ["hiring_profile"], "no brief yet: none read"
+    briefs.read(session, job.org_id, job.id, FakeClient(READING))
+    llm = ByName({"hiring_profile": {"items": []}, "role_brief": READING})
+    briefs.tell(session, job.org_id, job.id, "They report to the founder in Tokyo", "owner@desk.test", llm)
+    assert [n for n, _ in llm.calls] == ["hiring_profile", "role_brief"], "with a brief, it is read again"
+    with pytest.raises(ValueError):
+        briefs.tell(session, job.org_id, job.id, "ok", "owner@desk.test", llm)
