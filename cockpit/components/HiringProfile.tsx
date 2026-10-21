@@ -76,17 +76,17 @@ function duplicate(r: ClaimView, others: ClaimView[]): boolean {
   });
 }
 
-function LineChange({ r, path, editable = true }: { r: ClaimView; path: string; editable?: boolean }) {
+function LineChange({ r, path, editable = true, removable = editable }: { r: ClaimView; path: string; editable?: boolean;
+  removable?: boolean }) {
   return (
     <Change>
-      {editable && (
-        <>
-          <EditForm action={editRequirement.bind(null, r.id, path)} text={r.payload.text_raw ?? ""} strength={r.payload.strength} />
-          <ActForm action={rejectClaim.bind(null, r.id, path, "wrong")}>
-            <button className="btn small ghost" title="The desk misread it, or it no longer applies: it stops counting">Remove this requirement</button>
-          </ActForm>
-        </>
+      {editable && <EditForm action={editRequirement.bind(null, r.id, path)} text={r.payload.text_raw ?? ""} strength={r.payload.strength} />}
+      {removable && (
+        <ActForm action={rejectClaim.bind(null, r.id, path, "wrong")}>
+          <button className="btn small ghost" title="The desk misread it, or it no longer applies: it stops counting">Remove this line</button>
+        </ActForm>
       )}
+      {r.payload.category === "process" && <p className="hint">A new date: tell the desk (&ldquo;the next hackathon is on 21 November&rdquo;), and it replaces this one.</p>}
       <p className="sub">Where it comes from:</p>
       <Snippet ev={r.evidence[0]} />
     </Change>
@@ -201,7 +201,8 @@ export function HiringProfile({ job }: { job: JobPage }) {
     .sort((a, b) => ORDER.indexOf(a.payload.strength) - ORDER.indexOf(b.payload.strength));
   const call = rest.filter((r) => group(r) === "conversation" && !duplicate(r, search));
   const places = rest.filter((r) => r.payload.category === "location" && group(r) === "context");
-  const dates = rest.filter((r) => r.payload.category === "process");
+  const dates = rest.filter((r) => r.payload.category === "process")
+    .sort((a, b) => String(a.payload.normalized_token).localeCompare(String(b.payload.normalized_token)));
   const waiting = [...(residence?.status === "proposed" ? [residence] : []), ...search.filter((r) => r.status === "proposed")];
   const total = search.length + (residence ? 1 : 0);
   return (
@@ -257,10 +258,18 @@ export function HiringProfile({ job }: { job: JobPage }) {
       {(places.length > 0 || dates.length > 0 || job.hiring.intakes.length > 0) && <section className="panel context">
         <h3>Context</h3>
         <ul className="reqs grouped">
-          {places.length > 0 && <li className="reqline quiet"><span className="rtext">Where the job is: {places.map((p) => p.payload.text_raw).join(" · ")}</span></li>}
+          {places.map((r) => (  // the ad's place can be wrong (owner, 2026-10-21): each one can be changed or removed
+            <li key={r.id} className="reqline quiet">
+              <span className="rtext">Where the job is: {r.payload.text_raw}</span>
+              <span className="rsrc">{SOURCE[r.payload.source ?? "ad"] ?? "the ad"}</span>
+              <LineChange r={r} path={`/jobs/${job.id}`} />
+            </li>
+          ))}
           {dates.map((d) => (
             <li key={d.id} className="reqline quiet">
               <span className="rtext">{d.payload.normalized_token} · {d.payload.text_raw}{d.flags.job_process_stale && <span className="pill">passed</span>}</span>
+              <span className="rsrc">{SOURCE[d.payload.source ?? "ad"] ?? "the ad"}</span>
+              <LineChange r={d} path={`/jobs/${job.id}`} editable={false} removable />
             </li>
           ))}
         </ul>

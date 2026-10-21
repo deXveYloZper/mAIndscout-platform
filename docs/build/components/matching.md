@@ -75,6 +75,12 @@ Plan section 4.6 and phase I5: replace keyword triage with a comparison of what 
 - Pair reasons `match:<tier>:<why>`. Today's `no_support_for_must_have:<token>` stays for rule 1.
 - `GET /v1/jobs/{id}/people/{cid}/gaps` returns `match`; `GET /v1/jobs/{id}` returns `match_tier` per person.
 
+## Another field altogether (2026-10-21, `match-2026-10-21.1`)
+A CFO, an HR manager, two operations directors and a store manager were "possible" for a marketing manager role
+on one missing must-have. When the role's kind of work is a must and the person works in an unrelated field ("works
+in finance, not marketing"), the rule `wrong_field` makes them unlikely. A related field (sales for marketing) stays
+partial, and a field read as "other" (unknown) never counts. match-eval: those 5 moved, nothing else on any role.
+
 ## Tests
 - `core/tests/test_matching.py` (10):
   - today's rule still decides;

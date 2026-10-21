@@ -105,6 +105,13 @@ they meet, then newest; each card shows those items as tags (met, partly, missin
 - `GET /v1/off-limits`, `POST /v1/off-limits {name, until?, note?}`, `DELETE /v1/off-limits/{id}`
 - The tables of migration `0026` ([persistence](persistence.md)).
 
+## A run that stops early still reads its people (2026-10-21)
+A run that reached its target, ran out of budget or met an Exa error returned before profiling the new people's
+employers and queueing their career readings: 49 people on Procure AI were never read and stayed "too little known",
+yet counted as strong toward the target. The searches now stop, and the people already added are read as usual.
+Still open: the target counts people as strong on their first, coarse reading, before their career reading arrives,
+so a run can stop after two searches and the count drops once they are read.
+
 ## Tests
 `core/tests/test_autosource.py` uses a fake Exa: synthetic people, nothing spent. It proves:
 - a new plan waits paused, and every change is a version;

@@ -141,6 +141,40 @@ def tell(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, text: str, acto
     from maindscout.api import hiring
 
     notes = hiring.add_intake(session, org_id, job_id, text, actor, client, shortest=6)
+    dated = dates(session, org_id, job_id, text, actor, client)
     has_brief = session.scalar(select(Claim.id).where(Claim.subject_id == job_id, Claim.claim_type == CLAIM,
                                                       Claim.status.in_(LIVE)).limit(1)) is not None
-    return {"notes": notes, **(read(session, org_id, job_id, client) if has_brief else {})}
+    return {"notes": notes, "dates": dated, **(read(session, org_id, job_id, client) if has_brief else {})}
+
+
+def dates(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, text: str, actor: str, client: LLMClient) -> list[dict[str, Any]]:
+    """Dates in what the recruiter told the desk become the role's process dates, a new edition replacing the old one
+    ("the next hackathon is on 21 November in London" replaces August's). Asked only when the words hold a date; one
+    small model call."""
+    from maindscout.api import review
+    from maindscout.intelligence import dates as reader
+
+    if not reader.mentions_date(text):
+        return []
+    events = [c for c in session.scalars(select(Claim).where(Claim.subject_id == job_id, Claim.claim_type == "JobRequirementClaim",
+                                                             Claim.status.in_(LIVE)))
+              if (c.approved_view or c.payload).get("category") == "process"]
+    events.sort(key=lambda c: (c.approved_view or c.payload).get("normalized_token") or "")
+    listed = [((c.approved_view or c.payload).get("text_raw") or "", (c.approved_view or c.payload).get("normalized_token") or "")
+              for c in events]
+    costs.ensure_budget(session, org_id)
+    outcome = reader.read(text, listed, date.today(), client)
+    costs.record(session, org_id, "process_dates", outcome.cost, subject_type="job", subject_id=job_id)
+    out = []
+    for d in outcome.dates:
+        old = events[d.replaces] if d.replaces is not None else None
+        if old is not None and old.status not in LIVE:
+            old = None  # already replaced by an earlier line of the same text
+        payload = {"text_raw": d.event, "category": "process", "strength": "unknown", "normalized_token": d.when,
+                   "distinctive": False, "source": "intake"}
+        if old is not None and (old.approved_view or old.payload).get("normalized_token") == d.when:
+            continue  # the same date as before
+        review.assert_claim(session, org_id, actor, subject_type="job", subject_id=job_id, claim_type="JobRequirementClaim",
+                            payload=payload, replaces=old.id if old is not None else None)
+        out.append({"event": d.event, "date": d.when, "replaced": listed[d.replaces] if old is not None else None})
+    return out

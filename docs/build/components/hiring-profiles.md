@@ -95,6 +95,15 @@ Plan section 4.5 and phase I4: matching (I5) needs to know what the hiring manag
   `POST /v1/jobs/{id}/requirements/confirm {ids}` (step E).
 - `GET /v1/jobs/{id}` adds `hiring` (`company`, `intakes`, `targets`).
 
+## From the owner's 0-to-1 test (2026-10-21)
+- **The ad's place can be wrong** (InSAR: "Markham or Gatineau", really the UK): place lines have "change"; a
+  changed place stays a place (where people must live is set on its own line).
+- **Dates told to the desk** ("the next hackathon is on 21 November in London and 22 November in Germany") replace
+  the passed edition of the same event (`role_brief.dates`, `intelligence/dates.py`: one small model call, only when
+  the words hold a date, each date quoted from them). Date lines can be removed.
+- **Nothing told is dropped:** "the candidates should come from a competitor" (a company ask naming none) and pay
+  ("the role pays €50k", which the model had left out) are kept for the call.
+
 ## Tests
 `core/tests/test_hiring.py` (11):
 - the ad adds role and employment, and every item is checked;

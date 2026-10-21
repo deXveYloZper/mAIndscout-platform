@@ -338,9 +338,12 @@ export async function tellDesk(jobId: string, _: FormState, form: FormData): Pro
   if (!text) return { error: "Write something first." };
   try {
     const r = await apiJson<{ notes: { written: number; replaced: number; seen: number; rejected: { item: string; reason: string }[] };
-      lines?: number }>(`/v1/jobs/${jobId}/tell`, { text });
+      lines?: number; dates?: { event: string; date: string; replaced: [string, string] | null }[] }>(`/v1/jobs/${jobId}/tell`, { text });
     revalidatePath(`/jobs/${jobId}`);
     const n = r.notes;
+    const day = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    const dated = (r.dates ?? []).map((d) => `${d.event} on ${day(d.date)}${d.replaced ? ` (replacing ${d.replaced[0]}, ${day(d.replaced[1])})` : ""}`);
+    if (dated.length) return { message: `Dates: ${dated.join("; ")}.${n.written ? ` And ${n.written} requirement${n.written === 1 ? "" : "s"} to confirm.` : ""}` };
     const read = n.written ? `Read ${n.written} requirement${n.written === 1 ? "" : "s"}${n.replaced ? ` (${n.replaced} replacing earlier ones)` : ""}: they wait for Confirm all.`
       : n.seen ? "Nothing new: the profile already says it." : "No requirement in it; kept with the notes.";
     const left = n.rejected.length ? ` Left out: ${n.rejected.map((x) => `${x.item} (${x.reason})`).join("; ")}.` : "";

@@ -374,3 +374,47 @@ def test_a_search_asks_for_as_many_people_as_the_company_can_give():
     assert [strategy.results_for(sized(n), strategy.RULES) for n in (9, 163, 219, 5000, None)] == [10, 40, 50, 50, 25]
     assert strategy.results_for(sized(5000), {**strategy.RULES, "max_results": 30}) == 30, "the owner can cap it per role"
     assert strategy.search_cost(10) == pytest.approx(0.007) and strategy.search_cost(50) == pytest.approx(0.047)
+
+
+def test_a_company_found_by_the_roles_skill_must_name_that_skill(session, job):
+    # "insar companies in United Kingdom" also returned a confined-space rescue firm called ISAR3 (2026-10-21).
+    real = page("sat", "Sat Radar Testworks", "sat-radar.example", categories="insar, earth observation, satellite data")
+    lookalike = page("isar3", "ISAR3 Rescue Testworks", "isar3.example", industry="Confined space rescue",
+                     categories="confined space rescue, industrial safety")
+    caller = FakeExa(people=[], companies=[real, lookalike])
+    out = strategy._peers(session, job.org_id, job, None, caller, set(), "like the client", 10, skills=["insar"],
+                          queries=["insar companies in United Kingdom"])
+    assert [t["name"] for t in out] == ["Sat Radar Testworks"]
+    other = strategy._peers(session, job.org_id, job, None, FakeExa(people=[], companies=[lookalike]), set(), "x", 10,
+                            skills=["insar"], queries=["confined space rescue companies"])
+    assert len(other) == 1, "only a search by the skill asks the company to name it"
+
+
+def test_a_product_companys_peers_are_never_consultancies(session, job):
+    # Procure AI's peers included seven procurement consultancies (2026-10-21): their people are consultants.
+    client_co, _ = companies.resolve(session, "Client Testworks", "test", keys={"domain": "client.example"})
+    client_co.exa_profile = {"kind": "product", "offering": "procurement platform", "domains": ["procurement"]}
+    product = page("prod", "Platform Testworks", "platform.example", industry="Software Development", categories="procurement")
+    advisers = page("adv", "Adviser Testworks", "adviser.example", industry="Business Consulting and Services",
+                    categories="procurement consulting")
+    out = strategy._peers(session, job.org_id, job, client_co, FakeExa(people=[], companies=[product, advisers]), set(),
+                          "like the client", 10, countries=["DE"])
+    kinds = {t["name"]: (session.get(Company, uuid.UUID(t["company_id"])).exa_profile or {}).get("kind") for t in out}
+    assert "Adviser Testworks" not in kinds and "Platform Testworks" in kinds, kinds
+    anyone = strategy._peers(session, job.org_id, job, None, FakeExa(people=[], companies=[advisers]), set(), "x", 10,
+                             queries=["procurement consulting companies"])
+    assert [t["name"] for t in anyone] == ["Adviser Testworks"], "a search from the hiring profile keeps every kind"
+
+
+def test_a_company_the_profile_rules_out_is_never_a_peer(session, job):
+    # Bonaventura's map listed Valentino though the brief said "no candidates from Valentino" (2026-10-21).
+    from maindscout.api import hiring
+
+    hiring.add_requirement(session, job.org_id, job.id, {"category": "target_company", "strength": "anti",
+                                                         "text_raw": "no candidates from Valentino Testhaus",
+                                                         "companies": ["Valentino Testhaus"]}, "owner@desk.test")
+    ruled_out = page("val", "Valentino Testhaus", "valentino-test.example", categories="luxury, fashion")
+    fine = page("leat", "Leather Testhaus", "leather-test.example", categories="luxury, leather goods")
+    out = strategy._peers(session, job.org_id, job, None, FakeExa(people=[], companies=[ruled_out, fine]), set(), "x", 10,
+                          queries=["luxury leather goods companies in Italy"])
+    assert [t["name"] for t in out] == ["Leather Testhaus"]

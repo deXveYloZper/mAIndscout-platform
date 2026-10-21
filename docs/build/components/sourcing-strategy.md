@@ -102,6 +102,19 @@ The owner (2026-10-13): "we should be aware that our initial list of companies w
   - A background it does not want (consultancy, agency, public sector, non-profit) keeps companies of that kind out of the peer list and the batches.
 - The old "Find peer companies on the web" button is gone: the strategy finds peers.
 
+## From the owner's 0-to-1 test (2026-10-21)
+Three roles rebuilt from an empty desk showed four kinds of wrong target; each is now refused by code:
+- **A search by the role's skill** ("insar companies in United Kingdom") also returned look-alike names: a
+  confined-space rescue firm (ISAR3), an automotive one (INSPHERE). A company found that way must name the skill
+  in its own description.
+- **A nice-to-have industry** ("infrastructure, dam, mining or other asset monitoring") filled the InSAR map with
+  water utilities. The role's required industries decide where to hunt; nice-to-have ones only when it names none
+  (an anonymised ad whose only industry is a nice-to-have sentence still has one).
+- **A product company's peers** included seven procurement consultancies (Procure AI). Consultancies, agencies and
+  outsourcers are never "like" a product company.
+- **A company the hiring profile rules out** (Valentino) was listed as a target: it is never added, and if listed
+  the map says "not searched: the hiring profile says not to recruit from here" (the search had always skipped it).
+
 ## Tests
 `core/tests/test_phase1b.py`:
 - the strategy reads the talent DNA and builds tiers: only the client's own people by exact ID, noise dropped, the hiring company never a target, countries from the team, peer searches phrased from the profile, micro companies left out, nobody at the client stored;

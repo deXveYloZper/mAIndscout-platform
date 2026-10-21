@@ -439,7 +439,8 @@ def edit_requirement(session: Session, org_id: uuid.UUID, claim_id: uuid.UUID, t
             p["min_years"] = float(years.group(1))
         else:
             p.pop("min_years", None)
-    if before.get("category") in _READ_AGAIN and not before.get("mobility"):
+    if before.get("category") in _READ_AGAIN and before.get("category") != "location" and not before.get("mobility"):
+        # (a place stays a place: read again it would become "must live in", which only Where people must live sets)
         costs.ensure_budget(session, org_id)
         outcome = engine.read(said, client, "intake")
         costs.record(session, org_id, "hiring_intake", outcome.cost, subject_type="job", subject_id=old.subject_id)

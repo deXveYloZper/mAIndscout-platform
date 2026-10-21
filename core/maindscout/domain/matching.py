@@ -22,7 +22,7 @@ from typing import Any, Callable
 from maindscout.domain.profile import (FAMILY_LABEL, LEVEL_RANK, NOT_EXPERIENCE, Stint, employer_years, group_of, staff_words,
                                        years_at_size)
 
-ENGINE_VERSION = "match-2026-10-19.1"  # company sizes in people; a kind of company counts in the role's own work
+ENGINE_VERSION = "match-2026-10-21.1"  # another field altogether is unlikely, not possible
 MUST = ("must", "deal_breaker")
 
 # The desk's rules, as data: id -> what it says. The order of evaluation is the order of this list.
@@ -36,6 +36,7 @@ RULES: list[dict[str, str]] = [
     {"id": "substitution", "text": "A requirement the intake says can substitute for another is met, so that one counts as met."},
     {"id": "domain_over_seniority", "text": "A strong industry match outweighs one level below the level asked for."},
     {"id": "contractor_fit", "text": "A contract job and a contractor with long engagements: a strong plus."},
+    {"id": "wrong_field", "text": "The role's kind of work is a must and the person works in another field altogether: unlikely."},
     {"id": "must_gaps", "text": "Two or more must-haves are gaps: unlikely; one: possible."},
     {"id": "partial_must", "text": "A must-have is only partly met (a related kind of work, a level below, fewer years): possible."},
     {"id": "too_little_known", "text": "Too little is known about the person to compare (no career profile yet): the coarse band stands."},
@@ -461,7 +462,14 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
     # 5. Contract job, contractor with long engagements.
     if any(v.kind == "employment" and v.verdict == "strong" and "contractor" in v.detail for v in rows):
         fire("contractor_fit", "long contract engagements fit a contract job")
-    # 6. Must-have gaps.
+    # 6. Another field altogether: a CFO, an HR manager or a store manager for a marketing role (owner's 0-to-1 test,
+    # 2026-10-21) was "possible" on one must-have gap. A related field (sales for marketing) is partial, not this.
+    wrong = [v for v in rows if v.kind == "role" and v.strength in MUST and v.verdict == "gap" and ", not " in v.detail.split(";")[0]
+             and not v.detail.startswith(f"works in {FAMILY_LABEL.get('other', 'other')},")]  # a field read as "other" is unknown
+    if wrong:
+        fire("wrong_field", wrong[0].detail.split(";")[0])
+        return Match("unlikely", "do_not_submit", f"match:unlikely:{wrong[0].detail.split(';')[0]}", rows, fired)
+    # 7. Must-have gaps.
     must_gaps = [v for v in rows if v.strength in MUST and v.verdict == "gap"]
     if len(must_gaps) >= 2:
         fire("must_gaps", ", ".join(v.requirement for v in must_gaps[:4]))

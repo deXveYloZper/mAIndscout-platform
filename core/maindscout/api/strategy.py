@@ -210,12 +210,19 @@ def profile_queries(session: Session, job: Job, countries: list[str] | None = No
     place = f" in {where}" if where else ""
     lux = luxury(session, job)  # a luxury client's industries are searched in luxury words (owner, 2026-10-18)
     words = (lambda d: tiers.search_words(d, as_words(d))) if lux else as_words
-    phrases: list[str] = []
+    # The role's required industries decide where to hunt; nice-to-have ones only when it names none (2026-10-21: an
+    # InSAR role's "asset monitoring" nice-to-have filled its map with water utilities, while an anonymised ad whose
+    # only industry is a nice-to-have sentence still needs it).
+    asked = {"required": [], "nice": []}
     for c in session.scalars(select(Claim).where(Claim.subject_id == job.id, Claim.claim_type == "JobRequirementClaim",
                                                  Claim.status.in_(LIVE)).order_by(Claim.created_at)):
         p = c.approved_view or c.payload
-        if p.get("strength") == "anti":
-            continue
+        if p.get("strength") != "anti":
+            asked["nice" if p.get("strength") in ("nice", "unknown") else "required"].append(p)
+    phrases: list[str] = []
+    for p in asked["required"] + asked["nice"]:
+        if p in asked["nice"] and phrases:
+            break
         if p.get("category") == "domain":
             phrases += [words(d) for d in p.get("domains") or [] if d != "other"]
         elif p.get("category") in ("skill", "other") and (p.get("distinctive") or BACKGROUND.search(p.get("text_raw") or "")):
@@ -245,6 +252,10 @@ def _luxury(session: Session, job: Job) -> bool:
     return tiers.luxury_role(texts)
 
 
+# Kinds of company that sell services, not a product: never "like" a product company (its peers make products too).
+SERVICES = ("consultancy", "agency", "outsourcing")
+
+
 # A requirement that speaks about where a person comes from, not what they can do ("Experience in luxury, …").
 BACKGROUND = re.compile(r"\b(experience (in|with|at|from)|background in|industry|sector|brands?)\b", re.I)
 
@@ -258,11 +269,17 @@ def _peers(session: Session, org_id: uuid.UUID, job: Job, of: Company | None, ca
     out: list[dict[str, Any]] = []
     made: list[Company] = []
     lux = luxury(session, job)
+    like_client = of is not None and (of.exa_profile or {}).get("kind") in (None, "product") and queries is None
     for query in queries if queries is not None else peer_queries(of, countries, skills):
+        # A search by the role's skill ("insar companies in United Kingdom") also returns look-alike names (ISAR3, a
+        # rescue firm; INSPHERE, automotive; 2026-10-21): a company found that way must name the skill itself.
+        skill = next((k for k in skills or [] if query.lower().startswith(f"{k.lower()} companies")), None)
         results = exa.search(caller, query, "company", num_results=10, text_chars=8000)
         costs.record(session, org_id, company_profiles.PURPOSE, {"model": "exa", "usd": results.usd, "sources": len(results.found)},
                      subject_type="job", subject_id=job.id, task_id=task_id)
         for found in results.found:
+            if skill and not re.search(rf"(?<![\w-]){re.escape(skill)}(?![\w-])", found.text or "", re.I):
+                continue
             p = company_profile.read(found.text)
             name = p.name or (found.company or {}).get("name")
             if not name or (p.employees is not None and p.employees < MIN_PEER_STAFF):
@@ -272,6 +289,10 @@ def _peers(session: Session, org_id: uuid.UUID, job: Job, of: Company | None, ca
             if company is None or str(company.id) in have or company.id == job.hiring_company_id or (of is not None and company.id == of.id):
                 continue
             company_profiles.apply(session, company, found, org_id)
+            if str(company.id) in not_from(session, job)[0]:
+                continue  # a company the hiring profile says not to recruit from is never a target (2026-10-21)
+            if like_client and (company.exa_profile or {}).get("kind") in SERVICES:
+                continue  # a product company's peers make products: consultancies' people are consultants (2026-10-21)
             if fit(session, company, set(), not_from(session, job)[1], lux)["searched"] is False:
                 continue  # a kind of company the hiring profile does not want, or not luxury for a luxury role
             have.add(str(company.id))

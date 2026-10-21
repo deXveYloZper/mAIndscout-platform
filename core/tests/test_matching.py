@@ -82,12 +82,14 @@ def test_without_a_profile_the_coarse_band_stands():
 
 
 def test_two_must_gaps_are_unlikely_and_one_is_possible():
-    reqs = [req(1, "role", "must", "Sales lead", role_family="sales"),
-            req(2, "domain", "must", "Banking", domains=["banking"])]
+    # In the person's own field (another field altogether is its own rule since 2026-10-21, `wrong_field`).
+    reqs = [req(1, "role", "must", "Data scientist", role_family="data_ml"),
+            req(2, "domain", "must", "Banking", domains=["banking"]),
+            req(3, "domain", "must", "Insurance", domains=["insurance"])]
     m, _ = run(reqs, GIS)
     assert m.tier == "unlikely" and m.rules[-1]["id"] == "must_gaps"
-    m, _ = run(reqs[:1], GIS)
-    assert m.tier == "possible"
+    m, _ = run(reqs[:2], GIS)
+    assert m.tier == "possible" and m.rules[-1]["id"] == "must_gaps"
 
 
 def test_a_broad_skill_not_on_the_cv_is_a_question_not_a_gap():
@@ -102,3 +104,14 @@ def test_target_companies_and_never_a_number():
     m, _ = run([req(1, "target_company", "strong_plus", "People from Acme", companies=[{"name": "Acme", "company_id": "c-1"}])], people)
     assert verdict(m, 1).verdict == "strong"
     assert "%" not in repr(m.as_dict()) and "score" not in repr(m.as_dict())
+
+
+def test_another_field_altogether_is_unlikely_a_related_one_possible():
+    # The owner's 0-to-1 test (2026-10-21): a CFO and an HR manager read "possible" for a marketing manager role.
+    reqs = [req(1, "role", "must", "Marketing manager", role_family="marketing", level="manager")]
+    cfo = [stint(1, "Leather Co", "CFO", "2012-01", None, family="finance", level="executive")]
+    m, _ = run(reqs, cfo)
+    assert m.tier == "unlikely" and any(r["id"] == "wrong_field" for r in m.rules)
+    seller = [stint(1, "Leather Co", "Commercial Manager", "2012-01", None, family="sales", level="manager")]
+    m, _ = run(reqs, seller)
+    assert m.tier != "unlikely" or not any(r["id"] == "wrong_field" for r in m.rules), "sales is related to marketing"

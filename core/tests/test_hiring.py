@@ -194,3 +194,30 @@ def test_a_background_left_empty_by_the_model_is_read_from_the_quote():
     assert engine.read(text, OneItem(it), "intake").items[0].fields["employer_kinds"] == ["startup"]
     it = item("employer", "anti", "not from consultancies", "No candidates from big consultancies")
     assert engine.read(text, OneItem(it), "intake").items[0].fields["employer_kinds"] == ["consultancy"]
+
+
+class NoItems:
+    model = "fake"
+
+    def __init__(self, items=None):
+        self.items = items or []
+
+    def complete_json(self, system, user, schema, name):
+        return LLMResult({"items": self.items}, self.model, 1, 1, 0.0)
+
+
+def test_pay_in_notes_is_kept_for_the_call_when_the_reader_leaves_it_out():
+    # The Bonaventura brief, 2026-10-21: "The role pays €50k" was read as nothing at all.
+    text = "The role pays €50k. No candidates from Valentino."
+    out = engine.read(text, NoItems(), "intake")
+    assert [(i.kind, i.text) for i in out.items] == [("other", "The role pays €50k")]
+    read = engine.read("Salary will peak around €50,000.", NoItems([item("other", "must", "salary will peak around €50,000",
+                                                                         "Salary will peak around €50,000")]), "intake")
+    assert len(read.items) == 1, "pay the model read already is not added twice"
+    assert engine.read("Japanese is a plus; 5 years is enough.", NoItems(), "intake").items == [], "years are not pay"
+
+
+def test_a_company_ask_that_names_no_company_is_kept_for_the_call():
+    said = "The candidates should come from a competitor."
+    out = engine.read(said, NoItems([item("target_company", "strong_plus", "from a competitor", said, companies=[])]), "intake")
+    assert [(i.kind, i.text) for i in out.items] == [("other", "from a competitor")] and out.rejected == []

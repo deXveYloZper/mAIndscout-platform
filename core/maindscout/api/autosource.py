@@ -424,15 +424,18 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
     employer_ids: dict[str, None] = {}
     searched_companies: dict[str, None] = {}
     reason = None
+    stop: tuple[str, str] | None = None  # why the searches ended early; the people already added still get read
     for q in strategy.next_searches(session, job, p, set(radar.live(session, org_id)), limits):
         if strong_waiting(session, job.id) >= p.target:
-            return done("done", "target")
+            stop = ("done", "target")
+            break
         if made >= MAX_WEB_QUERIES_PER_RUN:
             reason = "run_limit"
             break
         size = q.get("results") or RESULTS_PER_QUERY
         if why := _budget_left(session, org_id, job, p, strategy.search_cost(size) + 0.003):
-            return done("stopped", why)
+            stop = ("stopped", why)
+            break
         key = _key("exa_people", q["text"], q["country"])
         sq = session.scalar(select(SourcingQuery).where(SourcingQuery.job_id == job.id, SourcingQuery.key == key))
         if sq is not None and sq.last_run_at and sq.last_run_at > _now() - QUERY_COOLDOWN:
@@ -447,7 +450,8 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
             results = exa.search(caller, q["text"], "people", num_results=size, country=q["country"])
         except exa.ExaError as error:
             row.error = str(error)[:500]
-            return done("failed" if made == 0 else "stopped", "error")
+            stop = ("failed" if made == 0 else "stopped", "error")
+            break
         made += 1
         if q.get("company_id"):
             searched_companies[q["company_id"]] = None
@@ -510,6 +514,8 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
     title = (p.role_variants or [job.title])[0]
     report["practices"] = sum(practices.queue(session, org_id, job, session.get(Company, uuid.UUID(c)), title)
                               for c in searched_companies)
+    if stop is not None:  # (2026-10-21: a run that reached its target returned here before reading anyone it had added)
+        return done(*stop)
 
     # 4. The list grows: earlier employers of strong people, and companies like the ones that produce.
     if made:
@@ -649,7 +655,9 @@ def _page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "
     targets = [{**t, "group": strategy.group_of(t), "off_limits": limits.get(t.get("company_id") or ""),
                 "release": signals.get(t.get("company_id") or ""),
                 "progress": {k: v for k, v in (state.get(t.get("company_id") or "") or {}).items() if k not in ("texts", "recent")} or None,
-                "fit": strategy.fit(session, profiles_by_id.get(t.get("company_id") or ""), set(p.countries or []), avoid_kinds, lux),
+                "fit": ({"searched": False, "why": "the hiring profile says not to recruit from here"}
+                        if (t.get("company_id") or "") in avoid_ids else
+                        strategy.fit(session, profiles_by_id.get(t.get("company_id") or ""), set(p.countries or []), avoid_kinds, lux)),
                 "profile": company_profiles.summary(profiles_by_id.get(t.get("company_id") or ""))}
                for t in p.targets]
     hits = {h.candidate_id: h for h in session.scalars(select(SourcingHit).where(SourcingHit.job_id == job.id))}

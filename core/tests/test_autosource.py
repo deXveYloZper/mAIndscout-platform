@@ -416,3 +416,14 @@ def test_only_an_owner_changes_the_desk_budget(client, session, org):
     recruiter, _ = auth.create_user(session, "rec@desk.test", "Rec", org.id, "recruiter", password="another long passphrase 12")
     client.headers["Authorization"] = f"Bearer {signed_in(session, recruiter, org.id)}"
     assert client.put("/v1/sourcing/settings", json={"sourcing_budget_usd": 1}).status_code == 403
+
+
+def test_a_run_that_reaches_its_target_still_reads_everyone_it_added(session, job, blobs):
+    # Procure AI, 2026-10-21: the run stopped at its target and 49 people it had added never got a career reading.
+    autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", mode="weekly", target=1,
+                           open_tiers=["A", "B", "market"], role_variants=["InSAR engineer", "InSAR scientist"])
+    row = autosource.run(session, blobs, job.org_id, job.id, "manual", FakeExa())
+    assert row.stop_reason == "target" and row.found >= 1
+    added = {h.candidate_id for h in session.scalars(select(SourcingHit).where(SourcingHit.run_id == row.id))}
+    queued = {uuid.UUID(t.payload["candidate_id"]) for t in session.scalars(select(Task).where(Task.kind == "profile_candidate"))}
+    assert added and added <= queued

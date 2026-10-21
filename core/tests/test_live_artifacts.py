@@ -19,7 +19,8 @@ from maindscout.storage import LocalBlobStore
 
 FOLDER = Path(os.environ.get("TEST_ARTIFACTS", Path.home() / "Downloads" / "test_artifacts"))
 FILES = sorted(FOLDER.glob("*.pdf")) if FOLDER.exists() else []
-JD_FILES = [f for f in FILES if "catalyst" in f.name.lower() or "careers at" in f.name.lower()]
+# The job ads in the folder (the Bonaventura ad joined it on 2026-10-21 and was read as a CV until named here).
+JD_FILES = [f for f in FILES if any(w in f.name.lower() for w in ("catalyst", "careers at", "marketing_manager"))]
 CV_FILES = [f for f in FILES if f not in JD_FILES]
 
 pytestmark = pytest.mark.skipif(
@@ -44,17 +45,19 @@ def world(engine, tmp_path_factory):
                                            media_type="application/pdf", doc_type_hint=doc_type)
         return doc, process.process_document(session, blobs, client, org_id=org.id, document_id=doc.id, job_id=job_id)
 
-    jobs = {path.name: ingest(path, "jd")[1] for path in JD_FILES}
-    people = {}
-    for path in CV_FILES:
-        doc, first = ingest(path, "cv", next(iter(jobs.values())).job_id)
-        for job in list(jobs.values())[1:]:
-            process.process_document(session, blobs, client, org_id=org.id, document_id=doc.id, job_id=job.job_id)
-        people[path.name] = (doc, first)
-    yield {"session": session, "org": org, "jobs": jobs, "people": people}
-    session.close()
-    trans.rollback()
-    conn.close()
+    try:  # a failure here (a missing recording) must not leave the transaction open: it froze the next test (2026-10-21)
+        jobs = {path.name: ingest(path, "jd")[1] for path in JD_FILES}
+        people = {}
+        for path in CV_FILES:
+            doc, first = ingest(path, "cv", next(iter(jobs.values())).job_id)
+            for job in list(jobs.values())[1:]:
+                process.process_document(session, blobs, client, org_id=org.id, document_id=doc.id, job_id=job.job_id)
+            people[path.name] = (doc, first)
+        yield {"session": session, "org": org, "jobs": jobs, "people": people}
+    finally:
+        session.close()
+        trans.rollback()
+        conn.close()
 
 
 @pytest.mark.parametrize("path", CV_FILES, ids=[p.name[:30] for p in CV_FILES])

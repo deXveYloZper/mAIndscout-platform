@@ -185,7 +185,10 @@ def read(text: str, client: LLMClient, source: str) -> HiringOutcome:
             fields = {"domains": [d for d in raw.get("domains") or [] if d in DOMAINS] or domains_in(quote)}
         elif kind == "target_company":
             names = [n.strip() for n in raw.get("companies") or [] if n.strip() and n.strip().lower() in quote.lower()]
-            fields = {"companies": names}
+            if names:
+                fields = {"companies": names}
+            else:  # "the candidates should come from a competitor" names nobody: kept for the conversation, never
+                kind, fields = "other", {}  # dropped (2026-10-21); the strategy's peers are the competitors
         elif kind == "employment":
             if not EMPLOYMENT_WORDS.search(quote):
                 rejected.append({"item": raw.get("text", "")[:80], "reason": "the quote does not speak about permanent or contract work"})
@@ -215,5 +218,27 @@ def read(text: str, client: LLMClient, source: str) -> HiringOutcome:
             fields["note"] = raw["note"][:200]
         items.append(Item(kind, raw["strength"], raw.get("text", "").strip()[:200] or quote[:120], quote.strip()[:400],
                           where[0], where[1], fields))
+    if source == "intake":
+        items += _pay(text, items)
     cost = {"model": result.model, "input_tokens": result.input_tokens, "output_tokens": result.output_tokens, "usd": result.usd}
     return HiringOutcome(items, rejected, cost)
+
+
+# Pay said in notes ("The role pays €50k", "salary will peak around €50,000"). Never a rule (owner, 2026-10-19), but
+# a question for the call: kept when the model left it out (it did, 2026-10-21).
+_PAY = re.compile(r"(€|£|\$|\b(eur|euro|euros|gbp|usd|chf)\b)\s?\d|\d[\d.,]*\s?k?\s?(€|£|\$|\b(eur|euro|euros|gbp|usd|chf)\b)"
+                  r"|\b(salary|pay|pays|paid|compensation|package)\b[^.\n]{0,40}\d", re.I)
+
+
+def _pay(text: str, items: list[Item]) -> list[Item]:
+    out = []
+    for m in re.finditer(r"[^.\n]+", text):
+        sentence = m.group(0).strip()
+        if not _PAY.search(sentence):
+            continue
+        start = m.start() + m.group(0).index(sentence)
+        end = start + len(sentence)
+        if any(i.start < end and start < i.end for i in items):
+            continue  # the model read it already
+        out.append(Item("other", "must", sentence[:200], sentence[:400], start, end, {}))
+    return out

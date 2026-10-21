@@ -208,3 +208,33 @@ def test_a_few_words_typed_on_the_profile_are_read_like_notes(session, job):
     assert [n for n, _ in llm.calls] == ["hiring_profile", "role_brief"], "with a brief, it is read again"
     with pytest.raises(ValueError):
         briefs.tell(session, job.org_id, job.id, "ok", "owner@desk.test", llm)
+
+
+def test_dates_told_to_the_desk_replace_the_passed_edition_of_the_same_event(session, job):
+    from datetime import date
+
+    for label, iso in [("Hackathon London", "2026-08-26"), ("Hackathon Berlin", "2026-08-27")]:
+        review.assert_claim(session, job.org_id, "owner@desk.test", subject_type="job", subject_id=job.id,
+                            claim_type="JobRequirementClaim", payload={"text_raw": label, "category": "process", "strength": "unknown",
+                                                                       "normalized_token": iso, "distinctive": False})
+    said = "The next hackathon is on the 21st of November in London and on the 22nd of November in Germany."
+    listed = sorted((c.payload["normalized_token"], c.payload["text_raw"]) for c in session.scalars(select(Claim).where(
+        Claim.subject_id == job.id, Claim.claim_type == "JobRequirementClaim", Claim.status.in_(("proposed", "approved"))))
+        if c.payload.get("category") == "process")
+    at = {label: i for i, (_, label) in enumerate(listed)}
+    reply = {"dates": [
+        {"event": "Hackathon London", "replaces": at["Hackathon London"], "date": f"{date.today().year}-11-21", "quote": "21st of November in London"},
+        {"event": "Hackathon Germany", "replaces": at["Hackathon Berlin"], "date": f"{date.today().year}-11-22", "quote": "22nd of November in Germany"},
+        {"event": "Made up", "replaces": None, "date": "2026-12-01", "quote": "1 December"}]}
+    llm = ByName({"hiring_profile": {"items": []}, "process_dates": reply})
+    out = briefs.tell(session, job.org_id, job.id, said, "owner@desk.test", llm)
+    assert [(d["event"], d["date"][5:], d["replaced"][0]) for d in out["dates"]] == [
+        ("Hackathon London", "11-21", "Hackathon London"), ("Hackathon Germany", "11-22", "Hackathon Berlin")]
+    live = sorted((c.payload["text_raw"], c.payload["normalized_token"][5:]) for c in session.scalars(select(Claim).where(
+        Claim.subject_id == job.id, Claim.claim_type == "JobRequirementClaim", Claim.status.in_(("proposed", "approved"))))
+        if c.payload.get("category") == "process")
+    assert [x for x in live if x[0].startswith("Hackathon")] == [("Hackathon Germany", "11-22"), ("Hackathon London", "11-21")]
+    assert len(live) == len(listed), "the August dates are replaced, the ad's other date stays, nothing is invented"
+    quiet = ByName({"hiring_profile": {"items": []}})
+    briefs.tell(session, job.org_id, job.id, "Japanese is a plus", "owner@desk.test", quiet)
+    assert [n for n, _ in quiet.calls] == ["hiring_profile"], "no date in the words: the date reader is not asked"
