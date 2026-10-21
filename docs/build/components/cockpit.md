@@ -5,7 +5,7 @@
 **Code:** `cockpit/` (Next.js 15, React 19, TypeScript, plain CSS on design tokens, Lucide icons). Design: [../../design/PLAN.md](../../design/PLAN.md).
 
 ## What
-Where the recruiter works: jobs list, job page with the three bands, person page, and the inbox. Runs on `http://localhost:3001` with `npm run dev` in `cockpit/`.
+Where the recruiter works: jobs list, job page with the three bands, person page, and the inbox. Runs on `http://localhost:3001`: `npm run desk` in `cockpit/` for daily use (builds, then serves; pages open in about a second), `npm run dev` only while changing the code (it compiles each page on first open: 10–60 s a page on the owner's laptop, 2026-10-20; [performance](performance.md)).
 
 ## Why
 The vision's working day: open a job, drop CVs on it, work the priority pile, answer only the questions the system may not decide itself (VISION "Attention"; HANDOFF Milestone E).
@@ -50,7 +50,10 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
     - the market map in tiers A, B and C (open or closed), each company with its facts, why, progress (searches, found, known, relevant, exhausted) and pin, drop, add, find peers; "releasing talent" with the news sentence and its source ([talent-release-radar.md](talent-release-radar.md));
     - the role titles and countries;
     - "Search now", after which the tab follows the search live ("Searching…", refreshing itself until the run ends; the latest finds tagged "just found");
-    - the suggestions waiting, each with who found them and why, and where they work in facts ([company-knowledge.md](company-knowledge.md));
+    - the suggestions waiting, each a card in a few lines since step E (2026-10-20): one verdict, "LinkedIn ↗" beside
+      the name, the job with the company's size, why, what a possible is short of, what to settle on the call, the
+      three buttons, and Details for the rest: who found them, the employer's facts
+      ([company-knowledge.md](company-knowledge.md)), the strong-plus tags, the deeper check ([outreach.md](outreach.md));
     - the funnel, and recent runs (with their web and news searches).
 
     The older campaign sits folded below ("Search the desk only, by hand").
@@ -72,7 +75,16 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
 - **Brief ([brief.md](brief.md)):** call questions about the person and for the job, answered inline (confirmed / not met / note), asked, not needed; linked beside priority people and from the gap table.
 - **Search (`/search`) ([people-search.md](people-search.md)):** a search bar in your own words, "Understood as", results best first with ✓ ~ ✗ per criterion; filters under "Refine"; results with what each person meets, "Put on job"; "Find more people" on a job describes its profile search.
 - **Match ([matching.md](matching.md)):** on the person-on-job page, the tier with the rules that fired and a verdict per requirement; on the job page, the tier beside each person.
-- **Hiring profile ([hiring-profiles.md](hiring-profiles.md)):** on the job page, requirements by strength with source, quote, approve / reject and a strength control; the hiring company's facts; who we know at target companies; intake notes; add a requirement.
+- **Hiring profile ([hiring-profiles.md](hiring-profiles.md)):** on the job page, since step E (2026-10-20):
+  - the hiring company's facts;
+  - the role brief, each line with its source, and its questions with an answer box ([role-brief.md](role-brief.md));
+  - what we search and rate by (where people must live first, its "change" holding the role's countries), each line
+    with its strength, source and "change" (the line in your own words and its strength, Remove, the quote; the box
+    closes with Escape or a click outside), and Confirm all;
+  - "Tell the desk", beside the brief's questions: anything about the role in plain words, read like notes;
+  - for the call, nothing to confirm (visa and relocation among them);
+  - context: where the job is, process dates, then your notes and what you told the desk, folded;
+  - who we know at target companies, beside the named companies.
 - **Career profile ([career-profiles.md](career-profiles.md)):** on the person page, the reading, each dimension with its reason, notable items, questions for the call, and how each job was read with a "Correct" control.
 - **Coverage ([coverage-gate.md](coverage-gate.md)):** a job's "Archived: outside coverage" section and its "Countries this job accepts" panel; an archived person's note with "Bring back"; an "archived" tag in People.
 - **Job (`/jobs/[id]`):** "Find more people" when priority is thin (cap, result, campaign history; [sourcing.md](sourcing.md)); counts and review link in the header; where the job is; mobility as three facts (must live in, visa sponsorship, relocation); requirements grouped by kind with years and education tags; stale-date warning; drop several CVs at once, read one by one with a result row per file; Priority open by default, Review later and Do not submit folded away; each person's reason in plain words; band override with a note; requirements marked "decides the band" when distinctive; process dates.
@@ -83,7 +95,12 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
 - **Sign-in** (`/login`, `/invite/[token]`, `/account`, `/members` for owners) ([access.md](access.md)): every page needs a signed-in user; the header shows who, a desk switcher (more than one desk) and Sign out.
 - **Original files** are streamed through `/files/[id]`, which only accepts a document id. Only a real PDF or plain text opens in the browser; anything else downloads (`nosniff`, sandboxing CSP), so an uploaded HTML or SVG never runs on the desk's origin. `lib/api.ts` is `server-only`: the code that handles the session can never be bundled into the browser.
 - **Bound to this machine** (`next dev` and `next start` with `-H 127.0.0.1`): sign-in is built ([access](access.md)), but there is no HTTPS yet, so the cockpit must not be reachable from the network until hosting is decided (next build, phase 3).
-- Same palette and fonts as the public site; dense layout; works at phone width.
+- Same palette and fonts as the public site; dense layout; works at phone width. The top bar's search box shrinks
+  below its own text (`min-width: 0`), so a 375 px phone keeps the account button on screen (2026-10-20: every page
+  was 3 px too wide).
+- A page that loads a person, a role or a brief by id treats "not found" from any of its requests as the Not found
+  page (`apiOr404` on each). Before 2026-10-20 the person's calls or brief request could answer first and show
+  "Something went wrong" instead.
 
 ## Depends on
 [http-api.md](http-api.md) only.
@@ -92,9 +109,10 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
 The recruiter.
 
 ## Tests
-`npm run typecheck` and `npm run build` (in CI). End to end: `npm run e2e` (Playwright, 32 tests, real files and model against a production build, fresh `maindscout_e2e` database; local only). Report: [../../slice-0/TEST-REPORT.md](../../slice-0/TEST-REPORT.md). Checked by hand on 2026-10-02 against the running API with all 13 test files: job pages, inbox (Ovi's two emails, Yousuf's unreadable name), person page, approving a name, original-file download.
+`npm run typecheck` and `npm run build` (in CI). End to end: `npm run e2e` (Playwright, 32 tests with the sign-in, real files and model against a production build, fresh `maindscout_e2e` database; local only). Report: [../../slice-0/TEST-REPORT.md](../../slice-0/TEST-REPORT.md). Checked by hand on 2026-10-02 against the running API with all 13 test files: job pages, inbox (Ovi's two emails, Yousuf's unreadable name), person page, approving a name, original-file download.
 
 ## Known limits
 - e2e is local only (needs the real files and the model key, or recorded answers). It starts the API with the host's Python, so it cannot run on a machine where only the Docker core works ([cockpit-api](../connections/cockpit-api.md)).
-- The sourcing screens (Sourcing tab, Sourcing page, Permission panel, LinkedIn drafts) were checked by hand in the browser on a throwaway desk (2026-10-12); they have no e2e test yet.
+- The sourcing screens (Sourcing tab, Sourcing page, Permission panel, LinkedIn drafts) were checked by hand in the browser on a throwaway desk (2026-10-12); they have no e2e test yet. Step E's card was checked by hand on the owner's two roles with a throwaway sign-in (2026-10-20, laptop and phone width).
+- The Sourcing tab's market map was up to 139 px too wide on a phone: a company's long "not searched" tag did not wrap (fixed 2026-10-20).
 - No HTTPS: see "Bound to this machine" above.

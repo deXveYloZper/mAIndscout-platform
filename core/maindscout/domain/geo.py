@@ -54,19 +54,21 @@ _NA_REGION = re.compile(r",\s*(A[LKZR]|C[AOT]|D[EC]|FL|GA|HI|I[DLNA]|K[SY]|LA|M[
 _CA_REGION = re.compile(r",\s*(ON|QC|BC|AB|MB|SK|NS|NB|NL|PE)\b|\b(ontario|quebec|british columbia|alberta|manitoba)\b", re.I)
 
 
+_NAME_CODE = {n: code for code, names in NAMES.items() for n in names}
+_ORDER = {code: i for i, code in enumerate(NAMES)}
+_NAMES_RE = re.compile(r"(?<![\w-])(" + "|".join(re.escape(n) for n in sorted(_NAME_CODE, key=len, reverse=True)) + r")(?![\w-])")
+
+
 def country_in(text: str | None) -> str | None:
     """The country a free-text place names, or None. 'Pune, India' -> IN; 'London' alone -> None (we do not guess
     from cities, except US states / Canadian provinces written after a comma)."""
     if not text:
         return None
-    lowered = text.lower()
-    found = None
-    for code, names in NAMES.items():
-        for n in names:
-            if re.search(rf"(?<![\w-]){re.escape(n)}(?![\w-])", lowered):
-                found = found or code
-    if found:
-        return found
+    # One pattern for every name (2026-10-20: a loop of 300 searches per place made the Sourcing tab slow); the
+    # country earliest in NAMES still wins when a text names two.
+    codes = {_NAME_CODE[m.group(1)] for m in _NAMES_RE.finditer(text.lower())}
+    if codes:
+        return min(codes, key=_ORDER.__getitem__)
     for short, code in SHORT.items():
         if re.search(rf"(?<![\w.]){re.escape(short)}(?![\w])", text):
             return code
@@ -80,6 +82,38 @@ def country_in(text: str | None) -> str | None:
 def name_of(code: str) -> str:
     names = NAMES.get(code)
     return names[0].title() if names else code
+
+
+# Cities whose English and local names differ, so "Milano, Lombardia" is in Milan. Only for comparing a person's place
+# with the cities a role names (the suggestion card's "to settle on the call"); countries decide everything else.
+CITY_NAMES: list[set[str]] = [
+    {"milan", "milano"}, {"rome", "roma"}, {"turin", "torino"}, {"florence", "firenze"}, {"naples", "napoli"},
+    {"venice", "venezia"}, {"genoa", "genova"}, {"munich", "münchen", "muenchen"}, {"cologne", "köln", "koeln"},
+    {"nuremberg", "nürnberg", "nuernberg"}, {"vienna", "wien"}, {"prague", "praha"}, {"warsaw", "warszawa"},
+    {"lisbon", "lisboa"}, {"seville", "sevilla"}, {"copenhagen", "københavn", "kobenhavn"}, {"gothenburg", "göteborg"},
+    {"brussels", "bruxelles", "brussel"}, {"antwerp", "antwerpen", "anvers"}, {"the hague", "den haag", "'s-gravenhage"},
+    {"geneva", "genève", "geneve", "genf"}, {"zurich", "zürich", "zuerich"}, {"athens", "athina", "athína"},
+    {"bucharest", "bucurești", "bucuresti"}, {"krakow", "kraków", "cracow"}, {"gdansk", "gdańsk"},
+]
+
+
+def only_country(place: str | None) -> bool:
+    """Does a place name a country and nothing else ("Italy", "United Kingdom"), so the city is not known?"""
+    p = (place or "").strip().strip(",").strip()
+    return bool(p) and (p.lower() in {n for names in NAMES.values() for n in names} or p in SHORT)
+
+
+def in_city(place: str | None, cities: list[str]) -> bool | None:
+    """Is a free-text place in one of `cities`? None when it cannot be told (no place, no cities)."""
+    if not place or not cities:
+        return None
+    lowered = place.lower()
+    for city in cities:
+        c = city.strip().lower()
+        names = next((group for group in CITY_NAMES if c in group), {c})
+        if any(re.search(rf"(?<![\w-]){re.escape(n)}(?![\w-])", lowered) for n in names if n):
+            return True
+    return False
 
 
 @dataclass(frozen=True)

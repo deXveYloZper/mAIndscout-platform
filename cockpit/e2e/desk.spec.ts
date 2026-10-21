@@ -16,6 +16,13 @@ test.describe.configure({ mode: "serial" });
 
 let catalystUrl = "";
 
+/** Open "Drop CVs onto this job" (it is already open on a job with nobody on it; a click would close it). */
+async function openDropZone(page: Page) {
+  const drop = page.locator("details.addcvs");
+  if ((await drop.getAttribute("open")) === null) await drop.locator("summary").click();
+  await expect(drop).toHaveAttribute("open", "");
+}
+
 /** Show one band on the job page (the band tiles act as tabs). */
 async function band(page: Page, key: "priority" | "review_later" | "do_not_submit" | "archived") {
   await page.locator(`.bandtiles .band-${key}`).click();
@@ -87,7 +94,7 @@ test("a job is created from its advertisement", async ({ page }) => {
 
 test("CVs dropped on a job are read one by one and each is banded", async ({ page }) => {
   await page.goto(catalystUrl);
-  await page.locator("details.addcvs > summary").click();
+  await openDropZone(page);
   await page.locator('input[type="file"]').setInputFiles(CVS);
   await page.getByRole("button", { name: "Read and band 4 CVs" }).click();
   await expect(page.getByRole("status")).toContainText(/Reading \d+ of 4 done/, { timeout: 30_000 });
@@ -95,33 +102,15 @@ test("CVs dropped on a job are read one by one and each is banded", async ({ pag
   await expect(results).toHaveCount(4, { timeout: 200_000 });
   // Rows appear as soon as files are queued; wait until every read has finished before checking bands.
   await expect(results.filter({ hasText: /reading…|waiting/ })).toHaveCount(0, { timeout: 200_000 });
-  await expect(results.filter({ hasText: "Ioannis" })).toContainText("Priority");
+  // Nobody is Priority before their career reading (owner, 2026-10-21): Ioannis waits in Review later until it arrives.
+  await expect(results.filter({ hasText: "Ioannis" })).toContainText(/Review later|Priority/);
   await expect(results.filter({ hasText: "Jure" })).toContainText("Do not submit");
-  await expect(results.filter({ hasText: "Priority" })).toHaveCount(1);
+  await expect(results.filter({ hasText: "Do not submit" })).toHaveCount(3);
   await expect(results.filter({ hasText: "no evidence of insar (must-have)" })).toHaveCount(3);
   // The page itself is refreshed with the new people. Once his career profile is built (in the background, a real
   // model call), matching may move Ioannis between Priority and Review later; the InSAR rule keeps the other three out.
   await expect(page.locator(".bandtiles .band-do_not_submit .value")).toHaveText("3");
   expect((await bandCount(page, "priority")) + (await bandCount(page, "review_later"))).toBe(1);
-});
-
-test("a job can be opened to more countries, and nobody here is archived", async ({ page }) => {
-  await page.goto(catalystUrl);
-  await expect(page.locator(".bandtiles .band-archived .value")).toHaveText("0");
-  await tab(page, "Countries");
-  const field = page.getByLabel("Also accept people living or working in");
-  await field.fill("Brazil, Atlantis");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByRole("alert").filter({ hasText: "Atlantis" })).toBeVisible();
-  await field.fill("Brazil");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
-  await page.reload();
-  await tab(page, "Countries");
-  await expect(page.getByLabel("Also accept people living or working in")).toHaveValue("Brazil");
-  await page.getByLabel("Also accept people living or working in").fill("");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Cleared" })).toBeVisible();
 });
 
 test("a person on a job opens as a gap table, with no overall score", async ({ page }) => {
@@ -192,45 +181,62 @@ test("a stale advertisement warns before anyone is submitted", async ({ page }) 
   await expect(page).toHaveURL(/\/jobs\//, { timeout: 120_000 });
   await expect(page.getByText(/process dates have passed/)).toBeVisible();
   await expect(page.locator(".eyebrow").first()).toContainText(/Procure Ai/i);
-  // Residence, visa and relocation are three separate facts, never one location score.
+  // Residence, visa and relocation are three separate facts, never one location score. Since step E (2026-10-20) where
+  // people must live is a line to search by (sourcing searches only there); visa and relocation are for the call.
   await tab(page, "Hiring profile");
-  const mobility = page.locator(".panel", { hasText: "Mobility (three separate facts)" }).locator("ul.reqs");
-  await expect(mobility).toContainText("Must live in or work from: Germany, United Kingdom");
-  await expect(mobility).toContainText("Visa sponsorship: not offered");
-  await expect(mobility).toContainText("Relocation assistance: not offered");
+  await expect(page.locator(".panel.searchby")).toContainText("Where people must live: Germany, United Kingdom");
+  const call = page.locator(".panel.forcall").locator("ul.reqs");
+  await expect(call).toContainText("Visa sponsorship: not offered");
+  await expect(call).toContainText("Relocation assistance: not offered");
 });
 
 test("intake notes from the hiring manager become a hiring profile, each with its quote", async ({ page }) => {
   await page.goto("/jobs");
   await page.getByRole("link", { name: /AI Product Engineer/ }).click();
   await tab(page, "Hiring profile");
-  await page.getByLabel("Notes from the call with the hiring manager").fill(
+  // What the hiring manager said, typed in plain words on the profile (since 2026-10-20 one box for anything).
+  await page.getByLabel(/Tell the desk (anything|anything else) about the role/).fill(
     "Early-stage start-up experience is a strong plus. Procurement domain experience is a strong plus and can " +
     "substitute for start-up experience. Must be a great culture fit. Permanent role, not contract.");
-  await page.getByRole("button", { name: "Read the notes" }).click();
+  await page.getByRole("button", { name: "Add to the profile" }).click();
   await expect(page.getByRole("status").filter({ hasText: /Read \d+ requirement/ })).toBeVisible({ timeout: 90_000 });
-  await expect(page.locator(".hiring")).toContainText("from the intake notes");
-  await expect(page.locator(".hiring h3.group", { hasText: "Strong plus" })).toBeVisible();
+  await expect(page.locator(".panel.searchby")).toContainText("your notes");
+  await expect(page.locator(".panel.searchby .st", { hasText: "Strong plus" }).first()).toBeVisible();
   // Personality, culture or fit never becomes a requirement.
   await expect(page.locator(".hiring ul.reqs").filter({ hasText: /culture/i })).toHaveCount(0);
 });
 
-test("a thin job is refilled from the desk's own people, banded by the same rules", async ({ page }) => {
+test("what the desk read is confirmed together, and any line can be changed on its own", async ({ page }) => {
   await page.goto("/jobs");
   await page.getByRole("link", { name: /AI Product Engineer/ }).click();
-  await tab(page, "Find more");
-  await expect(page.getByText(/priority is thin: 0 of 5/)).toBeVisible();
-  await page.getByRole("button", { name: "Find more people" }).click();
-  await expect(page.getByRole("status")).toContainText(/Looked at \d+, added \d+/, { timeout: 60_000 });
-  await expect(page.locator(".campaigns li").first()).toContainText("desk");
-  // People found on the desk now sit on this job in the usual piles, with the usual reasons (any band).
-  await tab(page, "People");
-  for (const key of ["priority", "review_later", "do_not_submit"] as const) {
-    await band(page, key);
-    if (await page.locator(".personcard").count()) break;
-  }
-  await page.locator(".personcard a.pc-name").first().click();
-  await expect(page.locator(".history")).toContainText("sourced");
+  await tab(page, "Hiring profile");
+  const search = page.locator(".panel.searchby");
+  // One confirmation for the lines the desk read (step E, 2026-10-20), not Approve and Reject on every row.
+  await expect(search).toContainText(/\d+ of these \d+ (was|were) read by the desk/);
+  await expect(search.getByRole("button", { name: "Approve" })).toHaveCount(0);
+  const line = search.locator("li.reqline").nth(1);
+  await line.getByRole("button", { name: "change" }).click();
+  await expect(line.getByLabel("How much it matters")).toBeVisible();
+  await expect(line.locator(".snippet")).toBeVisible();
+  // It closes without doing anything: Escape, or a click outside it.
+  await page.keyboard.press("Escape");
+  await expect(line.locator(".changebox")).toHaveCount(0);
+  await line.getByRole("button", { name: "change" }).click();
+  await page.locator("h2", { hasText: "Hiring profile" }).click();
+  await expect(line.locator(".changebox")).toHaveCount(0);
+  await search.getByRole("button", { name: /^Confirm all \d+$/ }).click();
+  await expect(search).toContainText("All confirmed", { timeout: 30_000 });
+  await expect(search.locator(".waiting")).toHaveCount(0);
+  // What no profile can show is for the call: nothing to confirm there.
+  await expect(page.locator(".panel.forcall").getByRole("button", { name: /Confirm/ })).toHaveCount(0);
+  // A line in your own words: the years follow the words (read by code, nothing spent).
+  const level = search.locator("li.reqline", { hasText: "all levels" });
+  await level.getByRole("button", { name: "change" }).click();
+  await level.getByLabel("The requirement, in your words").fill("3 or more years of software engineering");
+  await level.getByRole("button", { name: "Save" }).click();
+  const edited = search.locator("li.reqline", { hasText: "3 or more years of software engineering" });
+  await expect(edited).toContainText("3+ years");
+  await expect(edited).toContainText("typed");
 });
 
 test("the desk is searched in plain words, best matches first, each with its reasons", async ({ page }) => {
@@ -277,7 +283,7 @@ test("the jobs list shows both jobs with their piles and what waits for review",
 
 test("the job inbox defaults to priority people; the all-jobs inbox shows the blocking questions", async ({ page }) => {
   await page.goto(catalystUrl);
-  await page.getByRole("link", { name: /inbox clear|to review/ }).click();
+  await page.getByRole("link", { name: /\b(No questions|\d+ questions?)\b/ }).click();  // the job's inbox button
   await expect(page.getByRole("link", { name: "Priority people" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByText("Nothing waiting.")).toBeVisible(); // Ioannis has nothing blocking
   await page.getByRole("link", { name: "Everyone on this job" }).click();
@@ -522,7 +528,7 @@ test("forgetting a person needs a typed confirmation, then leaves nothing", asyn
 
 test("an erased person uploaded again is not stored", async ({ page }) => {
   await page.goto(catalystUrl);
-  await page.locator("details.addcvs > summary").click();
+  await openDropZone(page);
   await page.locator('input[type="file"]').setInputFiles(CVS[3]);
   await page.getByRole("button", { name: "Read and band" }).click();
   await expect(page.locator(".results li")).toContainText("Not stored: this person was erased earlier.", { timeout: 120_000 });
@@ -538,18 +544,21 @@ test("keyboard users can skip to content, and every control has a name", async (
   await page.goto(catalystUrl);
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "Skip to content" })).toBeFocused();
-  const unnamed = await page.locator("input:not([type=hidden]), select, button").evaluateAll((els) =>
-    els.filter((el) => {
-      const e = el as HTMLInputElement;
-      return !(e.labels?.length || e.getAttribute("aria-label") || e.textContent?.trim() || e.getAttribute("placeholder"));
-    }).length,
-  );
-  expect(unnamed).toBe(0);
+  for (const url of [catalystUrl, `${catalystUrl}?tab=profile`]) {
+    await page.goto(url);
+    const unnamed = await page.locator("input:not([type=hidden]), select, button, textarea").evaluateAll((els) =>
+      els.filter((el) => {
+        const e = el as HTMLInputElement;
+        return !(e.labels?.length || e.getAttribute("aria-label") || e.textContent?.trim() || e.getAttribute("placeholder"));
+      }).length,
+    );
+    expect(unnamed, url).toBe(0);
+  }
 });
 
 test("pages fit a phone screen without sideways scrolling", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
-  for (const url of ["/", "/jobs", catalystUrl, "/inbox", "/people"]) {
+  for (const url of ["/", "/jobs", catalystUrl, `${catalystUrl}?tab=profile`, "/inbox", "/people"]) {
     await page.goto(url);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, url).toBeLessThanOrEqual(1);

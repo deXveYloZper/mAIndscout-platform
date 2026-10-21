@@ -40,6 +40,10 @@ The owner (2026-10-13): "we should be aware that our initial list of companies w
   - **Deeper searches** (owner, 2026-10-13: replies take time, so each search should give a longer list). A search at a company asks for about a quarter of its staff, from 10 to 50 (`max_results`), or 25 when its size is unknown; a country-wide search asks for 25. Exa charges $0.007 for 10 and $0.001 for each one beyond, so 50 cost about $0.047. In a test, all 25 results of "software engineer at Omnea" (219 staff) really worked there. The budget check uses each search's own price.
   - **Only that company's people count.** A result counts only when the person's work history shows the company (its Exa ID, one of its names, or its LinkedIn page). Look-alikes are skipped and never stored: on the first real run, 20 results for a 9-person company included none of its people. A suggestion says "works at X now" or "worked at X before".
   - A company is **exhausted** when every variant has been searched and either the last 2 searches found no new relevant person, or 80% of its results were already known. An exhausted company waits 90 days, unless the radar flags it.
+  - **Relevant is counted as it stands now** (2026-10-19, `relevant_now`): the strong suggestions each search found, by their current
+    band. Most people become strong only when their career reading arrives after the run; counted when found, every marketing
+    search read 0 while Safilo's three had found 15 strong people, and Safilo was rested as exhausted. The widening proposal's
+    yield is counted the same way.
   - Per company the plan keeps searches, results, known, relevant and the date of the last search.
   - **Snowball** (after each run): an earlier employer of 2 or more strong people for the role becomes a tier B target. A company that has produced 3 or more strong suggestions gets its own peer search, once.
   - **Country-wide searches by title run only when the owner opens them.**
@@ -56,6 +60,11 @@ The owner (2026-10-13): "we should be aware that our initial list of companies w
   - last of all, country-wide searches.
 
   **Checkpoint 2:** the owner picks one, and it becomes a new plan version. Tier A always stays open.
+- **A luxury client recruits from luxury** (2026-10-18, [decision](../../decisions/2026-10-18-every-kind-of-role.md)):
+  when the role's own requirements say luxury, its industry searches use luxury words ("luxury hotels, five-star hotel
+  groups and high-end hospitality companies in Italy") and a company known not to be luxury (a 4-star chain, a tour
+  operator) is not searched; the map says "not a luxury company". The talent DNA searches the client by the name
+  its confirmed profile gives ("BONAVENTURA", not the ad's "BUONAVENTURA").
 - **In step with the hiring profile** (`sync`, at every run and page view; owner 2026-10-13): its "must live in" countries are the role's countries, and every company it names is a pinned tier A target. A new plan version only when something changed.
 - **Where the role is.** The hiring profile's "must live in" countries, else the places the ad names ("LOCATION: Markham or Gatineau"). A city that names no country counts as the hiring company's home country. The sync only adds these countries; one the owner added is never taken away. When the ad names its place, the strategy never replaces it with where the hiring company's team works.
 - **Companies that can give the role nobody are not searched:** one that has shut down (by its public facts), or one whose team works only outside the role's countries (from its profile). The map says why ("not searched: no team in the role's countries"). Pinning searches it anyway.
@@ -93,6 +102,25 @@ The owner (2026-10-13): "we should be aware that our initial list of companies w
   - A background it does not want (consultancy, agency, public sector, non-profit) keeps companies of that kind out of the peer list and the batches.
 - The old "Find peer companies on the web" button is gone: the strategy finds peers.
 
+## A competitor is of comparable size (step C, 2026-10-21)
+A company 20 or more times the client's size is in its market but no competitor (`much_bigger`, the same factor as
+the move check): a new map lists it in Tier C ("in the client's market, much bigger"), and on an existing map it
+says "about 197x the client's size: not a competitor (searched only if you widen to Tier C)". It is searched once
+Tier C is open, or when pinned; a company the hiring manager or the owner named is always searched.
+
+## From the owner's 0-to-1 test (2026-10-21)
+Three roles rebuilt from an empty desk showed four kinds of wrong target; each is now refused by code:
+- **A search by the role's skill** ("insar companies in United Kingdom") also returned look-alike names: a
+  confined-space rescue firm (ISAR3), an automotive one (INSPHERE). A company found that way must name the skill
+  in its own description.
+- **A nice-to-have industry** ("infrastructure, dam, mining or other asset monitoring") filled the InSAR map with
+  water utilities. The role's required industries decide where to hunt; nice-to-have ones only when it names none
+  (an anonymised ad whose only industry is a nice-to-have sentence still has one).
+- **A product company's peers** included seven procurement consultancies (Procure AI). Consultancies, agencies and
+  outsourcers are never "like" a product company.
+- **A company the hiring profile rules out** (Valentino) was listed as a target: it is never added, and if listed
+  the map says "not searched: the hiring profile says not to recruit from here" (the search had always skipped it).
+
 ## Tests
 `core/tests/test_phase1b.py`:
 - the strategy reads the talent DNA and builds tiers: only the client's own people by exact ID, noise dropped, the hiring company never a target, countries from the team, peer searches phrased from the profile, micro companies left out, nobody at the client stored;
@@ -106,3 +134,28 @@ The owner (2026-10-13): "we should be aware that our initial list of companies w
 - Not yet built for a real role; the talent DNA was tried by hand on Procure Ai (13 people, $0.041).
 - For a small hiring company the feeder list is thin. The pattern (kinds, sizes, fields) is what guides the owner; it is shown, not yet used to filter tier B automatically.
 - "Relevant" is the band when found, so a later re-match does not change a company's past counts.
+
+## Competitors researched on the web (step D, 2026-10-21)
+The owner: "the LLM deep search into competitors and similar companies is a must ... we should not even bother to
+search companies that are way out the size range". Building the list (`strategy.build`) now starts with one Grok web
+search (`intelligence/competitors.py`, up to 12 searches, about $0.20-0.50) for the client's competitors and similar
+companies with people in the role's countries, 25 to 40 when the market has them. It is given only what the desk knows of
+the client (what it sells, its kinds of work, its size, where), never a person. Each company must come with a page the
+search opened and a short quote from it that names the company, or it is refused (the Sourcing tab says how many and
+why). Each is confirmed by Exa (its size, where its team is); one 20 or more times the client's size is left out
+and never searched, and so is one found by a company search (it used to go to Tier C). The rest are tier "competitor",
+in Tier A with the named and feeder companies: the first places searched. The tab shows what the research found:
+how many, kept, left out as much bigger, refused, pages read and cost.
+
+A small company (150 people or fewer) is searched with one broad search for the role's kind of work ("marketing") in
+place of each title variant: a 40-person brand has two or three marketing people, whatever their titles.
+
+First live run, Bonaventura (2026-10-21): one call found 10 companies, so the research now goes deeper. Up to three
+rounds, each later one told every company already known and looking from another side (smaller, online and
+direct-to-consumer brands, the same retailers and districts; then neighbouring categories and nearby countries); a
+round adding fewer than 3 new is the last. A quote that does not name the company is kept only when Exa confirms the
+company (a page's "about" sentence often never says its name); a refusal keeps the start of its quote. A listed company
+the research names becomes a competitor. A rebuild drops what the desk's own searches listed earlier that is now known
+to be far bigger, or that the hiring profile says not from (Valentino, Dolce&Gabbana, Armani, Prada Group went);
+never a company a person named, pinned or placed. Bonaventura: 3 rounds, 197 pages, $0.44, 28 kept, Bottega Veneta,
+TOD'S and Brunello Cucinelli left out as far bigger; 49 competitors in Tier A with the earlier round's.

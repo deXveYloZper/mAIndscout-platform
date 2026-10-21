@@ -10,7 +10,8 @@ type Brief = { available: boolean; reason?: string; items: BriefItem[]; contacts
 /** A Brief without a job: for anyone on the desk (in the pool, sent a CV, or met at an event). */
 export default async function PersonBrief({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [person, brief] = await Promise.all([apiOr404<PersonPage>(`/v1/candidates/${id}`), api<Brief>(`/v1/candidates/${id}/brief`)]);
+  // Either request can be the first to say "not found" for an unknown id: both show the Not found page.
+  const [person, brief] = await Promise.all([apiOr404<PersonPage>(`/v1/candidates/${id}`), apiOr404<Brief>(`/v1/candidates/${id}/brief`)]);
   const path = `/people/${id}/brief`;
   return (
     <>

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maindscout.local/schemas/company_practice_claim.schema.json",
+  "title": "CompanyPracticeClaim payload",
+  "description": "A technology, tool, method or standard a company uses in its own work, read from its own job adverts or careers pages (owner, 2026-10-17). Employer evidence: a person in that area of work there is likely to use it too, never proof that they do. Never anything about a person.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["token", "raw_label", "kind", "area"],
+  "properties": {
+    "token": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60,
+      "description": "Lowercase token, as skills use it: react, node.js, salesforce, sap ariba, scrum."
+    },
+    "raw_label": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "kind": { "type": "string", "enum": ["technology", "tool", "method", "standard"] },
+    "area": {
+      "type": "string",
+      "enum": ["engineering", "product_design", "commercial", "operations", "company_wide"],
+      "description": "The area of work it is used in (the groups of role families); company_wide when the page does not tie it to one team."
+    }
+  }
+}

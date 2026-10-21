@@ -76,7 +76,9 @@ def undecided_pairs(session: Session, org_id: uuid.UUID, job_id: uuid.UUID | Non
     for cid, kind in session.execute(select(DocumentSubject.subject_id, Document.doc_type).join(
             Document, Document.id == DocumentSubject.document_id).where(DocumentSubject.subject_id.in_({c for _, c in rows}))):
         kinds.setdefault(cid, set()).add(kind)
-    return {(j, c) for j, c in rows if kinds.get(c) and kinds[c] <= {"web_profile"}}
+    from maindscout.db.models import PUBLIC_DOC_TYPES
+
+    return {(j, c) for j, c in rows if kinds.get(c) and kinds[c] <= PUBLIC_DOC_TYPES}
 
 
 def undecided(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> set[uuid.UUID]:
@@ -91,12 +93,14 @@ def reach(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID, job: Job
     contributors. The role's own title decides whether it is one ("Head of Engineering" is its own job spec)."""
     if MANAGEMENT_ROLE.search(job.title or ""):
         return None
-    for c in session.scalars(select(Claim).where(Claim.org_id == org_id, Claim.subject_id == candidate_id,
-                                                 Claim.claim_type == "CareerStepClaim", Claim.status.in_(LIVE),
-                                                 Claim.valid_to.is_(None))):
+    from maindscout.api import memo
+
+    for c in memo.places_and_steps(session, org_id, candidate_id):
+        if c.claim_type != "CareerStepClaim" or c.valid_to is not None:
+            continue
         title = (c.approved_view or c.payload).get("title_raw") or ""
         if MANAGES.search(title):
-            return f"{title} now: above this role. Ask whether they would go back to hands-on work."
+            return f"{title} now, above this role: ask whether they would go back to hands-on work"
     return None
 
 

@@ -190,7 +190,8 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 20px 0; }
 }
 .btn.menu-btn { display: none; }
 .findbar {
-  display: flex; align-items: center; gap: 10px; flex: 1; max-width: 520px; height: 36px; padding: 0 12px;
+  /* min-width 0: shrink below its text so a 375 px phone keeps the account button on screen (its text ends in "…") */
+  display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; max-width: 520px; height: 36px; padding: 0 12px;
   border-radius: var(--r); background: var(--bg-raise-2); border: 1px solid var(--line);
   color: var(--cream-faint); cursor: pointer; text-align: left;
   transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease);
@@ -401,6 +402,25 @@ tr.rowlink { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .live .dot { animation: none; } }
 .blocktag { background: var(--amber-soft); border-style: solid; }
 .verdict.gap, .verdict.against { color: var(--cream-faint); text-decoration: line-through; }
+.gapstatus.likely { background: var(--slate-soft); color: var(--slate); }
+.tag.warn { background: var(--red-soft); color: var(--red); }
+/* The deeper look at a strong match: findings quoted from their public work. */
+.evidence .findings { margin: 4px 0 0; padding-left: 0; list-style: none; display: grid; gap: 4px; font-size: 13px; color: var(--cream-dim); }
+.evidence .findings a { color: var(--cream-faint); }
+/* Findings sit inside a person card: none of the card list's own row layout. */
+.people .evidence .findings li { display: block; grid-template-columns: none; margin: 0; padding: 0; border: 0;
+  background: none; line-height: 1.45; }
+.people .evidence .findings li:hover { background: none; }
+.evidence .findings .tag { display: inline-block; vertical-align: baseline; }
+.evidence.weakened > .hint strong, .evidence.mixed > .hint strong { color: var(--red); }
+.evidence.confirmed > .hint strong { color: var(--green); }
+form.inline { display: inline-block; margin-top: 4px; }
+/* The role's strong-plus items on a suggestion: met, partly, missing, to ask. */
+.plusline { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.plustag { font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--cream-faint); }
+.plustag.strong { background: var(--green-soft); border-color: transparent; color: var(--green); }
+.plustag.partial { background: var(--amber-soft); border-color: transparent; color: var(--amber-text); }
+.plustag.gap { text-decoration: line-through; }
 .chip { height: 24px; padding: 0 10px; font-size: 12px; margin: 2px 4px 2px 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chips li { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 999px; background: var(--bg-raise-2); border: 1px solid var(--line); font-size: 13px; }
@@ -531,6 +551,96 @@ table.gaps tr.conflict td:first-child { box-shadow: inset 2px 0 0 var(--red); }
 .reqacts { gap: 6px; margin-top: 4px; flex-wrap: wrap; }
 .intake textarea { width: 100%; max-width: 680px; display: block; margin: 6px 0; }
 .notes { white-space: pre-wrap; color: var(--cream-dim); }
+/* Step E (2026-10-20): the hiring profile in three groups, the role brief on top, its questions with an answer box */
+.panel.rolebrief { border-color: var(--amber-line); }
+.briefread { margin: -6px 0 8px; font-size: 12px; }
+.brieflines { margin: 4px 0 0; }
+.bline { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 12px; padding: 9px 0; border-top: 1px solid var(--line); }
+.bline:first-child { border-top: 0; }
+.bline dt { font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--cream-faint); padding-top: 3px; }
+.bline dd { margin: 0; min-width: 0; }
+.bline .quote { display: block; color: var(--cream-faint); font-size: 12.5px; margin-top: 3px; font-style: italic; }
+.srcchip { font: 500 10.5px var(--mono); padding: 1px 7px; border-radius: 999px; margin-left: 4px; white-space: nowrap; vertical-align: 1px; }
+.srcchip.ad { background: var(--slate-soft); color: var(--slate); }
+.srcchip.notes { background: var(--amber-soft); color: var(--amber-text); }
+.srcchip.research { background: var(--green-soft); color: var(--green); }
+.srcchip.reading { border: 1px dashed var(--cream-faint); color: var(--cream-dim); }
+.srcchip.you { background: var(--amber); color: #15120c; }
+.questions .question { border: 1px solid var(--amber-line); background: var(--amber-soft); border-radius: var(--r); padding: 12px 14px; margin-top: 8px; }
+.question .qtext { font-weight: 500; margin: 0; }
+.question .qwhy { color: var(--cream-dim); font-size: 12.5px; margin: 2px 0 8px; }
+.answer textarea { width: 100%; min-height: 54px; display: block; margin-bottom: 6px; }
+.answer .row { gap: 8px; flex-wrap: wrap; align-items: center; }
+.noquestions { margin: 2px 0 0; }
+.reqs.grouped { margin: 4px 0 0; padding: 0; list-style: none; }
+.reqs.grouped li.reqline { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto auto; gap: 10px; align-items: baseline; padding: 8px 0; }
+.reqs.grouped li.reqline.quiet { grid-template-columns: minmax(0, 1fr) auto auto; }
+.reqs.grouped li.reqline:last-child { border-bottom: 0; }
+.reqline .st { font: 500 10.5px var(--mono); text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 7px; border-radius: var(--r-sm); text-align: center; }
+.st-must { background: var(--bg-raise-3); color: var(--cream); }
+.st-plus { background: var(--amber-soft); color: var(--amber-text); }
+.st-nice { background: var(--bg-raise-2); color: var(--cream-dim); }
+.st-anti { background: var(--red-soft); color: var(--red); }
+.reqline .rtext { min-width: 0; }
+.reqline .rtext .tag, .reqline .rtext .pill { margin: 0 0 0 6px; }
+.reqline .rsrc { color: var(--cream-faint); font-size: 12px; white-space: nowrap; }
+.reqline .waiting { font: 500 10px var(--mono); color: var(--amber-text); border: 1px solid var(--amber-line); border-radius: 999px; padding: 0 6px; margin-left: 6px; }
+.change { position: relative; justify-self: end; }
+.changelink { background: none; border: 0; padding: 0; font: inherit; font-size: 12px; color: var(--cream-faint); cursor: pointer; }
+.changelink:hover, .changelink[aria-expanded="true"] { color: var(--amber-text); }
+.changeclose { position: absolute; top: 6px; right: 8px; background: none; border: 0; color: var(--cream-faint); font-size: 14px;
+  cursor: pointer; padding: 4px 6px; line-height: 1; }
+.changeclose:hover { color: var(--cream); }
+.editreq { display: grid; gap: 6px; padding-right: 22px; }
+.editreq textarea { width: 100%; min-height: 48px; }
+.editreq .hint { margin: 0; }
+.tell { display: grid; gap: 6px; margin-top: 12px; }
+.tell textarea { width: 100%; min-height: 60px; }
+.changebox {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 10; width: min(460px, calc(100vw - 48px)); padding: 12px;
+  display: grid; gap: 8px; background: var(--bg-raise-2); border-radius: var(--r); box-shadow: var(--shadow-pop); animation: pop var(--med) var(--ease);
+}
+.changebox .row { gap: 6px; flex-wrap: wrap; align-items: center; }
+.changebox .snippet { margin: 0; }
+.reqs li:has(.changebox) { position: relative; z-index: 30; }
+.confirmbar { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 12px;
+  padding-top: 12px; border-top: 1px solid var(--line-strong); }
+.forcall h3 .sub { font-weight: 400; font-size: 12px; }
+.context details.fold { padding: 10px 0 0; margin-top: 10px; border-top: 1px solid var(--line); }
+.context details.fold[open] > summary { margin-bottom: 8px; }
+@media (max-width: 600px) {
+  .reqs.grouped li.reqline { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
+  .reqline .st { grid-column: 1 / -1; justify-self: start; }
+  .reqline .rsrc { grid-column: 1; }
+  .reqs.grouped li.reqline.quiet { grid-template-columns: minmax(0, 1fr) auto; }
+  .reqline.quiet .rtext { grid-column: 1 / -1; }
+  .bline { grid-template-columns: 1fr; gap: 2px; }
+}
+/* Step E: a suggestion card in a few lines (one verdict, their public profile a click away, why, what to settle) */
+.cardverdict { font: 600 10.5px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; padding: 2px 8px; border-radius: var(--r-sm); }
+.cardverdict.strong { background: var(--amber-soft); color: var(--amber-text); }
+.cardverdict.possible { background: var(--slate-soft); color: var(--slate); }
+.cardverdict.reading { background: transparent; border: 1px dashed var(--line-strong); color: var(--cream-dim); }
+.quicklinks { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+a.quicklink { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 12px;
+  color: var(--amber-text); border: 1px solid var(--amber-line); text-decoration: none; }
+a.quicklink svg { width: 12px; height: 12px; }
+a.quicklink:hover { background: var(--amber-soft); color: var(--amber-text); }
+a.quicklink.seen { color: var(--cream-dim); border-color: var(--line-strong); }
+.quickseen { font-size: 11px; color: var(--cream-faint); }
+.personcard p.main { margin: 0; font-size: 13.5px; overflow-wrap: anywhere; }
+.personcard p.main strong { font-weight: 500; }
+.personcard p.main .num { font-family: var(--mono); font-size: 12.5px; color: var(--cream-dim); }
+.personcard p.why { margin: 0; font-size: 13px; color: var(--cream); }
+.personcard p.shortof { margin: 0; font-size: 12.5px; color: var(--cream-dim); }
+.personcard p.settle { margin: 0; font-size: 12.5px; color: var(--amber-text); }
+.linetag { font: 500 10px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; margin-right: 6px; padding: 1px 6px;
+  border-radius: var(--r-sm); border: 1px solid currentColor; opacity: 0.85; white-space: nowrap; }
+.personcard .triage { margin-top: 4px; }
+details.pc-details > summary { font-size: 12px; color: var(--cream-faint); }
+.pc-more { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; padding-left: 12px; border-left: 1px solid var(--line); }
+.pc-more .hint { margin-top: 2px; }
+details.howto { margin-top: 12px; }
 .addreq .row { margin-bottom: 8px; flex-wrap: wrap; }
 .addreq fieldset { gap: 10px; }
 .match .rules { margin: 4px 0; padding-left: 18px; list-style: disc; }
@@ -880,6 +990,12 @@ label.check { display: inline-flex; align-items: center; gap: 6px; font-size: 13
   border-bottom: 1px solid var(--line); }
 .runs li { flex-direction: column; gap: 4px; }
 .targets li:last-child, .runs li:last-child { border-bottom: 0; }
+/* A company's long tags ("not searched: no team in the role's countries…") wrap, so pin and remove stay on a phone's
+   screen (2026-10-20: the market map was up to 139 px too wide at 375 px). */
+.targets li > div:first-child { min-width: 0; flex: 1; }
+.targets li > .row { flex: none; flex-wrap: nowrap; }
+.targets .blocktag, .targets .releasetag { white-space: normal; height: auto; min-height: 20px; line-height: 1.35; padding-top: 2px;
+  padding-bottom: 2px; }
 .targets li.off strong { text-decoration: line-through; color: var(--cream-faint); }
 .targets .hint, .runs .hint { margin-top: 2px; }
 .groupnav { display: flex; gap: 4px; flex-wrap: wrap; margin: 4px 0 12px; }

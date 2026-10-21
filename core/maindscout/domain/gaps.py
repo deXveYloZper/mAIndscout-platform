@@ -2,6 +2,8 @@
 
 Each row is one of:
 - evidence  the person's facts support it (with the facts, and whether they are approved);
+- likely    nothing of theirs shows a skill, but their employer uses it in their area of work, by the employer's own
+            job adverts (employer evidence, owner 2026-10-17): a reason to ask, never proof;
 - missing   nothing in the file speaks to it;
 - conflict  the facts speak against it (e.g. fewer years than asked);
 - question  only a conversation can settle it (residence, visa, relocation, vague requirements).
@@ -12,12 +14,14 @@ There is no total and no score. Where someone lives is never a conflict: it is a
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from maindscout.intelligence.triage import canon, supports
 
-STATUSES = ("evidence", "missing", "conflict", "question")
+STATUSES = ("evidence", "likely", "missing", "conflict", "question")
+PRACTICE = "CompanyPracticeClaim"  # an employer's fact, given to the gap table once per stint it covers (api/practices.py)
+PRACTICE_REACH = 730  # days: someone who left more than two years before the advert is not taken to use its stack
 EDUCATION_RANK = {"diploma": 1, "associate": 1, "other": 1, "bachelor": 2, "master": 3, "doctorate": 4}
 NOT_COUNTED_FOR_YEARS = {"internship", "side"}
 
@@ -49,8 +53,9 @@ class Row:
 
     @property
     def official(self) -> bool:
-        """True only if every fact behind this row has been approved by a human."""
-        return bool(self.facts) and all(f.status == "approved" for f in self.facts)
+        """True only if every fact behind this row has been approved by a human. An employer's practice is never
+        an approved fact about the person."""
+        return self.status != "likely" and bool(self.facts) and all(f.status == "approved" for f in self.facts)
 
 
 def _of(facts: list[Fact], claim_type: str) -> list[Fact]:
@@ -90,7 +95,33 @@ def _skill(req: dict, facts: list[Fact]) -> tuple[str, str, list[Fact]]:
     if hits:
         where = "skills" if any(f.claim_type == "SkillClaim" for f in hits) else "a job title"
         return "evidence", f"{label} appears in {where}", hits
+    via = employer_support(token, facts)
+    if via is not None:
+        p = via.payload
+        tense = "work" if via.valid_to is None else "worked"
+        when = f", {p['as_of'][:7]}" if p.get("as_of") else ""
+        return "likely", (f"not in their file, but {p['company']} uses {p['raw_label']} (its job advert{when}) and they "
+                          f"{tense} there as {p['title']}: likely, confirm on the call"), [via]
     return "missing", f"no mention of {label} in the file", []
+
+
+def employer_support(token: str, facts: list[Fact], today: date | None = None) -> Fact | None:
+    """An employer's practice that makes a skill likely: the company uses it in the person's area of work (or
+    company-wide), and they were there no more than two years before the advert said so. None otherwise."""
+    from maindscout.domain.profile import area_of_title
+
+    today = today or date.today()
+    for f in _of(facts, PRACTICE):
+        p = f.payload
+        if not supports(token, [p["token"], p.get("raw_label", "")], []):
+            continue
+        if p["area"] != "company_wide" and area_of_title(p.get("title")) != p["area"]:
+            continue
+        seen = date.fromisoformat(p["as_of"]) if p.get("as_of") else today
+        if (f.valid_to or today) < seen - timedelta(days=PRACTICE_REACH):
+            continue
+        return f
+    return None
 
 
 def _seniority(req: dict, facts: list[Fact], today: date) -> tuple[str, str, list[Fact]]:

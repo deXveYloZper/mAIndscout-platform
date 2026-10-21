@@ -32,8 +32,10 @@ function initials(name: string | null): string {
 
 export default async function Person({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   const [{ id }, sp] = await Promise.all([params, searchParams]);
+  // Both of this person's requests say "not found" for an unknown id; whichever answers first must show the Not found
+  // page, not the error page (the calls request could win the race, 2026-10-20).
   const [person, jobs, mailbox, calls] = await Promise.all([apiOr404<PersonPage>(`/v1/candidates/${id}`), api<JobSummary[]>("/v1/jobs"),
-    api<MailboxStatus>("/v1/mailbox"), api<{ reviews: CallReview[]; preferences: Preference[] }>(`/v1/candidates/${id}/calls`)]);
+    api<MailboxStatus>("/v1/mailbox"), apiOr404<{ reviews: CallReview[]; preferences: Preference[] }>(`/v1/candidates/${id}/calls`)]);
   if (person.merged_into) redirect(`/people/${person.merged_into}`); // a merged record lives on as the kept one
   const tab = TABS.some(([k]) => k === sp.tab) ? sp.tab! : "overview";
   const otherJobs = jobs.filter((j) => !person.jobs.some((p) => p.job_id === j.id));
@@ -42,7 +44,7 @@ export default async function Person({ params, searchParams }: { params: Promise
   const live = (t: string) => (person.claims[t] ?? []).filter((c) => c.status === "proposed" || c.status === "approved");
   const hasEmail = live("ContactClaim").some((c) => c.payload.kind === "email");
   const hasLinkedIn = live("ContactClaim").some((c) => c.payload.kind === "linkedin");
-  const webOnly = person.documents.length > 0 && person.documents.every((d) => d.doc_type === "web_profile");
+  const webOnly = person.documents.length > 0 && person.documents.every((d) => d.doc_type === "web_profile" || d.doc_type === "web_page");
   const current = live("CareerStepClaim").find((c) => !c.valid_to);
   const place = live("LocationClaim").find((c) => (c.payload.kind ?? "current") === "current");
   const toApprove = Object.values(person.claims).flat().filter((c) => c.status === "proposed").length;

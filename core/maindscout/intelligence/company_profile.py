@@ -80,7 +80,9 @@ def _pairs(text: str) -> list[dict[str, Any]]:
     """'Germany: 26 (47%), United Kingdom: 10 (18%)' or 'Via (2), Hays (2)' -> [{name, n, pct}]."""
     out = []
     text = re.sub(r"\s*\(\+\d+ more\)\s*$", "", text)
-    for part in re.split(r",\s*(?![^()]*\))", text):
+    # A thousands comma is not a separator: "Italy: 2,701 (22%)" was read as Italy with 2 people and a country called
+    # "701", so the big houses looked as if nobody worked in Italy (2026-10-18).
+    for part in re.split(r",(?!\d{3}(?!\d))\s*(?![^()]*\))", text):
         part = part.strip()
         if not part or part.startswith("(+"):
             continue

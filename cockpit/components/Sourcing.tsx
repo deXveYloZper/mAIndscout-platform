@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { Pin, PinOff, Radar, Undo2, X } from "lucide-react";
-import { addSourcingTarget, buildStrategy, changeSourcingTarget, draftLinkedIn, runSourcingNow, setSourcingMode, setSourcingPlan,
-  widenSourcing } from "@/app/actions";
+import { addSourcingTarget, buildStrategy, changeSourcingTarget, checkDeeper, draftLinkedIn, runSourcingNow, setSourcingMode,
+  setSourcingPlan, widenSourcing } from "@/app/actions";
 import { Refresh } from "@/components/CallsClient";
-import { ProfileLink, Triage } from "@/components/Outreach";
+import { QuickLinks, Triage } from "@/components/Outreach";
 import { AddTarget, OneClick, PlanSettings, PlanWords } from "@/components/SourcingForms";
-import type { CompanyProfile, SourcingMode, SourcingPage, SourcingStats, SourcingTarget, Suggestion, TalentDna, Widening } from "@/lib/api";
-import { MODE_LABEL, reasonWords, TIER_WORDS } from "@/lib/format";
+import type { CardKeys, CompanyProfile, EvidenceCheck, SourcingMode, SourcingPage, SourcingStats, SourcingTarget, Suggestion, TalentDna,
+  Widening } from "@/lib/api";
+import { MODE_LABEL, reasonWords } from "@/lib/format";
 import { ActForm } from "@/components/ActForm";
 
 /* The role's sourcing (docs/next/PLAN.md, phase 1): how often it searches, the market map, suggestions to contact,
@@ -16,6 +17,7 @@ export const TARGET_TIER: Record<string, string> = {
   named: "named by the hiring manager", known: "our people worked there", peer: "peer company",
   adjacent: "adjacent industry", release: "releasing talent", manual: "added by you",
   feeder: "their people came from here", feeder_large: "large feeder", snowball: "strong candidates worked here",
+  large_peer: "in the client's market, much bigger", competitor: "competitor (researched)",
 };
 const STOP: Record<string, string> = {
   target: "target reached", budget: "the role's budget is used up", desk_budget: "the desk's budget is used up",
@@ -30,9 +32,9 @@ export const REFUSED: Record<string, string> = {
 };
 const CHANNEL: Record<string, string> = { pool: "our own pool", exa_people: "web people search", exa_news: "talent-release radar" };
 const TIER_NAME: Record<string, string> = {
-  A: "Tier A: named by the hiring manager, and where the hiring company's people came from",
+  A: "Tier A: named by the hiring manager, the client's competitors (researched), and where its people came from",
   B: "Tier B: similar companies, and where strong candidates worked before",
-  C: "Tier C: very large feeders, companies releasing talent, adjacent industries",
+  C: "Tier C: very large feeders and much bigger companies in the market, companies releasing talent, adjacent industries",
 };
 const KIND: Record<string, string> = { product: "product company", consultancy: "consultancy", outsourcing: "outsourcing",
   agency: "agency", public_sector: "public sector", non_profit: "non-profit", other: "other", unknown: "kind unknown" };
@@ -83,39 +85,129 @@ function trackLine(s: Suggestion): string | null {
   return bits.length ? bits.join(" · ") : null;
 }
 
+const OUTCOME: Record<string, string> = {
+  confirmed: "Their public work supports this match", mixed: "Their public work both supports and weakens this match",
+  weakened: "Their public work speaks against this match", nothing_found: "No public work about them beyond their profile",
+};
+/** A requirement in a few words, for a tag ("Experience at a small or mid-size brand (…)" -> "small or mid-size brand"). */
+function shortReq(text: string): string {
+  const t = text.replace(/^(experience (at|in|with)|background (at|in))\s+(a |an )?/i, "").replace(/\s*\(.*?\)\s*/g, " ").trim();
+  return t.length > 34 ? `${t.slice(0, 32).trimEnd()}…` : t;
+}
+
+const BECAUSE: Record<string, string> = { left_the_field: "left this kind of work", works_elsewhere_now: "works elsewhere now",
+  says_otherwise: "says so themselves" };
+const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u; } };
+
+/** The deeper look at a strong match's public work: what it found, quoted, with the page it came from. */
+function EvidenceLine({ jobId, s, deciding }: { jobId: string; s: Suggestion; deciding: boolean }) {
+  const e: EvidenceCheck | null | undefined = s.evidence;
+  if (!e) {
+    return deciding && s.checkable ? (
+      <ActForm action={checkDeeper.bind(null, jobId, s.candidate_id)} className="inline">
+        <button className="btn small ghost" title="Their own links, then a search for their name with their company (about 1-3 cents)">Check deeper</button>
+      </ActForm>
+    ) : null;
+  }
+  if (e.status === "queued" || e.status === "running") return <p className="hint live" role="status">Checking their public work…</p>;
+  if (e.status === "failed") return <p className="warn">The deeper check failed{e.error ? `: ${e.error}` : ""}.</p>;
+  if (e.status === "skipped") return <p className="hint">Deeper check not run: {e.reason ?? "skipped"}.</p>;
+  return (
+    <div className={`evidence ${e.outcome ?? ""}`}>
+      <p className="hint"><strong>{OUTCOME[e.outcome ?? ""] ?? "Checked"}</strong> ({day(e.at)}: {e.pages} of {e.looked} pages were
+        theirs{e.facts_added ? `, ${e.facts_added} skill${e.facts_added === 1 ? "" : "s"} added to review` : ""}{e.usd != null ? `, ${usd(e.usd)}` : ""})</p>
+      {e.findings.length > 0 && (
+        <ul className="findings">
+          {e.findings.map((f, i) => (
+            <li key={i} className={f.effect}>
+              <span className={`tag ${f.effect === "supports" ? "key" : "warn"}`}>{f.effect === "supports" ? "supports"
+                : `against${f.because ? `: ${BECAUSE[f.because] ?? f.because}` : ""}`}</span>{" "}
+              {f.requirement}: &ldquo;{f.quote}&rdquo; <a href={f.url} target="_blank" rel="noreferrer">{host(f.url)}</a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+const EV_TAG: Record<string, string> = { confirmed: "public work supports it", mixed: "public work: mixed", weakened: "public work speaks against it" };
+
+/** "Communication Manager · Prada Group (12,213 people) · Milan, Italy": the job, the company and its size, where. */
+function MainLine({ s }: { s: Suggestion }) {
+  const n = s.employer?.employees;
+  if (!s.title && !s.company) return <p className="main">{[s.current, s.place ?? s.location].filter(Boolean).join(" · ") || "role and place not on the profile"}</p>;
+  return (
+    <p className="main">
+      {s.title}{s.title && s.company ? " · " : ""}
+      {s.company && <strong>{s.company}</strong>}
+      {s.company && <span className="num"> ({n ? `${n.toLocaleString("en-GB")} people` : "size not known"})</span>}
+      {(s.place ?? s.location) ? ` · ${s.place ?? s.location}` : ""}
+    </p>
+  );
+}
+
+/** A suggestion in a few lines (step E, owner 2026-10-20): one verdict, their public profile a click away, the job and
+    the company's size, why, what a possible is short of, what to settle on the call, the buttons. The rest is under
+    Details; nothing is gone. */
 function SuggestionCard({ jobId, s, since }: { jobId: string; s: Suggestion; since?: string | null }) {
   const fresh = Boolean(since && s.found_by.at && s.found_by.at >= since);
   const track = trackLine(s);
   const deciding = s.stage === "to_review" || s.stage === "later";
+  const strong = s.hint === "looks strong";
+  const ev = s.evidence?.status === "done" ? s.evidence.outcome : null;
+  const open = s.stage !== "passed";
+  const keys: CardKeys = { candidate_id: s.candidate_id, stage: s.stage, contact: s.contact, profile: s.profile, links: s.links };
   return (
     <li className={`personcard${s.follow_up_due ? " due" : ""}`}>
       <div className="pc-main">
         <div className="pc-head">
           <Link href={`/jobs/${jobId}/people/${s.candidate_id}`} className="pc-name">{s.name ?? "name not read"}</Link>
-          {deciding && <span className={`tiertag ${s.hint === "looks strong" ? "strong" : "possible"}`}
-            title="The desk's reading of a public profile: a hint, not a band">{s.hint}</span>}
-          {s.reach && <span className="blocktag" title={s.reach}>a reach</span>}
-          {s.match_tier && s.match_tier !== "unclear" && <span className={`tiertag ${s.match_tier}`}>{TIER_WORDS[s.match_tier]}</span>}
-          {fresh && <span className="pill accent">just found</span>}
-          {s.stage === "to_review" && (s.found_by.new_to_desk ? <span className="pill">new</span> : <span className="chip small">already on the desk</span>)}
+          {deciding && (s.match_tier === "unclear"
+            ? <span className="cardverdict reading" title="Their career reading is on its way: never strong before it">Being read</span>
+            : <span className={`cardverdict ${strong ? "strong" : "possible"}`}
+                title="The desk's reading of their profile against this role: a guide, not a band">{strong ? "Strong" : "Possible"}</span>)}
+          {ev && EV_TAG[ev] && <span className={`tag ${ev === "confirmed" ? "key" : "warn"}`} title={OUTCOME[ev]}>{EV_TAG[ev]}</span>}
+          <QuickLinks jobId={jobId} s={keys} />
           {s.follow_up_due && <span className="pill accent">follow up</span>}
         </div>
-        <p className="reason">{[s.current, s.location].filter(Boolean).join(" · ") || "role and place not on the profile"}</p>
-        {s.reach && <p className="hint">Possible, a reach: {s.reach}</p>}
+        <MainLine s={s} />
+        {s.why && s.why.length > 0 && <p className="why">{s.why.join(" · ")}</p>}
+        {open && !strong && s.short_of && s.short_of.length > 0 && <p className="shortof"><span className="linetag">short of</span>{s.short_of.join(" · ")}</p>}
+        {open && s.settle?.map((x, i) => <p key={i} className="settle"><span className="linetag" title="Only the call can settle it">to settle on the call</span>{x}</p>)}
         {track && <p className="reason">{track}</p>}
         {s.contact?.reply?.text && <p className="hint">&ldquo;{s.contact.reply.text}&rdquo;</p>}
-        {s.employer && <p className="hint">Works at: {facts(s.employer)}</p>}
-        {s.stage === "to_review" && <p className="hint">{reasonWords(s.reason)} · {foundBy(s.found_by)}</p>}
-        <Triage jobId={jobId} s={s} />
+        <Triage jobId={jobId} s={keys} />
+        <details className="pc-details">
+          <summary>Details</summary>
+          <div className="pc-more">
+            <p className="hint">
+              {s.reason ? reasonWords(s.reason) : null}
+              {fresh && <span className="pill accent">just found</span>}
+              {s.stage === "to_review" && (s.found_by.new_to_desk ? <span className="pill">new to the desk</span> : <span className="chip small">already on the desk</span>)}
+            </p>
+            {s.employer && <p className="hint">Works at: {facts(s.employer)}</p>}
+            <p className="hint">{foundBy(s.found_by)}</p>
+            {s.plus && s.plus.length > 0 && (
+              <p className="hint plusline" title="The role's strong-plus items: suggestions meeting more of them come first">
+                Strong plus:{" "}
+                {s.plus.map((r, i) => (
+                  <span key={i} className={`plustag ${r.verdict}`}>{shortReq(r.requirement)}{r.verdict === "partial" ? " (partly)" : r.verdict === "ask" ? " (ask)" : ""}</span>
+                ))}
+              </p>
+            )}
+            <EvidenceLine jobId={jobId} s={s} deciding={deciding} />
+            <p className="hint"><Link href={`/jobs/${jobId}/people/${s.candidate_id}`}>Every requirement, with its evidence</Link></p>
+          </div>
+        </details>
       </div>
-      <div className="pc-side">
-        <ProfileLink jobId={jobId} s={s} />
-        {s.profile && (s.stage === "to_contact" || (s.stage === "contacted" && s.follow_up_due)) && (
+      {s.profile && (s.stage === "to_contact" || (s.stage === "contacted" && s.follow_up_due)) && (
+        <div className="pc-side">
           <ActForm action={draftLinkedIn.bind(null, jobId, s.candidate_id)}>
             <button className="btn small">{s.stage === "contacted" ? "Follow-up draft" : "Draft LinkedIn message"}</button>
           </ActForm>
-        )}
-      </div>
+        </div>
+      )}
     </li>
   );
 }
@@ -151,8 +243,6 @@ function Workflow({ jobId, s, since }: { jobId: string; s: SourcingPage; since: 
           )}
         </>
       )}
-      <p className="hint">Open the profile, come back, decide: reach out (they become Priority, your choice), maybe later, or not for this
-        role (the reason teaches the desk your taste). Nobody found on the web is in the role&apos;s Priority until you choose them.</p>
 
       {(["to_contact", "contacted", "replied", "call_booked"] as const).map((k) => s.lists[k].length > 0 && (
         <div key={k}>
@@ -172,9 +262,14 @@ function Workflow({ jobId, s, since }: { jobId: string; s: SourcingPage; since: 
           <Cards jobId={jobId} rows={s.lists.passed} />
         </details>
       )}
-      <p className="hint">Public data only: a guide to who to contact. Their CV, contact details and permission come from them. A follow-up
-        is due 4 days after contact without a reply. Once your mailbox is connected, LinkedIn&apos;s emails about people you contacted
-        there (an accepted invitation, a message) move them on by themselves.</p>
+      <details className="howto">
+        <summary className="sub">How this works</summary>
+        <p className="hint">Open their profile, come back, decide: reach out (they become Priority, your choice), later, or not for this
+          role (the reason teaches the desk your taste). Nobody found on the web is in the role&apos;s Priority until you choose them.</p>
+        <p className="hint">Public data only: a guide to who to contact. Their CV, contact details and permission come from them. A
+          follow-up is due 4 days after contact without a reply. Once your mailbox is connected, LinkedIn&apos;s emails about people
+          you contacted there (an accepted invitation, a message) move them on by themselves.</p>
+      </details>
     </section>
   );
 }
@@ -208,15 +303,28 @@ function Note({ note }: { note: SourcingPage["strategy_note"] }) {
   return <p className={note.level === "error" ? "warn" : "hint"} role="status">{note.text}{note.at ? ` (${when(note.at)})` : ""}</p>;
 }
 
-function Dna({ jobId, dna, building, ready, note, built }: { jobId: string; dna: TalentDna | null; building: boolean; ready: boolean;
-  note: SourcingPage["strategy_note"]; built: boolean }) {
+/** What the competitor research found: how many, kept, left out as far bigger, refused for want of a source. */
+function ResearchLine({ r }: { r: NonNullable<SourcingPage["competitor_research"]> }) {
+  return (
+    <div className="research">
+      <p className="sub"><strong>Competitor research</strong> (web, {r.pages} pages, {usd(r.usd)}): {r.found} found · {r.kept} on the
+        map as tier A{r.much_bigger.length ? ` · ${r.much_bigger.length} left out as far bigger (never searched)` : ""}
+        {r.refused.length ? ` · ${r.refused.length} refused (no page naming them)` : ""}</p>
+      {r.much_bigger.length > 0 && <p className="hint">Far bigger: {r.much_bigger.join(", ")}</p>}
+    </div>
+  );
+}
+
+function Dna({ jobId, dna, building, ready, note, built, research }: { jobId: string; dna: TalentDna | null; building: boolean; ready: boolean;
+  note: SourcingPage["strategy_note"]; built: boolean; research?: SourcingPage["competitor_research"] }) {
   if (!dna) {
     return (
       <section className="panel">
         <h3>Strategy</h3>
         {!building && <Note note={note} />}
+        {research && <ResearchLine r={research} />}
         <p className="sub">First learn where the hiring company&apos;s own people came from, then build the list of companies to search,
-          in tiers, each with its reason. About $0.30, once; you review the list before any wide search.</p>
+          in tiers, each with its reason: its competitors researched on the web first. About $0.50, once; you review the list before any wide search.</p>
         {building ? <p className="sub" role="status">Building the strategy…</p>
           : ready ? <OneClick action={buildStrategy.bind(null, jobId)} label={built ? "Build again" : "Build the strategy"} busy="Starting…" primary={!built} />
             : <p className="hint">Needs web search (Exa).</p>}
@@ -232,6 +340,7 @@ function Dna({ jobId, dna, building, ready, note, built }: { jobId: string; dna:
           : <OneClick action={buildStrategy.bind(null, jobId)} label="Rebuild" busy="Starting…" />}
       </div>
       {!building && <Note note={note} />}
+      {research && <ResearchLine r={research} />}
       <p className="sub">{dna.people} of their people found ({dna.company.employees ? `${dna.company.employees} staff in all` : "size unknown"})
         {dna.company.team_countries?.length ? ` · the team works in ${dna.company.team_countries.map((c) => `${c.country} ${c.pct}%`).join(", ")}` : ""}
         {` · built ${dna.at.slice(0, 10)} for $${dna.cost_usd.toFixed(3)}`}</p>
@@ -311,7 +420,8 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
   const since = lastRun?.status !== "running" ? lastRun?.started_at ?? null : null;
   return (
     <>
-      {(s.running || s.building) && <Refresh every={3000} upTo={300000} />}
+      {(s.running || s.building || s.suggestions.some((x) => x.evidence?.status === "queued" || x.evidence?.status === "running"))
+        && <Refresh every={3000} upTo={300000} />}
       <section className="panel">
         <div className="row spread">
           <h3><Radar aria-hidden="true" className="h-icon" />Sourcing: {MODE_LABEL[p.mode]}</h3>
@@ -329,8 +439,10 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
         </p>
         {!s.web_ready && <p className="warn">Web search is not set up (no Exa key in core/.env): runs search the desk&apos;s own pool only.</p>}
         <div className="row">
-          {s.running ? <span className="sub live" role="status"><span className="dot" aria-hidden="true" />Searching… new people appear here as soon
-            as the search ends (usually under a minute)</span>
+          {s.running ? <span className="sub live" role="status"><span className="dot" aria-hidden="true" />
+            {s.search_round ? `Searching on until ${p.target} strong are waiting: batch ${s.search_round.round} of up to 8${s.search_round.waiting
+              ? ", waiting for the last batch's career readings" : ""}…`
+              : "Searching… new people appear here as soon as the search ends (usually under a minute)"}</span>
             : <OneClick action={runSourcingNow.bind(null, jobId)} label="Search now" busy="Starting…" primary />}
           {lastRun && <span className="hint">Last run {when(lastRun.started_at)}: {lastRun.stop_reason === "target" && lastRun.found === 0
             ? "did not search, the target was already reached" : STOP[lastRun.stop_reason ?? ""] ?? lastRun.status}</span>}
@@ -354,7 +466,8 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
 
       <Workflow jobId={jobId} s={s} since={since} />
 
-      <Dna jobId={jobId} dna={p.dna} building={s.building} ready={s.web_ready} note={s.strategy_note} built={live.length > 0} />
+      <Dna jobId={jobId} dna={p.dna} building={s.building} ready={s.web_ready} note={s.strategy_note} built={live.length > 0}
+           research={s.competitor_research} />
 
       <section className="panel">
         <h3>Market map</h3>

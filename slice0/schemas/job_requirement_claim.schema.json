@@ -173,7 +173,7 @@
         "founder",
         null
       ],
-      "description": "role: the level asked for."
+      "description": "role: the level asked for. With strength anti (a limit on seniority, e.g. 'not too senior like global and regional'): the first level that is too senior."
     },
     "employer_kinds": {
       "type": [
@@ -193,6 +193,31 @@
         ]
       },
       "description": "employer: kinds of employer the person should (or, with anti, should not) come from."
+    },
+    "min_staff": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "description": "employer: the smallest staff count of the companies wanted (e.g. 501 for large companies)."
+    },
+    "max_staff": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "description": "employer: the largest staff count of the companies wanted (e.g. 500 for 'a small or mid-size brand'; owner, 2026-10-19)."
+    },
+    "recent_months": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 60,
+      "description": "target_company with anti: anyone who left that company less than this many months ago counts as from it (default 6; owner, 2026-10-19)."
     },
     "domains": {
       "type": [
@@ -312,6 +337,16 @@
     "relocation": {
       "type": "boolean",
       "description": "location from the intake notes: true when moving there is fine ('or willing to move to Milan')."
+    },
+    "company_words": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 40
+      },
+      "description": "domain only: an industry in the words companies use of themselves (their offering, about text, categories), for a niche the fixed list does not have, e.g. leather goods, bags (owner, 2026-10-19)."
     }
   }
 }

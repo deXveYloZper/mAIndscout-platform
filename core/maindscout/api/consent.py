@@ -69,12 +69,6 @@ def of(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID) -> list[dic
                                      .order_by(Permission.created_at.desc()))]
 
 
-def may_put_forward(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID, job_id: uuid.UUID) -> bool:
-    return session.scalar(select(Permission.id).where(
-        Permission.org_id == org_id, Permission.candidate_id == candidate_id,
-        ((Permission.scope == "this_role") & (Permission.job_id == job_id)) | (Permission.scope == "other_roles")).limit(1)) is not None
-
-
 def stop(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID, actor: str, note: str | None = None) -> Candidate:
     """They asked not to be contacted: never suggested or drafted to again; open follow-ups are cancelled."""
     from maindscout.api import mailbox, relationship

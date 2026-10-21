@@ -190,6 +190,11 @@ def write_facts(session: Session, company: Company, facts_: list[engine.Fact], n
                                      claim_type=claim_type, payload=payload, flags=flags, natural_key=key, status="proposed",
                                      observed_as_of=now.date(), temporal_precision="unknown")
             written += 1
+        elif claim_type == "TeamSizeClaim" and _counted_beats(payload, claim.payload):
+            # A counted headcount ("62 employees") beats a bracket a company picked for itself ("201-500 employees",
+            # LinkedIn's size field): Bonaventura, 2026-10-21, read 201-500 everywhere though Exa counted 62.
+            claim.payload = payload
+            claim.flags = {**(claim.flags or {}), "sources_disagree": True}
         evidence = Evidence(org_id=PUBLIC_ORG_ID, claim_id=claim.id, evidence_type="research_result", document_id=None,
                             locator={"url": fact.source_url}, snippet=fact.quote, source_authority=authority, origin=origin,
                             observed_as_of=now.date(),
@@ -203,8 +208,23 @@ def write_facts(session: Session, company: Company, facts_: list[engine.Fact], n
     return written
 
 
+def _counted(p: dict[str, Any]) -> bool:
+    return p.get("min") is not None and p.get("min") == p.get("max")
+
+
+def _counted_beats(new: dict[str, Any], old: dict[str, Any]) -> bool:
+    """A counted headcount replaces a stored bracket it falls outside of; a bracket never replaces a count."""
+    if not _counted(new) or _counted(old) or old.get("min") is None:
+        return False
+    return not (old["min"] <= new["min"] <= (old.get("max") or new["min"]))
+
+
 def _same_value(claim_type: str, a: dict[str, Any], b: dict[str, Any]) -> bool | None:
     """Do two sources agree on a fact? None when this kind of fact is not compared (lists of industries)."""
+    if claim_type == "TeamSizeClaim":  # a count agrees with a bracket it falls in; two brackets must overlap
+        if a.get("min") is None or b.get("min") is None:
+            return None
+        return a["min"] <= (b.get("max") or b["min"]) and b["min"] <= (a.get("max") or a["min"])
     if claim_type == "CompanyFoundedClaim":
         return (a.get("founded") or "")[:4] == (b.get("founded") or "")[:4]
     if claim_type == "CompanyLocationClaim":
@@ -303,11 +323,6 @@ def facts(session: Session, company: Company) -> list[dict[str, Any]]:
                                                    "authority": e.source_authority, "seen": e.observed_as_of.isoformat() if e.observed_as_of else None}
                                                   for e in ev[:3]]})
     return out
-
-
-def context_for_step(raw_name: str, location: str | None) -> str:
-    """Company-only context from a career step: never the person's title or name."""
-    return f"named '{raw_name}' on a CV" + (f"; location given: {location}" if location else "")
 
 
 def _as_fact(claim: Claim) -> tuple[str, Any] | None:

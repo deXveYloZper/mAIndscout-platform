@@ -23,6 +23,9 @@ type CompanyPage = {
   profile: CompanyProfile | null;
   research_attempt: { status: string; at: string | null; why: "budget" | "model" | "other" | null; error: string | null } | null;
   facts: Fact[];
+  practices?: { id: string; token: string; raw_label: string; kind: string; area: string; status: string; seen: string | null;
+    quote: string | null; url: string | null }[];
+  practices_at?: string | null;
   aliases: string[];
   people_count: number;
   people: { candidate_id: string; name: string | null; current: boolean;
@@ -40,6 +43,8 @@ const STAGE: Record<string, string> = {
   series_d: "Series D", series_e_plus: "Series E or later", growth: "Growth", grant: "Grant", debt: "Debt", ipo: "IPO",
   acquisition: "Acquired", other: "Round",
 };
+const AREA: Record<string, string> = { engineering: "Engineering", product_design: "Product and design", commercial: "Commercial",
+  operations: "Operations", company_wide: "Company-wide" };
 const ORDER = ["CompanyDomainClaim", "CompanyTypeClaim", "CompanyFoundedClaim", "FundingRoundClaim", "TeamSizeClaim",
   "CompanyStatusClaim", "CompanyLocationClaim"];
 
@@ -159,6 +164,27 @@ export default async function Company({ params }: { params: Promise<{ id: string
             );
           })}
         </ul>
+      )}
+
+      {(c.practices?.length ?? 0) > 0 && (
+        <>
+          <h2>What it uses, from its job adverts</h2>
+          <p className="hint">Read from its own adverts{c.practices_at ? ` (${c.practices_at.slice(0, 10)})` : ""}. Someone in that area of
+            work here is taken to likely use it too: a reason to ask on the call, never proof.</p>
+          <ul className="facts">
+            {c.practices!.map((x) => (
+              <li key={x.id}>
+                <span className="label">{AREA[x.area] ?? x.area}</span> {x.raw_label}
+                <span className="sub"> ({x.kind}{x.seen ? `, seen ${x.seen}` : ""})</span>
+                {x.url && (
+                  <span className="src">
+                    From its advert: <a href={x.url} target="_blank" rel="noreferrer">{x.url}</a>{x.quote && <> · <q>{x.quote}</q></>}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       {c.jobs.length > 0 && (

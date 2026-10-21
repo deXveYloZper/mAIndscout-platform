@@ -92,3 +92,43 @@ def no_paid_calls(monkeypatch):
     monkeypatch.setattr(task_handlers, "llm_factory", lambda: NoPaidCalls())
     monkeypatch.setattr(task_handlers, "search_factory", lambda: NoPaidCalls())
     monkeypatch.setattr(task_handlers, "exa_factory", lambda: None)
+
+
+class TitleReader:
+    """The career reading's model, from each job's title, as the real one would label it (no model call)."""
+
+    model = "fake-reader"
+    FAMILIES = [(r"insar|sar\b|radar|remote sens|geodes|earth observation|gis", "gis_remote_sensing"),
+                (r"data scien|machine learning|\bml\b", "data_ml"), (r"marketing|brand|communication", "marketing"),
+                (r"sales|account exec|business develop", "sales"), (r"engineer|developer|programmer|software", "software_engineering")]
+
+    def complete_json(self, system, user, schema, name):
+        import re
+
+        from maindscout.intelligence.llm import LLMResult
+
+        steps = []
+        for sid, title in re.findall(r"^(s\d+): (.+?) at ", user, re.M):
+            family = next((f for rx, f in self.FAMILIES if re.search(rx, title, re.I)), "other")
+            steps.append({"id": sid, "role_family": family, "level": None, "domains": [], "signals": []})
+        return LLMResult({"steps": steps}, self.model, 1, 1, 0.0)
+
+
+@pytest.fixture
+def careers_read_at_once(monkeypatch):
+    """The background career reading, done at once. Nobody is Priority before it (owner, 2026-10-21), so a test of a
+    person's band after an upload needs the reading the desk would have done by then."""
+    from maindscout.api import profiles
+
+    busy = set()
+
+    def now(session, org_id, candidate_id):
+        if candidate_id in busy:
+            return
+        busy.add(candidate_id)
+        try:
+            profiles.run(session, org_id, candidate_id, TitleReader)
+        finally:
+            busy.discard(candidate_id)
+
+    monkeypatch.setattr(profiles, "queue", now)

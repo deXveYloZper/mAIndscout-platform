@@ -5,16 +5,18 @@
 **Code:** `core/maindscout/domain/gaps.py` (pure), `api/queries.gap_page`, route `GET /v1/jobs/{job}/people/{person}/gaps`, cockpit `app/jobs/[id]/people/[cid]/page.tsx`
 
 ## What
-Every requirement of a job set against one person's facts, row by row. Each row is **evidence**, **missing**, **conflict** or **ask**, with the reason in plain words, the snippets behind it, and whether those facts are approved or only proposed. It is the default view of a person on a job: names on the job page open it.
+Every requirement of a job set against one person's facts, row by row. Each row is **evidence**, **likely**, **missing**, **conflict** or **ask**, with the reason in plain words, the snippets behind it, and whether those facts are approved or only proposed. It is the default view of a person on a job: names on the job page open it.
 
 ## Why
 Slice 1: "On a job, each person has a gap table: every requirement → evidence / missing / conflict … the product refuses a composite number." A band says where someone sits; the gap table says why, and what to ask.
 
 ## How
 - **Skills:** the same whole-word matching as triage, over skills and job titles. Alternatives written with a slash ("JavaScript/TypeScript") are met by either.
+- **Likely, from their employer** ([employer evidence](employer-evidence.md), 2026-10-17): a skill with nothing of their own is **likely** when their employer's own job advert says the company uses it, in their area of work, and they were there within two years of the advert. The row quotes the advert, is never an approved fact for coverage, and offers "They have …" like a missing row.
 - **Experience:** years computed from career dates; overlapping jobs are merged so time is not counted twice; internships and side work are left out; a current job counts to today. Fewer years than asked is a **conflict**, with both numbers shown. No number in the ad: **ask**.
 - **Education:** levels compared (doctorate > master > bachelor > diploma). Lower than asked is a **conflict**.
-- **Languages:** looked for in skills; otherwise **missing, ask**.
+- **Languages:** looked for in skills (a found profile's Languages list is read into them, 2026-10-18); otherwise
+  **missing, ask**, which matching treats as a question, never a gap.
 - **Mobility:** residence, visa and relocation are separate rows and are never a conflict: living elsewhere, no sponsorship, or no relocation help are **ask** rows ("lives in Vienna; ask about working from Germany or United Kingdom"). Living in an allowed country is evidence for residence and "no move needed" for relocation; it never proves the right to work.
 - **Vague requirements** (qualities, broad areas): **ask**.
 - Process dates and plain work locations are job information, not rows.

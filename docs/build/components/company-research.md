@@ -10,7 +10,7 @@ For each company that matters to the desk, Grok looks up a fixed list of public 
 Matching and sourcing need to know what kind of company someone worked at (plan section 4.3): what it does, how old it is, how it is funded, how big it is. The owner decided (2026-10-03, [decisions](../../decisions/2026-10-03-intelligence-track.md)) that research must be **targeted, not open browsing**, and that company knowledge is a **shared public tier**.
 
 ## How
-- **The fixed list:** website; domains (what it works in); kind (product, consultancy, outsourcing, agency, public sector, non-profit, other); founded; funding rounds (stage, date, amount, investors); headcount; status (active, acquired, merged, shut down, public); head office. Nothing else is asked for. **Never technologies or tech stack** (owner, 2026-10-03: only someone inside the company really knows it; stack comes from the job ad and CVs). The prompt forbids researching people, and only the company name and the location from the CV go into it, never a person's name or job title.
+- **The fixed list:** website; domains (what it works in); kind (product, consultancy, outsourcing, agency, public sector, non-profit, other); founded; funding rounds (stage, date, amount, investors); headcount; status (active, acquired, merged, shut down, public); head office. Nothing else is asked for. **Never technologies or tech stack** (owner, 2026-10-03: only someone inside the company really knows it; stack comes from the job ad and CVs). Company research still never asks for it; since 2026-10-17 a company's stack is read only from its own job adverts, with each advert as evidence ([employer evidence](employer-evidence.md)). The prompt forbids researching people, and only the company name and the location from the CV go into it, never a person's name or job title.
 - **The call:** xAI Responses API with the `web_search` tool, a cap on tool calls, and a strict JSON schema for the answer. The provider reports the cost of each call (tokens and sources). Each company costs about $0.08–0.09.
 - **Mechanical checks** (`check`), applied to every fact before anything is stored:
   - The source must be a page the model actually opened in this call. Any other source is dropped.
@@ -55,6 +55,12 @@ Matching and sourcing need to know what kind of company someone worked at (plan 
 - freshness and force; the research budget
 - which stints queue research, and the off switch
 - the company page facts and the research route
+
+## A counted headcount beats a size bracket (2026-10-21)
+Bonaventura read "201-500 employees" everywhere (its LinkedIn size field, chosen by the company) though Exa counted
+62: both sources sat on one fact, sizes were never compared, and the first value read stood. Now two sizes are
+compared (a count agrees with a bracket it falls in), and a counted headcount that falls outside a stored bracket
+becomes the fact, flagged `sources_disagree`, with both sources kept. A bracket never replaces a count.
 
 ## Known limits
 - **Nobody can approve public facts yet.** A desk can only approve its own claims, which is deliberate: one desk shouldn't certify shared knowledge for all. Who reviews the public tier (a platform operator, or agreement between desks) is an open question. Until then, facts show as "not yet checked by a person".

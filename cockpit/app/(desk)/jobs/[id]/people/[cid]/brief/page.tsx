@@ -12,9 +12,10 @@ export default async function BriefPage({ params, searchParams }: { params: Prom
   searchParams: Promise<{ force?: string }> }) {
   const { id, cid } = await params;
   const { force } = await searchParams;
+  // Either request can be the first to say "not found" for an unknown role or person: both show the Not found page.
   const [head, brief] = await Promise.all([
     apiOr404<GapHead>(`/v1/jobs/${id}/people/${cid}/gaps`),
-    api<Brief>(`/v1/jobs/${id}/people/${cid}/brief${force ? "?force=true" : ""}`),
+    apiOr404<Brief>(`/v1/jobs/${id}/people/${cid}/brief${force ? "?force=true" : ""}`),
   ]);
   const path = `/jobs/${id}/people/${cid}/brief`;
   return (

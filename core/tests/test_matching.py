@@ -75,19 +75,25 @@ def test_where_someone_lives_is_never_a_reason_for_unlikely():
     assert verdict(m, 9).verdict == "ask" and m.tier == "strong"
 
 
-def test_without_a_profile_the_coarse_band_stands():
-    m = matching.match([req(1, "role", "must", "Engineer", role_family="software_engineering")], [], None, [],
-                       ("priority", "supported:insar"))
-    assert (m.tier, m.band) == ("unclear", None) and m.rules[0]["id"] == "too_little_known"
+def test_without_a_profile_nobody_is_priority_and_otherwise_the_coarse_band_stands():
+    # Nobody is strong before their career reading (owner, 2026-10-21).
+    reqs = [req(1, "role", "must", "Engineer", role_family="software_engineering")]
+    m = matching.match(reqs, [], None, [], ("priority", "supported:insar"))
+    assert (m.tier, m.band, m.reason) == ("unclear", "review_later", "match:unclear:being read")
+    assert m.rules[0]["id"] == "too_little_known"
+    m = matching.match(reqs, [], None, [], ("review_later", "no_distinctive_requirements"))
+    assert (m.tier, m.band) == ("unclear", None), "a coarse Review later stands"
 
 
 def test_two_must_gaps_are_unlikely_and_one_is_possible():
-    reqs = [req(1, "role", "must", "Sales lead", role_family="sales"),
-            req(2, "domain", "must", "Banking", domains=["banking"])]
+    # In the person's own field (another field altogether is its own rule since 2026-10-21, `wrong_field`).
+    reqs = [req(1, "role", "must", "Data scientist", role_family="data_ml"),
+            req(2, "domain", "must", "Banking", domains=["banking"]),
+            req(3, "domain", "must", "Insurance", domains=["insurance"])]
     m, _ = run(reqs, GIS)
     assert m.tier == "unlikely" and m.rules[-1]["id"] == "must_gaps"
-    m, _ = run(reqs[:1], GIS)
-    assert m.tier == "possible"
+    m, _ = run(reqs[:2], GIS)
+    assert m.tier == "possible" and m.rules[-1]["id"] == "must_gaps"
 
 
 def test_a_broad_skill_not_on_the_cv_is_a_question_not_a_gap():
@@ -102,3 +108,59 @@ def test_target_companies_and_never_a_number():
     m, _ = run([req(1, "target_company", "strong_plus", "People from Acme", companies=[{"name": "Acme", "company_id": "c-1"}])], people)
     assert verdict(m, 1).verdict == "strong"
     assert "%" not in repr(m.as_dict()) and "score" not in repr(m.as_dict())
+
+
+def test_another_field_altogether_is_unlikely_a_related_one_possible():
+    # The owner's 0-to-1 test (2026-10-21): a CFO and an HR manager read "possible" for a marketing manager role.
+    reqs = [req(1, "role", "must", "Marketing manager", role_family="marketing", level="manager")]
+    cfo = [stint(1, "Leather Co", "CFO", "2012-01", None, family="finance", level="executive")]
+    m, _ = run(reqs, cfo)
+    assert m.tier == "unlikely" and any(r["id"] == "wrong_field" for r in m.rules)
+    seller = [stint(1, "Leather Co", "Commercial Manager", "2012-01", None, family="sales", level="manager")]
+    m, _ = run(reqs, seller)
+    assert m.tier != "unlikely" or not any(r["id"] == "wrong_field" for r in m.rules), "sales is related to marketing"
+
+
+# --- step C: is the move realistic? (owner, 2026-10-21: "its a standard recruiter logic") ---------------------------
+
+from maindscout.domain.profile import CompanyFacts  # noqa: E402
+
+BRAND = {"staff": 62, "level": "manager", "generalist": True, "wanted": "influencer marketing with direct contact to creators"}
+MARKETER = [req(1, "role", "must", "Marketing manager", role_family="marketing", level="manager")]
+
+
+def at(company, staff, title="Marketing Manager", start="2016-01", end=None, level="manager"):
+    return stint(len(company) + len(title), company, title, start, end, family="marketing", level=level,
+                 facts=CompanyFacts(team_min=staff, team_max=staff))
+
+
+def test_from_a_twelve_thousand_person_group_to_a_62_person_brand_is_a_reach():
+    m = matching.match(MARKETER, [], run(MARKETER, [at("Prada Group", 12203)])[1], [at("Prada Group", 12203)], ("priority", "x"),
+                       client=BRAND)
+    assert m.tier == "possible" and any(r["id"] == "too_big_a_move" for r in m.rules)
+    near = [at("Prada Group", 12203), at("Small Leather Co", 90, start="2022-01", end="2025-06")]
+    m = matching.match(MARKETER, [], run(MARKETER, near)[1], near, ("priority", "x"), client=BRAND)
+    assert m.tier == "strong", "recent time at a company near the client's size: the move is realistic"
+    peer = [at("Leather Testhaus", 96)]
+    m = matching.match(MARKETER, [], run(MARKETER, peer)[1], peer, ("priority", "x"), client=BRAND)
+    assert m.tier == "strong", "a competitor of the client's size"
+
+
+def test_well_above_the_role_or_at_its_seniority_limit_is_a_reach():
+    director = [at("Leather Testhaus", 96, title="Marketing Director", level="director")]
+    m = matching.match(MARKETER, [], run(MARKETER, director)[1], director, ("priority", "x"), client=BRAND)
+    assert any(r["id"] == "above_the_role" for r in m.rules) and m.tier == "possible"
+    limited = MARKETER + [req(2, "role", "anti", "Not too senior", role_family="marketing", level="head")]
+    head = [at("Leather Testhaus", 96, title="Head of Marketing", level="head")]
+    m = matching.match(limited, [], run(limited, head)[1], head, ("priority", "x"), client=BRAND)
+    assert any("seniority limit" in r.get("detail", "") for r in m.rules) and m.tier == "possible"
+
+
+def test_a_specialist_for_an_all_round_role_is_possible_unless_the_role_asks_for_that_work():
+    crm = [at("Leather Testhaus", 96, title="CRM & Client Experience Manager")]
+    m = matching.match(MARKETER, [], run(MARKETER, crm)[1], crm, ("priority", "x"), client=BRAND)
+    assert any(r["id"] == "specialist" for r in m.rules) and m.tier == "possible"
+    m = matching.match(MARKETER, [], run(MARKETER, crm)[1], crm, ("priority", "x"), client={**BRAND, "wanted": "CRM leadership"})
+    assert m.tier == "strong", "the role asks for CRM itself"
+    m = matching.match(MARKETER, [], run(MARKETER, crm)[1], crm, ("priority", "x"), client={**BRAND, "generalist": False})
+    assert m.tier == "strong", "a role that does not ask for an all-round person"

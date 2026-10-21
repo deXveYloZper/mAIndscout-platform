@@ -32,7 +32,10 @@ def _in(column: str, values: tuple[str, ...]) -> str:
     return f"{column} IN ({', '.join(repr(v) for v in values)})"
 
 
-DOC_TYPES = ("cv", "jd", "transcript", "web_profile", "other")
+DOC_TYPES = ("cv", "jd", "transcript", "web_profile", "web_page", "other")  # web_page: read by an evidence check
+# Public pages only (a profile found by sourcing, a page an evidence check kept): someone with nothing else is
+# "known only from public data" (a suggestion, no paid research about them), whatever else they gain.
+PUBLIC_DOC_TYPES = frozenset({"web_profile", "web_page"})
 DOC_STATUS = ("received", "stored", "extracted", "processed", "needs_human", "reprocessable")
 SOURCE_AUTHORITY = (
     "verified_primary",
@@ -210,6 +213,8 @@ class Company(Base):
     linkedin: Mapped[str | None] = mapped_column(String, unique=True)
     exa_profile: Mapped[dict | None] = mapped_column(JSONB)
     profiled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # When its tools and methods were last read from its own job adverts (employer evidence, 2026-10-17).
+    practices_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created()
 
 

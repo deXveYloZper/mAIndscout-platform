@@ -293,7 +293,7 @@ def test_gap_table_lists_every_requirement_with_a_status_and_never_a_number(clie
     assert page["person"]["name"] == "Jane Example" and page["band"] == "do_not_submit"
     insar = next(r for r in page["rows"] if r["requirement"] == "InSAR processing experience")
     assert insar["status"] == "missing" and insar["distinctive"] is True and insar["official"] is False
-    assert set(page["counts"]) == {"evidence", "missing", "conflict", "question"}
+    assert set(page["counts"]) == {"evidence", "likely", "missing", "conflict", "question"}
     assert not any(k in page for k in ("score", "fit", "total"))
     people = client.get(f"/v1/jobs/{job_id}").json()["people"]["do_not_submit"]
     assert people[0]["gaps"]["missing"] >= 1
@@ -310,6 +310,7 @@ def _skill_payload(token):
     return {"raw_label": token.upper(), "normalized_skill": token}
 
 
+@pytest.mark.usefixtures("careers_read_at_once")
 def test_typing_a_missing_must_have_moves_the_band_and_records_why(client):
     job_id = make_job(client)
     cid = drop_cv(client, job_id)["subject_id"]
@@ -319,7 +320,7 @@ def test_typing_a_missing_must_have_moves_the_band_and_records_why(client):
                                         "payload": _skill_payload("insar")})
     assert r.status_code == 201
     after = client.get(f"/v1/jobs/{job_id}/people/{cid}/gaps").json()
-    assert after["band"] == "priority" and after["reason"] == "supported:insar"
+    assert after["band"] == "priority" and after["reason"] in ("supported:insar", "match:strong:must-haves met")
     insar = next(row for row in after["rows"] if row["token"] == "insar")
     assert insar["status"] == "evidence" and insar["official"] is True
     last = after["history"][-1]

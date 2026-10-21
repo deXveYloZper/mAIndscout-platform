@@ -1,3 +1,4 @@
+import pytest
 """Slice 3: the Brief. Compiled from what is not known, priority by default, answers become official facts and
 re-match, person-wide answers are inherited, answered and dismissed items never come back, no send path."""
 
@@ -38,6 +39,7 @@ def test_briefs_are_for_priority_people_by_default(client, fake, session):
     assert brief(client, job, cid, force="true")["available"] is True
 
 
+@pytest.mark.usefixtures("careers_read_at_once")
 def test_the_brief_compiles_person_and_job_questions_from_fixed_templates(client, fake, session):
     job, cid = priority_job(client, fake)
     client.post(f"/v1/jobs/{job}/requirements", json={"category": "domain", "strength": "strong_plus", "text_raw": "Fintech experience",
@@ -50,6 +52,7 @@ def test_the_brief_compiles_person_and_job_questions_from_fixed_templates(client
     assert items["std:notice"]["scope"] == "person"
 
 
+@pytest.mark.usefixtures("careers_read_at_once")
 def test_an_answer_becomes_an_official_fact_and_settles_its_requirement(client, fake, session):
     job, cid = priority_job(client, fake)
     client.post(f"/v1/jobs/{job}/requirements", json={"category": "domain", "strength": "strong_plus", "text_raw": "Fintech experience",
@@ -65,6 +68,7 @@ def test_an_answer_becomes_an_official_fact_and_settles_its_requirement(client, 
     assert client.post(f"/v1/brief/{fintech['id']}/answer", json={"outcome": "confirmed"}).status_code == 422, "answered once"
 
 
+@pytest.mark.usefixtures("careers_read_at_once")
 def test_person_wide_answers_are_inherited_by_every_job(client, fake, session):
     job_a, cid = priority_job(client, fake, "a.pdf")
     notice = by_key(brief(client, job_a, cid)["items"])["std:notice"]
@@ -76,6 +80,7 @@ def test_person_wide_answers_are_inherited_by_every_job(client, fake, session):
     assert on_b["id"] == notice["id"] and on_b["status"] == "answered" and on_b["answer"] == "one month"
 
 
+@pytest.mark.usefixtures("careers_read_at_once")
 def test_regeneration_never_brings_back_answered_or_dismissed_items(client, fake, session):
     job, cid = priority_job(client, fake)
     items = by_key(brief(client, job, cid)["items"])
@@ -88,6 +93,7 @@ def test_regeneration_never_brings_back_answered_or_dismissed_items(client, fake
     assert len(session.scalars(select(BriefItem).where(BriefItem.candidate_id == uuid.UUID(cid), BriefItem.source_key == "std:salary")).all()) == 1
 
 
+@pytest.mark.usefixtures("careers_read_at_once")
 def test_an_item_whose_reason_is_gone_expires(client, fake, session):
     job, cid = priority_job(client, fake)
     r = client.post(f"/v1/jobs/{job}/requirements", json={"category": "domain", "strength": "strong_plus", "text_raw": "Fintech experience",
@@ -98,6 +104,7 @@ def test_an_item_whose_reason_is_gone_expires(client, fake, session):
     assert after[fintech["id"]]["status"] == "expired"
 
 
+@pytest.mark.usefixtures("careers_read_at_once")
 def test_a_location_answer_becomes_where_they_live(client, fake, session):
     from tests.test_process import cv_json
 
@@ -145,6 +152,7 @@ def test_every_question_that_needs_it_says_why_in_one_line():
     assert person["std:salary"].why is None and person["std:location"].why is None, "obvious questions need no reason"
 
 
+@pytest.mark.usefixtures("careers_read_at_once")
 def test_the_brief_says_who_this_is_and_why_they_are_on_the_list(client, fake, session):
     job, cid = priority_job(client, fake)
     head = brief(client, job, cid)["header"]

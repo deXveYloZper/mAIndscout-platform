@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -45,7 +46,7 @@ from maindscout.db.models import (
 )
 from maindscout.storage import BlobStore
 
-DEFAULT_TARGET = 10
+DEFAULT_TARGET = 15  # strong suggestions to find before a search rests (owner, 2026-10-21: "at least 10-15")
 DEFAULT_BUDGET_USD = 5.0
 DEFAULT_DESK_BUDGET_USD = 50.0
 QUERY_COOLDOWN = timedelta(days=30)
@@ -208,11 +209,35 @@ def never_sourced(session: Session, org_id: uuid.UUID) -> set[uuid.UUID]:
     return out
 
 
+def strong_now(session: Session, run_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
+    """How many of each run's people are strong now. At search time nobody is: the career readings come after
+    (2026-10-21), so a run's count is read from where its people stand."""
+    if not run_ids:
+        return {}
+    rows = session.execute(select(SourcingHit.run_id, func.count()).join(
+        CandidateJob, (CandidateJob.job_id == SourcingHit.job_id) & (CandidateJob.candidate_id == SourcingHit.candidate_id)).where(
+        SourcingHit.run_id.in_(run_ids), CandidateJob.triage_band == "priority").group_by(SourcingHit.run_id))
+    return {run_id: n for run_id, n in rows}
+
+
+def _lives_outside(found: Any, countries: set[str]) -> bool:
+    """Does a web profile say, before anything is stored, that the person lives outside the role's countries? Only
+    when its location names a country; an unclear place is stored and checked as usual."""
+    from maindscout.domain import geo
+
+    if not countries or not found.person:
+        return False
+    code = geo.country_in(str(found.person.get("location") or ""))
+    return code is not None and code not in countries
+
+
 def current_employers(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID) -> set[str]:
+    from maindscout.api import memo
+
     out = set()
-    for c in session.scalars(select(Claim).where(Claim.org_id == org_id, Claim.subject_id == candidate_id,
-                                                 Claim.claim_type == "CareerStepClaim", Claim.status.in_(LIVE),
-                                                 Claim.valid_to.is_(None))):
+    for c in memo.places_and_steps(session, org_id, candidate_id):
+        if c.claim_type != "CareerStepClaim" or c.valid_to is not None:
+            continue
         company_id = ((c.approved_view or c.payload).get("company") or {}).get("company_id")
         if company_id:
             out.add(company_id)
@@ -302,6 +327,12 @@ def strong_waiting(session: Session, job_id: uuid.UUID) -> int:
     """Strong suggestions found by sourcing that nobody has contacted yet: never someone who said stop, nor someone
     living outside the role's countries (they are not shown, so they never hold the search back), nor a reach the
     owner has not chosen (a head of engineering for a developer role, phase 1c)."""
+    from maindscout.api import memo
+
+    return memo.cached(session, ("strong_waiting", job_id), lambda: _strong_waiting(session, job_id))
+
+
+def _strong_waiting(session: Session, job_id: uuid.UUID) -> int:
     from maindscout.api import outreach
 
     rows = session.execute(select(CandidateJob.candidate_id, CandidateJob.org_id, CandidateJob.band_overridden_by).join(
@@ -372,6 +403,10 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
                                 target=query.target if query else None, tier=query.tier if query else None,
                                 new_to_desk=new_to_desk))
         session.flush()
+        if channel == "exa_people":  # judged before the hit existed: a strong web find gets its deeper look now
+            from maindscout.api import evidence
+
+            evidence.maybe_queue(session, pair, pair.triage_band)
         strong = pair.triage_band == "priority"
         row.strong += strong
         return True, strong
@@ -409,16 +444,20 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
     seen_pages: set[str] = set()
     added_people: list[uuid.UUID] = []
     employer_ids: dict[str, None] = {}
+    searched_companies: dict[str, None] = {}
     reason = None
+    stop: tuple[str, str] | None = None  # why the searches ended early; the people already added still get read
     for q in strategy.next_searches(session, job, p, set(radar.live(session, org_id)), limits):
         if strong_waiting(session, job.id) >= p.target:
-            return done("done", "target")
+            stop = ("done", "target")
+            break
         if made >= MAX_WEB_QUERIES_PER_RUN:
             reason = "run_limit"
             break
         size = q.get("results") or RESULTS_PER_QUERY
         if why := _budget_left(session, org_id, job, p, strategy.search_cost(size) + 0.003):
-            return done("stopped", why)
+            stop = ("stopped", why)
+            break
         key = _key("exa_people", q["text"], q["country"])
         sq = session.scalar(select(SourcingQuery).where(SourcingQuery.job_id == job.id, SourcingQuery.key == key))
         if sq is not None and sq.last_run_at and sq.last_run_at > _now() - QUERY_COOLDOWN:
@@ -433,8 +472,11 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
             results = exa.search(caller, q["text"], "people", num_results=size, country=q["country"])
         except exa.ExaError as error:
             row.error = str(error)[:500]
-            return done("failed" if made == 0 else "stopped", "error")
+            stop = ("failed" if made == 0 else "stopped", "error")
+            break
         made += 1
+        if q.get("company_id"):
+            searched_companies[q["company_id"]] = None
         costs.record(session, org_id, "sourcing_exa_people", {"model": "exa", "usd": results.usd, "sources": len(results.found)},
                      subject_type="job", subject_id=job.id, task_id=task_id)
         sq.runs += 1
@@ -454,6 +496,11 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
                 report["web"]["off_target"] += 1
                 continue
             seen_pages.add(found.url)
+            if _lives_outside(found, set(p.countries or [])) and discovery.person_by_profile(session, org_id, found.url) is None:
+                # Someone new who lives outside the role's countries is never stored nor read (owner, 2026-10-21: "no
+                # need to keep them even for future"): 67 such people had been kept, and many read, on one InSAR run.
+                refuse("outside_countries")
+                continue
             cid, outcome = discovery.add(session, blobs, org_id, found, skills)
             if cid is None:
                 refuse(outcome)
@@ -487,6 +534,15 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
             row.error = str(error)[:500]
     for cid in added_people:
         profiles.queue(session, org_id, cid)
+    # 3b. What the searched companies use, from their own job adverts (employer evidence, owner 2026-10-17): in the
+    # background, once per company per 180 days; its people are matched again when it is read.
+    from maindscout.api import practices
+
+    title = (p.role_variants or [job.title])[0]
+    report["practices"] = sum(practices.queue(session, org_id, job, session.get(Company, uuid.UUID(c)), title)
+                              for c in searched_companies)
+    if stop is not None:  # (2026-10-21: a run that reached its target returned here before reading anyone it had added)
+        return done(*stop)
 
     # 4. The list grows: earlier employers of strong people, and companies like the ones that produce.
     if made:
@@ -525,13 +581,17 @@ def due(session: Session, now: datetime | None = None) -> list[tuple[uuid.UUID, 
 def _people_facts(session: Session, org_id: uuid.UUID, ids: list[uuid.UUID]) -> dict[uuid.UUID, dict[str, Any]]:
     from maindscout.api import company_profiles
 
-    out: dict[uuid.UUID, dict[str, Any]] = {i: {"current": None, "location": None, "profile": None, "employer": None} for i in ids}
+    out: dict[uuid.UUID, dict[str, Any]] = {i: {"current": None, "title": None, "company": None, "location": None,
+                                                "profile": None, "employer": None, "links": []} for i in ids}
+    pages: dict[uuid.UUID, list[str]] = {i: [] for i in ids}
     for c in session.scalars(select(Claim).where(Claim.org_id == org_id, Claim.subject_id.in_(ids or [None]),
                                                  Claim.status.in_(LIVE),
-                                                 Claim.claim_type.in_(("CareerStepClaim", "LocationClaim", "ContactClaim")))):
+                                                 Claim.claim_type.in_(("CareerStepClaim", "LocationClaim", "ContactClaim")))
+                             .order_by(Claim.created_at)):
         p, row = c.approved_view or c.payload, out[c.subject_id]
         if c.claim_type == "CareerStepClaim" and c.valid_to is None and not row["current"]:
-            row["current"] = f"{p.get('title_raw')} at {(p.get('company') or {}).get('raw_name')}"
+            row["title"], row["company"] = p.get("title_raw"), (p.get("company") or {}).get("raw_name")
+            row["current"] = f"{row['title']} at {row['company']}"
             company_id = (p.get("company") or {}).get("company_id")
             if company_id:  # where they work, in facts: kind, size, stage (phase 1b)
                 row["employer"] = company_profiles.summary(session.get(Company, uuid.UUID(company_id)))
@@ -539,6 +599,16 @@ def _people_facts(session: Session, org_id: uuid.UUID, ids: list[uuid.UUID]) -> 
             row["location"] = p.get("place_raw")
         elif c.claim_type == "ContactClaim" and p.get("kind") == "linkedin" and not row["profile"]:
             row["profile"] = p.get("value")
+        elif (c.claim_type == "ContactClaim" and p.get("kind") == "url" and p.get("value")
+              and p.get("attributable") is not False and p.get("attribution") in (None, "subject")):
+            pages[c.subject_id].append(p["value"])  # their own pages (a portfolio, GitHub), never a CV template's site
+    for i, row in out.items():  # the card's quick links: LinkedIn first, then up to two pages of their own
+        seen: set[str] = set()
+        for kind, value in [("linkedin", row["profile"])] + [("page", v) for v in pages[i]]:
+            key = re.sub(r"^https?://(www\.)?", "", value or "").rstrip("/").lower()
+            if value and key not in seen and len(row["links"]) < 3:
+                seen.add(key)
+                row["links"].append({"kind": kind, "url": value if value.startswith("http") else f"https://{value}"})
     return out
 
 
@@ -555,6 +625,22 @@ def _follow_up(session: Session, track: dict[str, Any]) -> dict[str, Any]:
             "drafted": bool(child is not None and child.status in ("draft", "in_mailbox")),
             "draft_id": str(child.id) if child is not None and child.status in ("draft", "in_mailbox") else None,
             "sent_at": child.sent_at.isoformat() if child is not None and child.sent_at else track.get("followed_up_at")}
+
+
+def _research(session: Session, job_id: uuid.UUID) -> dict[str, Any] | None:
+    """What the last strategy build's competitor research found (step D): found, kept, left out and why."""
+    t = session.scalar(select(Task).where(Task.kind == "sourcing_strategy", Task.dedupe_key == f"strategy:{job_id}",
+                                          Task.status == "done").order_by(Task.created_at.desc()).limit(1))
+    return (t.result or {}).get("competitors") if t is not None else None
+
+
+def _round(session: Session, job_id: uuid.UUID) -> dict[str, Any] | None:
+    """Where a "Search now" that goes on by itself is: its batch, and whether it waits for career readings."""
+    t = session.scalar(select(Task).where(Task.kind == "sourcing_run", Task.dedupe_key == f"sourcing:{job_id}",
+                                          Task.status.in_(("queued", "running"))).order_by(Task.created_at.desc()).limit(1))
+    if t is None or t.payload.get("trigger") != "continue":
+        return None
+    return {"round": t.payload.get("round", 1), "waiting": t.status == "queued"}
 
 
 def _strategy_note(session: Session, job_id: uuid.UUID) -> dict[str, Any] | None:
@@ -574,15 +660,29 @@ def _strategy_note(session: Session, job_id: uuid.UUID) -> dict[str, Any] | None
     return None
 
 
+def _plus(pair: CandidateJob) -> dict[str, Any]:
+    """The role's strong-plus items and how this person meets each (strong / partial / gap / ask), from their match."""
+    rows = [{"requirement": r.get("requirement"), "verdict": r.get("verdict")}
+            for r in ((pair.match or {}).get("rows") or []) if r.get("strength") == "strong_plus"]
+    return {"rows": rows, "met": sum(1 for r in rows if r["verdict"] == "strong")}
+
+
 # The Sourcing tab's lists, in the order of the workflow (outreach.stage).
 LISTS = ("to_review", "to_contact", "later", "contacted", "replied", "call_booked", "passed")
 
 
 def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "system") -> dict[str, Any]:
     """Everything the role's sourcing tab shows: the plan, budgets, recent runs, and the suggestions waiting."""
+    from maindscout.api import memo
+
+    with memo.reading(session):
+        return _page(session, org_id, job_id, actor)
+
+
+def _page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "system") -> dict[str, Any]:
     from maindscout.api import companies as companies_mod
     from maindscout.api import company_profiles, hiring, outreach, radar, strategy
-    from maindscout.api.queries import _gap_rows_many, _gap_summary, names
+    from maindscout.api.queries import names
     from maindscout.settings import env
 
     job = _job(session, org_id, job_id)
@@ -591,15 +691,26 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
     signals = radar.live(session, org_id)
     state = strategy.company_state(session, job.id, p)
     avoid_ids, avoid_kinds = strategy.not_from(session, job)
+    lux = strategy.luxury(session, job)
+    from maindscout.api.process import client_context
+
+    client_staff = client_context(session, job)["staff"]
     profiles_by_id = {str(c.id): c for c in session.scalars(select(Company).where(
         Company.id.in_([uuid.UUID(t["company_id"]) for t in p.targets if t.get("company_id")] or [None])))}
+    strategy.prefetch_closed(session, list(profiles_by_id.values()))  # one query for every target, not one each
     targets = [{**t, "group": strategy.group_of(t), "off_limits": limits.get(t.get("company_id") or ""),
                 "release": signals.get(t.get("company_id") or ""),
                 "progress": {k: v for k, v in (state.get(t.get("company_id") or "") or {}).items() if k not in ("texts", "recent")} or None,
-                "fit": strategy.fit(session, profiles_by_id.get(t.get("company_id") or ""), set(p.countries or []), avoid_kinds),
+                "fit": ({"searched": False, "why": "the hiring profile says not to recruit from here"}
+                        if (t.get("company_id") or "") in avoid_ids else
+                        strategy.fit(session, profiles_by_id.get(t.get("company_id") or ""), set(p.countries or []), avoid_kinds, lux,
+                                     None if t.get("tier") in ("named", "manual") else client_staff, "C" in (p.open_tiers or []))),
                 "profile": company_profiles.summary(profiles_by_id.get(t.get("company_id") or ""))}
                for t in p.targets]
     hits = {h.candidate_id: h for h in session.scalars(select(SourcingHit).where(SourcingHit.job_id == job.id))}
+    from maindscout.api import memo
+
+    memo.prefetch_places_and_steps(session, org_id, list(hits))  # one query, not three per person
     pairs = [x for x in session.scalars(select(CandidateJob).where(CandidateJob.job_id == job.id,
                                                                    CandidateJob.candidate_id.in_(list(hits) or [None])))]
     stopped = set(session.scalars(select(Candidate.id).where(Candidate.id.in_(list(hits) or [None]),
@@ -618,7 +729,8 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
             continue
         by_stage.setdefault(st, []).append(x)
     waiting = by_stage.get("to_review", [])
-    waiting.sort(key=lambda x: (x.triage_band != "priority", -(hits[x.candidate_id].created_at.timestamp())))
+    # Within a band, those who meet more of the role's strong-plus items first (each card says which); never a score.
+    waiting.sort(key=lambda x: (x.triage_band != "priority", -_plus(x)["met"], -(hits[x.candidate_id].created_at.timestamp())))
     for st, rows_ in by_stage.items():
         if st == "passed":  # the latest first, so a pass made by mistake is easy to undo
             rows_.sort(key=lambda x: (x.contact or {}).get("decided_at") or "", reverse=True)
@@ -627,7 +739,24 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
     shown = [x for st in LISTS for x in by_stage.get(st, [])[:100]]
     ids = [x.candidate_id for x in shown]
     who, facts = names(session, ids), _people_facts(session, org_id, ids)
-    rows = _gap_rows_many(session, org_id, job, ids) if ids else {}
+    from maindscout.api import evidence as evidence_checks
+
+    checks = evidence_checks.summaries(session, job.id, ids)  # the deeper look at strong matches (owner, 2026-10-17)
+    # The card in a few words (step E, 2026-10-20): why, what a possible is short of, what to settle on the call.
+    from maindscout.api import profiles as career
+    from maindscout.domain import cards
+
+    work = career.latest_work(session, ids)
+    lives = hiring.residence(session, job)
+    from maindscout.domain import gaps
+
+    lived = [{"id": str(c.id), "payload": c.approved_view or c.payload} for c in lives]
+    # Only "where people must live" is read here (the card's "to settle"); the full gap table is on the person's page.
+    rows = {cid: gaps.gap_table(lived, [gaps.Fact(str(c.id), c.claim_type, c.approved_view or c.payload, c.status, c.valid_from,
+                                                  c.valid_to, None) for c in memo.places_and_steps(session, org_id, cid)])
+            for cid in ids} if lived else {}
+    lives_ids = {r["id"] for r in lived}
+    cities = list(dict.fromkeys(x for c in lives for x in (c.approved_view or c.payload).get("cities") or []))
     queries = {q.id: q for q in session.scalars(select(SourcingQuery).where(SourcingQuery.job_id == job.id))}
     now = datetime.now(timezone.utc).isoformat()
     lists: dict[str, list[dict[str, Any]]] = {st: [] for st in LISTS}
@@ -637,27 +766,39 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
         at = None
         if q is not None and q.company_id is not None:
             ids_ = set(companies_mod._ids_for(session, session.get(Company, q.company_id)))
-            for step in session.scalars(select(Claim).where(Claim.subject_id == x.candidate_id, Claim.claim_type == "CareerStepClaim",
-                                                            Claim.status.in_(LIVE))):
+            for step in memo.places_and_steps(session, org_id, x.candidate_id):  # loaded for everyone above
+                if step.claim_type != "CareerStepClaim":
+                    continue
                 if ((step.approved_view or step.payload).get("company") or {}).get("company_id") in ids_:
                     at = "now" if step.valid_to is None else (at or "before")
         track = {k: v for k, v in (x.contact or {}).items() if k not in ("mail_ids", "machine")}
         machine = ((x.contact or {}).get("machine") or {}).get("band") or x.triage_band
         st = outreach.stage(x)
         follow = _follow_up(session, track)
+        reach = outreach.reach(session, org_id, x.candidate_id, job)
+        match_rows = (x.match or {}).get("rows") or []
+        home = next(((r.status, r.detail) for r in rows.get(x.candidate_id, []) if r.requirement_id in lives_ids), None)
+        place = facts[x.candidate_id]["location"]
         lists[st].append({"candidate_id": str(x.candidate_id), "name": who.get(x.candidate_id), "band": x.triage_band,
                           "reason": x.triage_reason, "match_tier": x.match_tier, "state": x.pair_state, "stage": st,
                           "hint": "looks strong" if machine == "priority" else "possible",
-                          "reach": outreach.reach(session, org_id, x.candidate_id, job),
+                          "reach": reach,
+                          "why": cards.why(match_rows, work.get(x.candidate_id), x.match_tier),
+                          "short_of": cards.short_of(match_rows, (x.match or {}).get("rules")),
+                          "settle": cards.settle(home, place, cities, reach),
+                          "place": cards.place_words(place),
                           "contact": track or None,
                           "follow_up": follow,
                           "follow_up_due": bool(st == "contacted" and follow["due"] and follow["due"] <= now and not follow["drafted"]),
-                          **facts[x.candidate_id], **_gap_summary(rows.get(x.candidate_id, [])),
+                          **facts[x.candidate_id],
+                          "evidence": checks.get(x.candidate_id), "checkable": h.channel == "exa_people",
+                          "plus": _plus(x)["rows"],
                           "found_by": {"channel": h.channel, "target": h.target, "tier": h.tier, "query": q.text if q else None,
                                        "at_target": at,
                                        "at": h.created_at.isoformat() if h.created_at else None, "new_to_desk": h.new_to_desk}})
     suggestions = lists["to_review"]
     runs = list(session.scalars(select(SourcingRun).where(SourcingRun.job_id == job.id).order_by(SourcingRun.started_at.desc()).limit(10)))
+    strong_by_run = strong_now(session, [r.id for r in runs])
     return {
         "job_id": str(job.id), "title": job.title, "state": job.state,
         "plan": {"version": p.version, "mode": p.mode, "target": p.target, "monthly_budget_usd": float(p.monthly_budget_usd),
@@ -674,11 +815,14 @@ def page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "s
             Task.kind == "sourcing_strategy", Task.dedupe_key == f"strategy:{job.id}", Task.status.in_(("queued", "running")))) > 0,
         "web_ready": bool(env("EXA_API_KEY")),
         "strategy_note": _strategy_note(session, job.id),
+        "competitor_research": _research(session, job.id),
+        "search_round": _round(session, job.id),
         # Queued counts too: right after "Search now" the task waits for a worker, and the page should wait with it.
         "running": any(r.status == "running" for r in runs) or session.scalar(select(func.count()).select_from(Task).where(
             Task.kind == "sourcing_run", Task.dedupe_key == f"sourcing:{job.id}", Task.status.in_(("queued", "running")))) > 0,
         "runs": [{"id": str(r.id), "trigger": r.trigger, "status": r.status, "stop_reason": r.stop_reason, "found": r.found,
-                  "new": r.new, "known": r.known, "refused": r.refused, "strong": r.strong, "cost_usd": float(r.cost_usd or 0),
+                  "new": r.new, "known": r.known, "refused": r.refused, "strong": strong_by_run.get(r.id, 0),
+                  "cost_usd": float(r.cost_usd or 0),
                   "report": r.report, "error": r.error, "started_at": r.started_at.isoformat() if r.started_at else None,
                   "ended_at": r.ended_at.isoformat() if r.ended_at else None} for r in runs],
         "suggestions": suggestions,

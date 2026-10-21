@@ -13,7 +13,7 @@ type GapRow = {
   kind: string;
   strength: string;
   distinctive: boolean;
-  status: "evidence" | "missing" | "conflict" | "question";
+  status: "evidence" | "likely" | "missing" | "conflict" | "question";
   detail: string;
   official: boolean;
   token: string | null;
@@ -56,6 +56,7 @@ type GapPage = {
 
 const STATUS_LABEL: Record<GapRow["status"], string> = {
   evidence: "Evidence",
+  likely: "Likely (their employer)",
   missing: "Missing",
   conflict: "Conflict",
   question: "Ask",
@@ -127,7 +128,7 @@ export default async function PersonOnJob({ params }: { params: Promise<{ id: st
                 </td>
                 <td>
                   {verdicts[r.requirement_id]?.detail ?? r.detail}
-                  {r.status === "missing" && r.token && (
+                  {(r.status === "missing" || r.status === "likely") && r.token && (
                     <div className="row" style={{ marginTop: 6 }}>
                       {r.token.split("/").filter(Boolean).map((t) => (
                         <ActForm key={t} action={addSkill.bind(null, page.person.id, t, path)}>
@@ -143,7 +144,8 @@ export default async function PersonOnJob({ params }: { params: Promise<{ id: st
                       {r.facts.filter((f) => f.snippet).slice(0, 2).map((f) => (
                         <blockquote key={f.id} className="snippet">“{f.snippet}”</blockquote>
                       ))}
-                      <span className={`status ${r.official ? "approved" : ""}`}>{r.official ? "approved" : "proposed, not yet approved"}</span>
+                      <span className={`status ${r.official ? "approved" : ""}`}>{r.status === "likely"
+                        ? "from their employer's job advert, not their own file" : r.official ? "approved" : "proposed, not yet approved"}</span>
                     </>
                   )}
                 </td>

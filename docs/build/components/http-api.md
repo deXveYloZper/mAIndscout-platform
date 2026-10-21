@@ -38,10 +38,13 @@ The cockpit must never touch the database. Every action goes through one guarded
 | `POST /v1/claims/{id}/approve` · `/reject` | Human act on one claim |
 | `POST /v1/claims` | Human-typed fact, born approved (`replaces` supersedes the claim it corrects) |
 | `POST /v1/decisions/{id}/resolve` | Answer a card (see [review.md](review.md)) |
-| `POST /v1/jobs/{id}/campaigns` · `GET /v1/jobs/{id}/campaigns` · `POST /v1/campaigns/{id}/stop` | Refill a thin priority queue from the desk; list; stop ([sourcing.md](sourcing.md)) |
 | `GET /v1/companies?q=` · `GET /v1/companies/{id}` · `POST /v1/companies/{id}/merge` | Companies the desk knows, a company with the people we know there and its public facts, merge ([companies.md](companies.md)) |
 | `GET /v1/candidates/{id}` (profile) | The person page also carries `profile` and `classifications` ([career-profiles.md](career-profiles.md)) |
 | `POST /v1/jobs/{id}/intake` · `POST /v1/jobs/{id}/requirements` · `POST /v1/requirements/{id}/strength` | Intake notes, a requirement typed by the recruiter, change how much a requirement matters ([hiring-profiles.md](hiring-profiles.md)) |
+| `POST /v1/requirements/{id}/edit {text, strength}` · `POST /v1/jobs/{id}/tell {text}` | A requirement in your own words (its values read again from the words); anything about the role in plain words, read like notes, then the brief again ([hiring-profiles.md](hiring-profiles.md)) |
+| `POST /v1/jobs/{id}/requirements/confirm {ids}` | Confirm all: the requirements the desk read, approved together; everyone on the role re-matched once ([hiring-profiles.md](hiring-profiles.md)) |
+| `POST /v1/jobs/{id}/role-brief[?reread_notes=true]` | Read the role brief (situation, core work, team, hands-on, market, reports to, level, with questions), first reading the notes again if asked ([role-brief.md](role-brief.md)) |
+| `POST /v1/jobs/{id}/role-brief/answer {facet, answer}` | Answer one of the brief's questions: read like notes, then the brief again (two model calls) ([role-brief.md](role-brief.md)) |
 | `GET /v1/jobs/{id}/people/{cid}/brief` · `POST /v1/brief/{item}/answer` · `…/asked` · `…/dismiss` | The Brief and its answers ([brief.md](brief.md)) |
 | `POST /v1/imports` · `…/import` · `…/quote/accept` · `GET /v1/export/people.csv` | Import with allowance and quote; free export ([imports.md](imports.md)) |
 | `GET/DELETE /v1/mailbox` · `POST /v1/mailbox/connect/{provider}` · `GET /v1/mailbox/callback/{provider}` · `POST /v1/mailbox/sync` | Connect Gmail or Outlook; look for sent and replies ([messages.md](messages.md)) |
@@ -50,7 +53,7 @@ The cockpit must never touch the database. Every action goes through one guarded
 | `POST /v1/blocks/{id}/lift` | Lift a client's block with a note ([pipeline.md](pipeline.md)) |
 | `…/activities` · `…/tags` · `GET /v1/tags` · `…/contacts` | Relationship memory ([relationship-memory.md](relationship-memory.md)) |
 | `GET /v1/search` | Search the desk by career profile ([people-search.md](people-search.md)) |
-| `GET /v1/jobs/{id}/sourcing` · `PATCH …/sourcing/plan` · `POST …/sourcing/targets` · `PATCH …/sourcing/targets/{company_id}` · `POST …/sourcing/peers` · `POST …/sourcing/run` | A role's sourcing plan, suggestions and runs; change the plan; add, pin or drop a company; find peer companies; run now (202) ([sourcing-engine.md](sourcing-engine.md)) |
+| `GET /v1/jobs/{id}/sourcing` · `PATCH …/sourcing/plan` · `POST …/sourcing/targets` · `PATCH …/sourcing/targets/{company_id}` · `POST …/sourcing/peers` · `POST …/sourcing/run` | A role's sourcing plan, suggestions and runs; change the plan; add, pin or drop a company; find peer companies; run now (202) ([sourcing-engine.md](sourcing-engine.md)). Each suggestion carries its card: `links` (LinkedIn, then their own pages), `title`, `company`, `place`, `why`, `short_of`, `settle` ([outreach.md](outreach.md)) |
 | `POST /v1/jobs/{id}/sourcing/strategy` · `POST …/sourcing/widen` | Build the role's strategy in the background (talent DNA, tiered companies; 202); the owner's widening choice ([sourcing-strategy.md](sourcing-strategy.md)) |
 | `GET /v1/sourcing/stats` · `GET/PUT /v1/sourcing/settings` | Results and spend per strategy; the desk's sourcing budget (owner only to change) ([sourcing-results.md](sourcing-results.md)) |
 | `GET/POST /v1/off-limits` · `DELETE /v1/off-limits/{id}` | Companies never sourced from ([sourcing-engine.md](sourcing-engine.md)) |

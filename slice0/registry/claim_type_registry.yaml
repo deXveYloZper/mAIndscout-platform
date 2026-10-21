@@ -69,6 +69,19 @@ types:
       Thin in Slice 0. distinctive=true tokens drive do_not_submit.
       Mobility must be separate rows when extracted.
 
+  RoleScopeClaim:
+    class: inferred
+    subject_types: [job]
+    natural_key: "job_id + facet"
+    volatility: volatile
+    default_review: individual
+    payload_schema: schemas/role_scope_claim.schema.json
+    notes: >
+      2026-10-19 (owner, step B of understanding the hire). One line of the role brief: situation, core work, team,
+      hands-on, market, reports to, level. Read from the ad, the notes and public research on the hiring company;
+      each line names its basis, a quoted one has its quote as evidence, a reading of ours may carry one question
+      for whoever uploaded the job. Proposed until a person approves or corrects it; never personality or names.
+
   SameAsClaim:
     class: inferred
     subject_types: [candidate, company]
@@ -134,6 +147,18 @@ types:
     volatility: volatile
     default_review: policy_eligible
     payload_schema: schemas/company_location_claim.schema.json
+
+  CompanyPracticeClaim:
+    class: observed
+    subject_types: [company]
+    natural_key: "company_id + token + area"
+    volatility: volatile
+    default_review: policy_eligible
+    payload_schema: schemas/company_practice_claim.schema.json
+    notes: >
+      2026-10-17 (owner). A technology, tool, method or standard the company uses, quoted from its own job adverts or
+      careers pages, with the page as evidence. Public tier. Employer evidence for matching: someone in that area of
+      work there is "likely" to use it (never strong on its own). Never people.
 
   StepClassificationClaim:
     class: inferred

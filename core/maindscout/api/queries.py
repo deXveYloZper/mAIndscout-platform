@@ -135,12 +135,14 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
     stopped = set(session.scalars(select(Candidate.id).where(
         Candidate.id.in_([p.candidate_id for p in pairs] or [None]), Candidate.do_not_contact_at.is_not(None))))
     archived = []
-    from maindscout.api import outreach, roles
+    from maindscout.api import outreach, role_brief, roles
+    from maindscout.domain import groups
 
     # Phase 1c: people found by sourcing stay on the Sourcing tab until the owner decides; only a count shows here.
     suggested = outreach.undecided(session, org_id, job.id)
     pairs = [p for p in pairs if p.candidate_id not in suggested]
-    gap_rows = _gap_rows_many(session, org_id, job, [p.candidate_id for p in pairs if p.candidate_id not in gone])
+    gap_rows = _gap_rows_many(session, org_id, job, [p.candidate_id for p in pairs if p.candidate_id not in gone],
+                              with_snippets=False)  # the page shows counts, never the quotes
     for p in pairs:
         if p.candidate_id in gone:
             archived.append({"candidate_id": str(p.candidate_id), "name": who.get(p.candidate_id),
@@ -157,6 +159,10 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
         "id": str(job.id), "title": job.title, "hiring_company": job.hiring_company, "state": job.state,
         "source_document_id": str(job.source_document_id) if job.source_document_id else None,
         "requirements": [claim_view(c, ev[c.id]) for c in reqs],
+        # Step B (2026-10-19): what the desk searches and rates by, what is for the call, and what is context.
+        "requirement_groups": {str(c.id): list(groups.group(c.approved_view or c.payload)) for c in reqs},
+        "role_brief": role_brief.view(session, job.id),
+        "role_brief_read_at": role_brief.read_at(session, job.id),
         "process_stale": any(c.flags.get("job_process_stale") for c in reqs),
         "rematching": _rematching(session, job.id),
         "people": people,
@@ -356,18 +362,15 @@ def _gap_rows_many(session: Session, org_id: uuid.UUID, job: Job, candidate_ids:
                                                      Claim.status.in_(LIVE))):
             claims[c.subject_id].append(c)
     ev = evidence_for(session, [c.id for cs in claims.values() for c in cs]) if with_snippets else defaultdict(list)
+    from maindscout.api.practices import employer_facts
+
+    employers = employer_facts(session, claims)  # what their employers use, for skills they never wrote down
     out = {}
     for cid, mine in claims.items():
         facts = [gaps.Fact(str(c.id), c.claim_type, c.approved_view or c.payload, c.status, c.valid_from, c.valid_to,
                            (ev[c.id][-1]["snippet"] if ev[c.id] else None)) for c in mine]  # newest reading
-        out[cid] = gaps.gap_table(requirements, facts)
+        out[cid] = gaps.gap_table(requirements, facts + employers.get(cid, []))
     return out
-
-
-def gap_counts(session: Session, org_id: uuid.UUID, job: Job, candidate_id: uuid.UUID) -> dict[str, int]:
-    from maindscout.domain import gaps
-
-    return gaps.counts(_gap_rows(session, org_id, job, candidate_id))
 
 
 def gap_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, candidate_id: uuid.UUID) -> dict[str, Any]:

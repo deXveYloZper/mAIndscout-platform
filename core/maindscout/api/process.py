@@ -7,6 +7,7 @@ The caller owns the transaction: this flushes, the caller commits (or rolls ever
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -114,6 +115,8 @@ def natural_key(subject_id, claim_type: str, p: dict, valid_from: str | None = N
         return f"{sid}|answer|{p['topic']}|{p.get('job_id') or ''}"
     if claim_type == "PreferenceClaim":
         return f"{sid}|pref|{p['facet']}"
+    if claim_type == "RoleScopeClaim":
+        return f"{sid}|scope|{p['facet']}"  # the same key the brief reader writes (api/role_brief.py)
     raise ValueError(f"No natural key for {claim_type}")
 
 
@@ -331,11 +334,51 @@ def pair_inputs(session: Session, org_id, candidate_id, job: Job) -> tuple[list[
 
 
 def _triage_now(session: Session, org_id, candidate_id, job: Job, inputs: tuple[list[Claim], list[Claim]] | None = None) -> triage.Triage:
+    from maindscout.api.practices import employer_facts
+    from maindscout.domain.gaps import employer_support
+
     reqs, mine = inputs or pair_inputs(session, org_id, candidate_id, job)
     requirements = [c.payload for c in reqs]
     skills = [c.payload["normalized_skill"] for c in mine if c.claim_type == "SkillClaim"]
     titles = [c.payload["title_raw"] for c in mine if c.claim_type == "CareerStepClaim"]
-    return triage.triage(requirements, skills, titles)
+    tokens = triage.distinctive_tokens(requirements)
+    employers = employer_facts(session, {candidate_id: mine}).get(candidate_id, []) if tokens else []
+    likely = {t for t in tokens if employers and employer_support(t, employers)}
+    return triage.triage(requirements, skills, titles, likely)
+
+
+# "360", "broad marketing experience", "all-round": the role wants a generalist, so a narrow specialist is a reach.
+GENERALIST = re.compile(r"\b(360|all[- ]round|broad\b|integrated|generalist|full[- ]funnel)", re.I)
+
+
+def client_context(session: Session, job: Job) -> dict[str, Any]:
+    """What step C compares a person with (owner, 2026-10-21): the client's size (a counted headcount first, then Exa's
+    count, then the bottom of a bracket), the role's level (its role requirement, else the role brief), whether the
+    role asks for an all-round person, and the words of what it asks for (a specialism it wants is never held against
+    anyone)."""
+    from maindscout.db.models import Company, PUBLIC_ORG_ID
+
+    staff = None
+    company = session.get(Company, job.hiring_company_id) if job.hiring_company_id else None
+    if company is not None:
+        team = session.scalar(select(Claim).where(Claim.org_id == PUBLIC_ORG_ID, Claim.subject_id == company.id,
+                                                  Claim.claim_type == "TeamSizeClaim", Claim.status.in_(("proposed", "approved"))))
+        counted = team is not None and team.payload.get("min") is not None and team.payload.get("min") == team.payload.get("max")
+        staff = (team.payload["min"] if counted else (company.exa_profile or {}).get("employees")
+                 or (team.payload.get("min") if team is not None else None))
+    reqs = [c.approved_view or c.payload for c in session.scalars(select(Claim).where(
+        Claim.subject_id == job.id, Claim.claim_type == "JobRequirementClaim", Claim.status.in_(("proposed", "approved"))))]
+    level = next((p.get("level") for p in reqs if p.get("category") == "role" and p.get("strength") != "anti" and p.get("level")), None)
+    brief = {(c.approved_view or c.payload).get("facet"): (c.approved_view or c.payload) for c in session.scalars(select(Claim).where(
+        Claim.subject_id == job.id, Claim.claim_type == "RoleScopeClaim", Claim.status.in_(("proposed", "approved"))))}
+    if level is None:
+        level = (brief.get("level") or {}).get("value")
+    # What it asks for: its must-haves and strong pluses only. A list of everything an all-round marketer touches (the
+    # ad's nice-to-have "brand, digital, CRM, PR, events…", the brief's "360° plans, influencer seeding, events, CRM")
+    # describes the scope; it does not ask for a CRM specialist (Michela Bassani, 2026-10-21).
+    words = " ".join(p.get("text_raw") or "" for p in reqs if p.get("strength") in ("must", "deal_breaker", "strong_plus"))
+    every = " ".join([p.get("text_raw") or "" for p in reqs if p.get("strength") != "anti"] + [b.get("words") or "" for b in brief.values()])
+    return {"staff": int(staff) if staff else None, "level": level, "generalist": bool(GENERALIST.search(every)), "wanted": words}
 
 
 def _match_now(session: Session, org_id, candidate_id, job: Job, rows=None, coarse: triage.Triage | None = None,
@@ -361,7 +404,8 @@ def _match_now(session: Session, org_id, candidate_id, job: Job, rows=None, coar
     return matching.match(reqs, rows, snap.profile if snap else None, stints,
                           (coarse.band, coarse.reason), answers_for(session, org_id, candidate_id),
                           blocked=block.reason if block is not None else None,
-                          preferences=preference_rows(session, job, inputs[1], [r["payload"] for r in reqs]))
+                          preferences=preference_rows(session, job, inputs[1], [r["payload"] for r in reqs]),
+                          client=client_context(session, job))
 
 
 def job_side(session: Session, job: Job, requirements: list[dict]):
@@ -376,7 +420,7 @@ def job_side(session: Session, job: Job, requirements: list[dict]):
         side.facts = profiles.company_facts(session, session.get(Company, job.hiring_company_id))
     for p in requirements:
         cat = p.get("category")
-        if cat == "role" and p.get("role_family"):
+        if cat == "role" and p.get("role_family") and p.get("strength") != "anti":  # a seniority limit is not the role
             side.family, side.level = p["role_family"], p.get("level")
         elif cat == "employment" and p.get("employment"):
             side.employment = p["employment"]
@@ -448,7 +492,10 @@ def retriage_pair(session: Session, pair: CandidateJob, cause: dict, actor: str 
     coarse = _triage_now(session, pair.org_id, pair.candidate_id, job, inputs)
     m = _match_now(session, pair.org_id, pair.candidate_id, job, rows, coarse, inputs)
     pair.match_tier, pair.match = m.tier, m.as_dict()  # kept up to date even when a person set the band
+    from maindscout.api import evidence
+
     if pair.band_overridden_by:
+        evidence.maybe_queue(session, pair, pair.triage_band)  # the owner chose them: a strong match too
         session.flush()
         return None
     if m.band is None:  # unclear: the coarse band stands
@@ -458,6 +505,7 @@ def retriage_pair(session: Session, pair: CandidateJob, cause: dict, actor: str 
     if result.band == "do_not_submit" and _unreadable(session, pair.candidate_id, inputs[1]):
         # Nothing could be read (an image of a page): no evidence is not evidence of a miss. A person opens the file.
         result = triage.Triage("review_later", "cv_unreadable")
+    evidence.maybe_queue(session, pair, result.band)  # a strong match found on the web: look at their public work
     if (pair.triage_band, pair.triage_reason) == (result.band, result.reason):
         session.flush()
         return None
@@ -491,6 +539,11 @@ INLINE_JOB_REMATCH = 40  # up to this many people, a job re-matches before the r
 
 
 def retriage_job(session: Session, org_id, job_id, cause: dict, actor: str) -> list[PairEvent]:
+    from maindscout.api.discovery import reread_for_job
+
+    # Its requirements changed: people found on the web are read again for its skill words first (free; a CV's skills
+    # were read whole, a found profile only for the words the role had then).
+    reread_for_job(session, org_id, session.get(Job, job_id))
     pairs = session.scalars(select(CandidateJob).where(CandidateJob.org_id == org_id, CandidateJob.job_id == job_id))
     return [e for e in (retriage_pair(session, p, cause, actor) for p in pairs) if e]
 

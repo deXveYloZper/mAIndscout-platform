@@ -25,12 +25,31 @@ Plan section 4.6 and phase I5: replace keyword triage with a comparison of what 
 - **Verdicts:**
   - Skills, years, education and languages come from the gap table.
   - A broad must-have skill not written on a CV ("project management skills") is a question, not a gap: absence from a CV isn't evidence. Distinctive must-haves still decide, as today.
+  - **Likely from their employer** ([employer evidence](employer-evidence.md), 2026-10-17): a distinctive must-have that is only likely is "partly met" (so at most possible, never strong on its own); a broad skill that is likely is "Ask". The token triage that rule 1 reads says `likely_from_employer` instead of `no_support_for_must_have`, so rule 1 does not fire for it.
   - Role: compares the kind of work (same, related or other), the title level, and years of related work.
-  - Background: years at start-ups, scale-ups, consultancies and so on, from employer mix.
-  - Industry: years from domain exposure.
+  - Years asked for ("7 or more years of marketing experience") are compared with their years in that kind of work
+    when there is a career profile, not their whole career: under three quarters of the years is a gap, from three
+    quarters partly met (2026-10-18).
+  - Background: years at start-ups, scale-ups, consultancies and so on; a year is enough (2026-10-18). What is wanted
+    counts only years in the role's kind of work and the work that builds on it (2026-10-19: six months as a baker in
+    a 4-person bakery is not small-brand experience for a marketing role). What is not wanted counts every job.
+  - Company size in people (2026-10-19, `min_staff` / `max_staff`, e.g. "a small or mid-size brand, up to 500
+    people"): years at employers of that size, in the role's kind of work, with the companies named.
+    - Agencies, consultancies, public bodies and non-profits count only when the requirement names them.
+    - Unknown sizes make it a question.
+    - Bands: 1–50, 51–250, 251–500, 501–5,000, 5,000+ (`profile.SIZE_BANDS`).
+  - Industry in the companies' own words (2026-10-19): a requirement with `company_words` ("leather goods", "bags")
+    counts years at employers whose own profile says it; a year is enough; unknown employers make it a question.
+  - Industry: years from domain exposure; a year is enough (2026-10-18, it was two). For a luxury role, years in an
+    industry other than luxury itself (hotels, travel…) count only at luxury companies.
   - Target companies: whether they worked there.
+  - "Not from" a company (2026-10-19): against when they work there now or left less than 6 months ago
+    (`recent_months` on the requirement). An earlier leaver is fine, with the date they left.
+  - A limit on seniority (role, strength anti) and "not from" companies of a size (employer, anti, with a staff
+    count) are read since 2026-10-19 but rate nobody yet. Step C defines them, after match-eval.
   - Employment: contract jobs read contractor patterns. A current contractor for a permanent job is a question.
   - Where someone lives and visas are always "Ask".
+  - A language the profile or CV does not list is "Ask", never a gap (2026-10-18: many profiles list no languages).
 - **Rules, in order** (`matching.RULES`, each with its wording):
   1. **distinctive_must_missing**: a must-have that decides the band has no evidence → unlikely (today's InSAR rule, unchanged).
   2. **not_wanted**: they meet a "not wanted" requirement → unlikely.
@@ -42,6 +61,7 @@ Plan section 4.6 and phase I5: replace keyword triage with a comparison of what 
   7. **must_gaps**: two or more must-have gaps → unlikely; one → possible.
   8. **partial_must**: a must-have only partly met → possible.
   9. **strong_match**: every must-have fully met or only to ask, and at least half of the known strong-plus items met → strong. Otherwise possible.
+- **A strong web find gets a deeper look** ([evidence checks](evidence-checks.md), 2026-10-17): when a re-banding leaves someone found by a web people search in priority, an evidence check is queued (once per 90 days).
 - **When:** every re-banding computes the match: after a CV is read, a fact is approved or corrected, a career profile is built, or the hiring profile changes. The match is kept up to date even when a person set the band by hand, but a hand-set band is never changed. `python -m maindscout rematch` re-matches everyone at no cost.
 
 ## Depends on
@@ -54,6 +74,40 @@ Plan section 4.6 and phase I5: replace keyword triage with a comparison of what 
 - `candidate_job.match_tier` (checked: strong / possible / unlikely / unclear) and `candidate_job.match` (`tier`, `engine`, `rules[{id, text, detail}]`, `rows[{requirement_id, requirement, kind, strength, verdict, detail}]`), migration `0015`.
 - Pair reasons `match:<tier>:<why>`. Today's `no_support_for_must_have:<token>` stays for rule 1.
 - `GET /v1/jobs/{id}/people/{cid}/gaps` returns `match`; `GET /v1/jobs/{id}` returns `match_tier` per person.
+
+## Step C: is the move realistic? (2026-10-21, `match-2026-10-21.3`)
+The owner: "1st its not a competitor, 2. its not similar company compare to 12k people and 62 people, its a
+standard recruiter logic." A match that is strong on paper becomes possible, a reach, with its reason on the card:
+- **Too big a move** (`too_big_a_move`): their current employer is 20 or more times the client's size (Prada Group,
+  12,203 people, for a 62-person brand), unless the role is a step up for them or they spent a year or more in the
+  last 3 years at a company up to 5 times the client's size, in the role's kind of work. A ratio, not size bands:
+  1,027 to 93 (Viridien to Catalyst, a normal move for InSAR people) is 11x, 12,203 to 62 is 197x.
+- **Above the role** (`above_the_role`): two or more levels above the role's level (its role requirement, else the
+  role brief), at the role's own seniority limit ("not too senior: lead and above" now rates), or above it with a
+  global or regional scope.
+- **A specialist for an all-round role** (`specialist`): the role asks for an all-round person ("360", "broad
+  marketing experience") and their title is a narrow kind of marketing work (CRM and clienteling, media, social
+  media, merchandising, events, PR…), unless the role's must-haves or strong pluses ask for that work. A list of
+  everything an all-round marketer touches (a nice-to-have, the brief's scope) does not ask for it.
+
+The client's side (`process.client_context`): its size (a counted headcount first), the role's level, whether it
+asks for an all-round person, and the words of its must-haves and strong pluses. match-eval: the marketing role from
+28 strong to 5 (the 23 moved: 21 Prada Group people, two specialists), the owner's four labels from 0 to 4 right;
+InSAR's two leads at the ad's own seniority limit; Procure AI unchanged.
+
+## Nobody is strong before their career reading (2026-10-21, `match-2026-10-21.2`)
+The owner: "People can't be considered strong before their career reading is done, obviously, this is a real bug!"
+Someone with no career profile yet was Priority on the first, coarse reading (their skills against the must-haves);
+web finds counted as strong and stopped a search at its target before anyone was read. Now a coarse Priority waits
+in Review later ("being read") until the reading arrives; a coarse Review later or Do not submit stands. The card
+says "Being read". Tests that judge a person after an upload use the `careers_read_at_once` fixture, which does the
+background reading at once with a stand-in reader.
+
+## Another field altogether (2026-10-21, `match-2026-10-21.1`)
+A CFO, an HR manager, two operations directors and a store manager were "possible" for a marketing manager role
+on one missing must-have. When the role's kind of work is a must and the person works in an unrelated field ("works
+in finance, not marketing"), the rule `wrong_field` makes them unlikely. A related field (sales for marketing) stays
+partial, and a field read as "other" (unknown) never counts. match-eval: those 5 moved, nothing else on any role.
 
 ## Tests
 - `core/tests/test_matching.py` (10):

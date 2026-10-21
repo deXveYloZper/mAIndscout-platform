@@ -10,8 +10,8 @@ from maindscout.api import coverage, research
 from maindscout.db.models import Candidate, Company, Job, Task
 from maindscout.domain import geo
 from maindscout.intelligence import research as engine
-from tests.test_sourcing import campaign  # noqa: F401
 from tests.test_api import client, drop_cv, fake, make_job, pdf_file  # noqa: F401 (fixtures)
+from tests.test_autosource import blobs  # noqa: F401
 from tests.test_process import JD_JSON, JD_LINES, cv_json
 
 PUNE_LINES = [
@@ -175,7 +175,9 @@ def test_bring_back_sticks(client, fake, session):
     assert person(session, cid).archived_at is None
 
 
-def test_sourcing_skips_archived_people_unless_the_job_accepts_their_country(client, fake, session):
+def test_sourcing_skips_archived_people_unless_the_job_accepts_their_country(client, fake, session, blobs):
+    from tests.test_sourcing import pool_run
+
     fake.cv = pune_cv()
     r = client.post("/v1/candidates", files=pdf_file(PUNE_LINES, "pool.pdf"))
     cid = r.json()["subject_id"]
@@ -183,11 +185,9 @@ def test_sourcing_skips_archived_people_unless_the_job_accepts_their_country(cli
     fake.jd = {**JD_JSON, "requirements": [{"text": "Rust", "category": "skill", "strength": "must", "token": "rust",
                                             "distinctive": True, "quote": "You must have InSAR processing experience."}]}
     job = client.post("/v1/jobs", files=pdf_file(JD_LINES, "rust.pdf")).json()["job_id"]
-    found = campaign(session, client, job, json={}).json()
-    assert found["added"] == 0
+    assert pool_run(session, job, blobs).report["pool"]["added"] == 0
     client.put(f"/v1/jobs/{job}/countries", json={"countries": ["IN"]})
-    found = campaign(session, client, job, json={}).json()
-    assert found["added"] == 1 and person(session, cid).archived_at is None
+    assert pool_run(session, job, blobs).report["pool"]["added"] == 1 and person(session, cid).archived_at is None
 
 
 # --- light research for large consultancies ---------------------------------------------------------

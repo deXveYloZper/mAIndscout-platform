@@ -90,7 +90,9 @@ def found_only_here(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> l
     for cid, kind in session.execute(select(DocumentSubject.subject_id, Document.doc_type).join(
             Document, Document.id == DocumentSubject.document_id).where(DocumentSubject.subject_id.in_(found))):
         kinds.setdefault(cid, set()).add(kind)
-    return sorted((c for c in found - elsewhere if kinds.get(c) and kinds[c] <= {"web_profile"}), key=str)
+    from maindscout.db.models import PUBLIC_DOC_TYPES
+
+    return sorted((c for c in found - elsewhere if kinds.get(c) and kinds[c] <= PUBLIC_DOC_TYPES), key=str)
 
 
 def delete_role(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID, actor: str,

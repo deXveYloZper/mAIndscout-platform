@@ -115,7 +115,7 @@ export type PersonOnJob = {
   reason: string | null;
   overridden_by: string | null;
   open_decisions: number;
-  gaps?: { evidence: number; missing: number; conflict: number; question: number };
+  gaps?: { evidence: number; likely?: number; missing: number; conflict: number; question: number };
   state?: string;
   coverage?: { applicable: number; official: number; needed: number; met: boolean; words: string };
 };
@@ -130,6 +130,10 @@ export type JobPage = JobSummary & {
   found_only_here: number;
   archived: { candidate_id: string; name: string | null; reason: string | null }[];
   coverage: { desk: string[]; from_ad: string[]; opened: string[]; names: Record<string, string> };
+  /** Each requirement's group: searched and rated by, for the conversation, or context (domain/groups.py). */
+  requirement_groups?: Record<string, [RequirementGroup, string]>;
+  role_brief?: BriefLine[];
+  role_brief_read_at?: string | null;
   stages: Record<string, number>;
   hiring: {
     company: { id: string; name: string; kind?: string | null; stage?: string | null; team?: string | null; founded?: string | null;
@@ -139,12 +143,18 @@ export type JobPage = JobSummary & {
   };
 };
 
+export type RequirementGroup = "search" | "conversation" | "context";
+
+/** A line of the role brief (step B): what the hire will really do, where it comes from, and a question when we guessed. */
+export type BriefLine = { id: string; facet: string; value: string | null; words: string; basis: "ad" | "notes" | "research" | "reading";
+  quote: string | null; question: string | null; why: string | null; status: "proposed" | "approved"; at?: string | null };
+
 export type PersonPage = {
   id: string;
   name: string | null;
   claims: Record<string, ClaimView[]>;
   jobs: { job_id: string; title: string; band: Band; reason: string | null; state?: string }[];
-  documents: { id: string; filename: string | null; doc_type: "cv" | "jd" | "transcript" | "web_profile" | "other"; needs_vision: boolean; as_of: string | null }[];
+  documents: { id: string; filename: string | null; doc_type: "cv" | "jd" | "transcript" | "web_profile" | "web_page" | "other"; needs_vision: boolean; as_of: string | null }[];
   open_decisions: string[];
   archived: { at: string; reason: string | null } | null;
   coverage_override: boolean;
@@ -391,9 +401,26 @@ export type ContactTrack = {
 export type Suggestion = { candidate_id: string; name: string | null; band: Band; reason: string | null; match_tier: string | null;
   stage: OutreachStage; hint: "looks strong" | "possible"; reach: string | null; contact: ContactTrack | null; follow_up_due: boolean;
   state: string; current: string | null; location: string | null; profile: string | null; employer: CompanyProfile | null;
+  title?: string | null; company?: string | null; place?: string | null;
+  /** The card in a few words (step E, 2026-10-20): their public pages, why they fit, what a possible is short of,
+      what only the call can settle. */
+  links?: { kind: "linkedin" | "page"; url: string }[]; why?: string[]; short_of?: string[]; settle?: string[];
   gaps?: PersonOnJob["gaps"]; coverage?: PersonOnJob["coverage"];
   found_by: { channel: string; target: string | null; tier: string | null; query: string | null; at: string | null; new_to_desk: boolean;
-    at_target?: "now" | "before" | null } };
+    at_target?: "now" | "before" | null };
+  evidence?: EvidenceCheck | null; checkable?: boolean;
+  plus?: { requirement: string; verdict: string }[] };
+
+/** What a card's buttons and quick links need of a suggestion, and no more: a list of a hundred cards does not copy
+    every card's facts into the page again for its client parts (2026-10-20: the marketing tab was 1.25 MB). */
+export type CardKeys = Pick<Suggestion, "candidate_id" | "stage" | "contact" | "profile" | "links">;
+
+/** The deeper look at a strong match's public work (owner, 2026-10-17). */
+export type EvidenceCheck = { status: "queued" | "running" | "done" | "failed" | "skipped"; at: string | null;
+  outcome: "confirmed" | "mixed" | "weakened" | "nothing_found" | null; reason: string | null;
+  findings: { requirement: string; strength: string; effect: "supports" | "weakens"; because?: string | null; text: string; quote: string;
+    url: string; skill: string | null }[];
+  pages: number; looked: number; facts_added: number; usd: number | null; error: string | null };
 
 export type SourcingPage = {
   job_id: string; title: string; state: string;
@@ -404,6 +431,10 @@ export type SourcingPage = {
   budget: { role_spent_usd: number; role_budget_usd: number; desk_spent_usd: number; desk_budget_usd: number };
   strong_waiting: number; web_ready: boolean; running: boolean; building: boolean; widening: Widening | null;
   strategy_note: { level: "error" | "info"; text: string; at: string | null } | null;
+  /** Step D: the competitor research (Grok, web) of the last strategy build, and a search going on by itself. */
+  competitor_research?: { found: number; kept: number; much_bigger: string[]; refused: { company: string; reason: string }[];
+    pages: number; usd: number } | null;
+  search_round?: { round: number; waiting: boolean } | null;
   runs: SourcingRunView[]; suggestions: Suggestion[]; suggestions_total: number;
   lists: Record<Exclude<OutreachStage, "to_review">, Suggestion[]>; counts: Record<OutreachStage, number>; follow_ups_due: number;
 };

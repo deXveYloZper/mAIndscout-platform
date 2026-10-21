@@ -1,41 +1,54 @@
-# Sourcing feeder
+# The pool step (the desk's own people, first in every sourcing run)
 
-**Status:** built (desk adapter)
-**Slice:** 2
-**Code:** `core/maindscout/api/sourcing.py`, table `campaign` (migration `0007`), routes in `api/app.py`, cockpit `components/FindMore.tsx` and the job page
+**Status:** built. Slice 2's campaigns are removed: their endpoints went on 2026-10-14, their code on 2026-10-19.
+**Slice:** 2, then the [sourcing engine](sourcing-engine.md)
+**Code:** `core/maindscout/api/sourcing.py` (the adapters and the queries), called by `autosource.run` (step 1). The table
+`campaign` (migration `0007`) is kept as history.
 
 ## What
-When a job's priority queue is thin (fewer than 5 people by default), the recruiter can run a bounded find. A campaign derives a query from the job's must-haves, asks one source for people, and puts each person on the job through the ordinary pair-and-triage path.
+Before searching the web, every sourcing run looks at the desk's own people. It finds them by the role's hiring
+profile, or else by its distinctive must-have skills, and puts each one on the role through the ordinary pair-and-match
+path.
 
 ## Why
-Vision: "Sourcing exists only to refill a thin priority queue. Sourced people enter the same path." Slice 2 plan: one source adapter, campaign rows, stop at cap / target / human, and a sourcing signal must never become a scoring feature (P13).
+Vision: "Sourced people enter the same path." The desk's own people are free and the warmest. A sourcing signal must
+never become a scoring feature (P13).
 
 ## How
-- **Source: the desk's own people graph** (owner's choice, 2026-10-03): everyone already read into the platform (the pool and people on other jobs) whose skills or job titles mention a query token, using triage's whole-word matching. Order is newest first, never by how well they match. A second adapter (e.g. GitHub profiles) plugs in behind the same `find` interface later.
-- **Query:** the job's distinctive must-have tokens; if it has none, its must-have skill tokens. A job with no must-have skills cannot be sourced.
-- **One person at a time:** look, put on the job with `_ensure_pair` (the same function an upload uses), count. Stop when priority reaches the target (`target_reached`), when the cap of people looked at is hit (`cap`), when the source has no one left (`exhausted`), or when a human stops it.
-- **Same downstream:** a sourced person's band and reason come from the same rules and facts as for an upload; being sourced only appears in the pair's history (cause `sourced`, campaign id).
-- **Refusals:** no campaign when priority is already at the target, when one is running for the job, or for an unknown source.
-- **Privacy:** a campaign stores counts only (looked at, added, priority added), never names; the people it added are known through their pair history, which erasure deletes.
+- **Two adapters, one `find` interface:**
+  - `ProfileAdapter`: the alumni of the role's target companies first, then everyone whose career profile meets the
+    hiring profile ([people-search.md](people-search.md)).
+  - `DeskAdapter`: anyone whose skills or titles mention the role's distinctive tokens, using triage's whole-word
+    matching.
+  - The order is newest first, never by fit. People who said "stop", people at off-limits companies (passed as
+    `exclude`) and people outside the coverage the role accepts are skipped.
+- **Query:** `profile_query` when the hiring profile gives something to search by; otherwise `query_tokens` (the
+  distinctive must-haves, else the must-have skills).
+- **Same downstream:** a person found here gets their band and reason from the same rules and facts as an upload.
+  Being found shows only in the pair's history (cause `sourced`, channel `pool`) and as a `SourcingHit`.
 - **No mail:** there is no route that sends anything.
 
 ## Depends on
-[process.md](process.md) (`_ensure_pair`, re-triage), [intelligence.md](intelligence.md) (whole-word matching), [persistence.md](persistence.md).
+[process.md](process.md) (`_ensure_pair`, re-matching), [intelligence.md](intelligence.md) (whole-word matching),
+[people-search.md](people-search.md).
 
 ## Used by
-[http-api.md](http-api.md), [cockpit.md](cockpit.md) ("Find more people" on a thin job), [golden-eval.md](golden-eval.md) (Slice 2 gate checks), [sourcing-engine.md](sourcing-engine.md) (the pool step of a run).
-
-## Removed from the cockpit (x-ray B4, 2026-10-14)
-The "Search the desk only, by hand" panel and its endpoints (`/v1/jobs/{id}/campaigns`, `/v1/campaigns/{id}/stop`) were removed: every sourcing run searches the desk's own pool first, with the plan's target. The pool matching here stays: the run's pool step uses it, and the Slice 2 gate check in the golden eval still runs `start()`.
+[sourcing-engine.md](sourcing-engine.md) (step 1 of every run), [golden-eval.md](golden-eval.md) (the slice-2 checks
+on real files, through the same pool look).
 
 ## Tests
-`core/tests/test_sourcing.py` (8): refill through the same triage; distinctive tokens do not pull generalists in; stop at cap; stop at target and refuse when not thin; a sourced person behaves exactly like an uploaded one; stop and list; no must-have skills refused; no mail route. Eval case `slice-2-gate` on real files. e2e: a thin job refilled from the desk.
+`core/tests/test_sourcing.py` (4), rewritten on 2026-10-19 to go through `autosource.run` with no web client, the way
+the desk runs it:
+- a specialist is found by the role's distinctive skill and banded with the reason;
+- distinctive skills do not pull software generalists in;
+- a person found in the pool is handled exactly like an uploaded one;
+- no mail route.
 
-Since I6: source `auto` uses the hiring profile ([people-search.md](people-search.md)) when the job has one and the desk has career profiles; the keyword source stays as the fallback.
-
-Since the [sourcing engine](sourcing-engine.md) (2026-10-12): the engine's runs use these adapters for their free pool step. A campaign also skips people who asked not to be contacted and people working now at an off-limits company (`autosource.never_sourced`, passed to the adapters as `exclude`). On the job page, campaigns sit folded under "Search the desk only, by hand" on the Sourcing tab.
+Also tested elsewhere:
+- `test_search.py`: a role with a hiring profile is searched by profile; a role without one, by its skills.
+- `test_coverage.py`: people outside coverage are skipped until the role accepts their country.
+- `test_autosource.py`: "stop" and off-limits people are skipped.
 
 ## Known limits
-- The desk search reads every person on each step; fine for a desk of thousands, to be indexed before tens of thousands.
-- Campaigns run inside the request (the desk is fast); an external adapter will need a background worker.
-- Web search is built in the [sourcing engine](sourcing-engine.md), not as a campaign adapter: Exa, public data only (owner's decision 2026-10-12). GitHub and data vendors are not built.
+- The desk search reads every person on each look. That is fine for a desk of thousands; it needs indexing before
+  tens of thousands.

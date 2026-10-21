@@ -63,12 +63,18 @@ How the build follows those rules (the CV path for found profiles, separate budg
   - **not for them**: they said they would not consider this kind of job;
   - **outside countries**: they are outside the role's countries.
 
-  Refused people stay in the pool; they are just not suggested. The older desk search ("Find more people", [sourcing feeder](sourcing.md)) also skips stopped and off-limits people (`never_sourced`).
+  Refused people stay in the pool; they are just not suggested. The run's own pool step ([sourcing.md](sourcing.md))
+  skips stopped and off-limits people too (`never_sourced`).
 - **Budgets.** Each role has a monthly budget (default $5), and the desk has one too (default $50; only an owner changes it). Before each search, a run checks both, with a margin of $0.01 per search. Sourcing spend is kept separate from the model budget, so a busy search month never stops the desk reading CVs ([tasks and costs](tasks-and-costs.md)).
 - **The clock** (`__main__`) checks every 10 minutes; `SOURCING_AUTO=false` turns it off.
   - When runs are due: daily plans after 24 hours, weekly after 7 days, continuous every hour while the role is short of its target.
   - Each due run becomes a `sourcing_run` task, one per role at a time, with no retries. "Run now" queues the same task.
 - **Searches name roles, companies and places, never a person.**
+
+**Since 2026-10-19:** suggestions to review are ordered strong first, then by how many of the role's strong-plus items
+they meet, then newest; each card shows those items as tags (met, partly, missing, to ask).
+
+**Since 2026-10-17** ([decision](../../decisions/2026-10-17-evidence-for-strong-matches.md)): after the searches, each target company searched gets its job adverts read in the background ([employer evidence](employer-evidence.md)), and a person the run finds on the web who is a strong match gets an [evidence check](evidence-checks.md). The suggestion card shows the check, with "Check deeper" for the others.
 
 **Since phase 1b** ([sourcing strategy](sourcing-strategy.md)): what a run searches comes from the strategy: the next batch of 5 companies in the open tiers (A and B at first), each with its title variants until it is exhausted; country-wide searches only when the owner opens them. After the searches, the employers of the people added are profiled by Exa id and their career readings queued; then the list grows (snowball), then the radar. Searches record per company what they found, what was already known and what was relevant. The plan carries the talent DNA, the rules and the open tiers.
 
@@ -99,6 +105,19 @@ How the build follows those rules (the CV path for found profiles, separate budg
 - `GET /v1/off-limits`, `POST /v1/off-limits {name, until?, note?}`, `DELETE /v1/off-limits/{id}`
 - The tables of migration `0026` ([persistence](persistence.md)).
 
+## A run that stops early still reads its people (2026-10-21)
+A run that reached its target, ran out of budget or met an Exa error returned before profiling the new people's
+employers and queueing their career readings: 49 people on Procure AI were never read and stayed "too little known",
+yet counted as strong toward the target. The searches now stop, and the people already added are read as usual.
+The target no longer counts anyone before their career reading ([matching](matching.md)): at search time a run's
+people are "being read", so a run searches on until its searches or budget end, and a run's strong count on the
+Sourcing tab is read from where its people stand now (`strong_now`).
+
+**Outside the role's countries, never kept** (owner, 2026-10-21: "no need to keep them even for future"): a web find
+whose own profile says they live in a country outside the role's countries, and who is new to the desk, is counted
+as refused and never stored, so never read either. A place that names no country is stored and checked as before.
+The 89 such people the test runs had stored were removed the same day (a backup was taken).
+
 ## Tests
 `core/tests/test_autosource.py` uses a fake Exa: synthetic people, nothing spent. It proves:
 - a new plan waits paused, and every change is a version;
@@ -116,3 +135,14 @@ How the build follows those rules (the CV path for found profiles, separate budg
 - Not yet run on a real role. The phase 1 gate (two weeks on a real role) is the owner's to declare.
 - Exa monitors (results pushed to us instead of fetched) need a public HTTPS address, so they wait for going live (phase 3).
 - One page of results per search (10); a search never pages on to the next 10.
+
+## "Search now" goes on until the role has its strong people (step D, 2026-10-21)
+The owner: "we should not stop until we have found at least 10-15 strong candidates to display". A role's target is
+now 15 strong suggestions (the three roles' plans raised from 10). A run still stops at its batch limit (8
+searches); when "Search now" stopped there, the next batch is queued under the same key (the tab keeps showing
+"Searching…, batch N"). It waits for the last batch's career readings first, since nobody is strong before them (a
+minute at a time, about 20 minutes at most). It stops at the target, the role's or the desk's budget, when no
+searches are left, or after 8 batches. A scheduled run does not continue. Wider searches (Tier C, other countries)
+still wait for the owner's word.
+A run covers one batch of companies; the next round follows a run that finished its batch ("searched") or hit its
+search limit, never one that reached its target, its budget, or had nothing left to search.

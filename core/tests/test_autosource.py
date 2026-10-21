@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy import func, select
 
-from maindscout.api import autosource, consent, costs, discovery, erasure, messages, review, sourcing, sourcing_stats
+from maindscout.api import autosource, consent, costs, discovery, erasure, messages, queries, review, sourcing_stats
 from maindscout.db.models import (
     Candidate,
     CandidateJob,
@@ -26,6 +26,7 @@ from maindscout.db.models import (
     Task,
 )
 from maindscout.intelligence import exa, extract, webprofile
+from maindscout.intelligence.llm import LLMResult
 from maindscout.storage import LocalBlobStore
 from tests.test_api import client, fake, make_job  # noqa: F401 (fixtures)
 
@@ -73,9 +74,9 @@ NOT_A_PERSON = {"url": "https://orbital-testworks.example", "title": "Orbital Te
 class FakeExa:
     model = "exa"
 
-    def __init__(self, people=None, companies=None, cost=0.007, news=None, pages=None, by_query=None):
+    def __init__(self, people=None, companies=None, cost=0.007, news=None, pages=None, by_query=None, web=None):
         self.people = people if people is not None else [ADA, BEN, CARA, DEV, NOT_A_PERSON]
-        self.companies, self.news = companies or [], news or []
+        self.companies, self.news, self.web = companies or [], news or [], web or []
         self.pages, self.by_query = pages or {}, by_query or {}
         self.cost, self.calls, self.fetched = cost, [], []
 
@@ -88,7 +89,7 @@ class FakeExa:
         self.calls.append(body)
         if body["query"] in self.by_query:
             return {"results": self.by_query[body["query"]], "costDollars": {"total": self.cost}}
-        results = {"company": self.companies, "news": self.news}.get(body["category"], self.people)
+        results = {"company": self.companies, "news": self.news, None: self.web}.get(body.get("category"), self.people)
         return {"results": results[: body.get("numResults", 10)], "costDollars": {"total": self.cost}}
 
 
@@ -107,10 +108,37 @@ def person_named(session, name):
                                                          Claim.payload["full_name"].astext == name))
 
 
+class TitleReader:
+    """The career reading's model, by job title (an InSAR title is remote sensing, the rest software engineering)."""
+
+    model = "fake-reader"
+
+    def complete_json(self, system, user, schema, name):
+        import re
+
+        steps = [{"id": sid, "role_family": "gis_remote_sensing" if re.search(r"insar|research", title, re.I) else "software_engineering",
+                  "level": "mid", "domains": [], "signals": []}
+                 for sid, title in re.findall(r"^(s\d+): (.+?) at ", user, re.M)]
+        return LLMResult({"steps": steps}, self.model, 1, 1, 0.0)
+
+
+def read_careers(session, org_id):
+    """What the background does after a run: each queued career reading, then a match against the roles. Nobody is
+    strong before it (owner, 2026-10-21)."""
+    from maindscout.api import profiles
+
+    for t in list(session.scalars(select(Task).where(Task.kind == "profile_candidate", Task.status == "queued"))):
+        profiles.run(session, org_id, uuid.UUID(t.payload["candidate_id"]), TitleReader)
+        t.status = "done"
+    session.flush()
+
+
 def go(session, job, fake_exa=None, blobs=None):
     """A run with country-wide searches opened (these tests have no target companies; phase 1b opens them last)."""
     p = autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", mode="weekly", open_tiers=["A", "B", "market"])
-    return autosource.run(session, blobs, job.org_id, job.id, "manual", fake_exa or FakeExa()), p
+    row = autosource.run(session, blobs, job.org_id, job.id, "manual", fake_exa or FakeExa())
+    read_careers(session, job.org_id)
+    return row, p
 
 
 # --- reading a profile -------------------------------------------------------------------------------------------------
@@ -195,7 +223,7 @@ def test_the_same_page_again_is_the_same_person_and_a_changed_page_adds_to_them(
 
 def test_a_new_plan_waits_paused_and_every_change_is_a_version(session, job):
     p = autosource.plan(session, job.org_id, job.id, "owner@desk.test")
-    assert (p.version, p.mode, p.target, float(p.monthly_budget_usd)) == (1, "paused", 10, 5.0)
+    assert (p.version, p.mode, p.target, float(p.monthly_budget_usd)) == (1, "paused", 15, 5.0)
     assert p.role_variants[0] == "Radar Interferometry Specialist"
     p2 = autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", mode="weekly", target=4)
     assert (p2.version, p2.mode, p2.target) == (2, "weekly", 4)
@@ -209,7 +237,8 @@ def test_a_run_finds_people_on_the_web_and_refuses_off_limits_and_outside_countr
     row, _ = go(session, job, fake_exa, blobs)
     assert row.status == "done" and fake_exa.calls[0]["category"] == "people"
     assert "Testperson" not in fake_exa.calls[0]["query"], "a search names roles and places, never a person"
-    assert (row.found, row.new, row.strong) == (4, 4, 1)
+    assert (row.found, row.new, row.strong) == (4, 4, 0), "nobody is strong at search time: their careers are read after"
+    assert autosource.strong_now(session, [row.id]) == {row.id: 1}, "Ada, once her career is read"
     assert row.report["refused"] == {"not_a_profile": 1, "off_limits": 1, "outside_countries": 1}
     hits = {session.get(Candidate, h.candidate_id).id: h for h in session.scalars(select(SourcingHit).where(SourcingHit.job_id == job.id))}
     ada, ben, cara = person_named(session, "Ada Testperson"), person_named(session, "Ben Testperson"), person_named(session, "Cara Testperson")
@@ -228,7 +257,9 @@ def test_someone_found_by_several_searches_in_one_run_counts_once(session, job, 
     fake_exa = FakeExa()
     row = autosource.run(session, blobs, job.org_id, job.id, "manual", fake_exa)
     assert len(fake_exa.calls) == 3, "three searches, each returning the same people"
-    assert (row.found, row.strong) == (4, 1) and row.report["refused"] == {"not_a_profile": 1, "off_limits": 1, "outside_countries": 1}
+    assert row.found == 4 and row.report["refused"] == {"not_a_profile": 1, "off_limits": 1, "outside_countries": 1}
+    read_careers(session, job.org_id)
+    assert autosource.strong_now(session, [row.id]) == {row.id: 1}
 
 
 def test_a_search_is_not_repeated_within_30_days_and_the_target_stops_a_run(session, job, blobs):
@@ -280,8 +311,8 @@ def test_stop_and_erasure_are_never_suggested_again(client, session, job, blobs,
     assert person_named(session, "Ben Testperson") is None
 
 
-def test_the_desk_search_skips_stop_and_off_limits_people_too(session, job, blobs):
-    """"Find more people" (the older desk search) follows the same two rules as a run."""
+def test_the_pool_step_skips_stop_and_off_limits_people_too(session, job, blobs):
+    """The desk's own people, searched first in every run, follow the same two rules as the web search."""
     eve = profile("eve-testperson-demo", "Eve Testperson", "InSAR Engineer", MUNICH, "DE",
                   [("InSAR Engineer", "Radar Testworks", "May 2021", "Present", "2021-05-01", None)], skills=["insar"])
     skills = discovery.skill_tokens(session, job)
@@ -292,10 +323,11 @@ def test_the_desk_search_skips_stop_and_off_limits_people_too(session, job, blob
     ada, cara, eve_id = ids["Ada Testperson"], ids["Cara Testperson"], ids["Eve Testperson"]
     consent.stop(session, job.org_id, ada, "owner@desk.test")
     assert autosource.never_sourced(session, job.org_id) == {ada, cara}, "Cara works at the hiring company, an active client"
-    campaign = sourcing.start(session, job.org_id, job.id, "owner@desk.test", source="desk")
+    autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", mode="weekly")
+    run = autosource.run(session, blobs, job.org_id, job.id, "manual", None)  # no web client: the pool step only
     on_job = set(session.scalars(select(CandidateJob.candidate_id).where(CandidateJob.job_id == job.id)))
     assert eve_id in on_job and not on_job & {ada, cara}
-    assert campaign.added == 1
+    assert run.report["pool"]["added"] == 1
 
 
 def test_the_clock_runs_only_plans_that_are_due(session, job, blobs):
@@ -331,7 +363,7 @@ def test_linkedin_message_permission_and_results_and_spend(session, job, blobs):
     pair = session.scalar(select(CandidateJob).where(CandidateJob.job_id == job.id, CandidateJob.candidate_id == ada))
     assert pair.pair_state == "contacted"
     consent.record(session, job.org_id, ada, "owner@desk.test", this_role=True, other_roles=True, job_id=job.id, how="message")
-    assert consent.may_put_forward(session, job.org_id, ada, job.id)
+    assert queries.gap_page(session, job.org_id, job.id, ada)["permission"] == {"this_role": True, "other_roles": True}
     review.set_state(session, job.org_id, job.id, ada, "submitted", "owner@desk.test", note="to the hiring manager")
     review.set_state(session, job.org_id, job.id, ada, "interviewing", "owner@desk.test")
 
@@ -385,12 +417,18 @@ def test_sourcing_routes(client, session, job, blobs):
     page = client.patch(f"/v1/jobs/{job.id}/sourcing/plan", json={"open_tiers": ["A", "B", "market"]}).json()
     assert page["plan"]["open_tiers"] == ["A", "B", "market"]
     row = autosource.run(session, blobs, job.org_id, job.id, "manual", FakeExa())
+    read_careers(session, job.org_id)
     ada = person_named(session, "Ada Testperson")
-    assert row.strong == 1
+    assert autosource.strong_now(session, [row.id]) == {row.id: 1}
     page = client.get(f"/v1/jobs/{job.id}/sourcing").json()
     assert [s["name"] for s in page["suggestions"]][0] == "Ada Testperson"
     first = page["suggestions"][0]
     assert first["profile"].endswith("ada-testperson-demo") and first["found_by"]["channel"] == "exa_people"
+    # The card in a few words (step E): the quick link to their public profile, where they are, why, what to settle.
+    assert first["links"][0]["kind"] == "linkedin" and first["links"][0]["url"].startswith("https://")
+    assert first["links"][0]["url"].endswith("ada-testperson-demo") and len(first["links"]) == 1
+    assert first["place"] and first["title"] == "InSAR Engineer" and first["company"] == "Orbital Testworks"
+    assert isinstance(first["why"], list) and isinstance(first["short_of"], list) and isinstance(first["settle"], list)
     drafted = client.post("/v1/messages", json={"kind": "candidate_outreach", "candidate_id": str(ada), "job_id": str(job.id),
                                                 "channel": "linkedin"})
     assert drafted.status_code == 201 and drafted.json()["to"].endswith("ada-testperson-demo")
@@ -410,3 +448,30 @@ def test_only_an_owner_changes_the_desk_budget(client, session, org):
     recruiter, _ = auth.create_user(session, "rec@desk.test", "Rec", org.id, "recruiter", password="another long passphrase 12")
     client.headers["Authorization"] = f"Bearer {signed_in(session, recruiter, org.id)}"
     assert client.put("/v1/sourcing/settings", json={"sourcing_budget_usd": 1}).status_code == 403
+
+
+def test_a_run_cut_short_still_reads_everyone_it_added(session, job, blobs):
+    # Procure AI, 2026-10-21: a run that stopped early never read the 49 people it had added.
+    class FailsSecond(FakeExa):
+        def call(self, body):
+            if len(self.calls) == 1:
+                raise exa.ExaError("Exa could not be reached")
+            return super().call(body)
+
+    autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", mode="weekly",
+                           open_tiers=["A", "B", "market"], role_variants=["InSAR engineer", "InSAR scientist"])
+    row = autosource.run(session, blobs, job.org_id, job.id, "manual", FailsSecond())
+    assert (row.status, row.stop_reason) == ("stopped", "error") and row.found >= 1
+    added = {h.candidate_id for h in session.scalars(select(SourcingHit).where(SourcingHit.run_id == row.id))}
+    queued = {uuid.UUID(t.payload["candidate_id"]) for t in session.scalars(select(Task).where(Task.kind == "profile_candidate"))}
+    assert added and added <= queued
+
+
+def test_someone_new_outside_the_roles_countries_is_never_stored_nor_read(session, job, blobs):
+    # Owner, 2026-10-21: "no need to do career reading ... if they are outside the role countries ... dump those".
+    autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", mode="weekly", countries=["DE"],
+                           open_tiers=["A", "B", "market"])
+    row = autosource.run(session, blobs, job.org_id, job.id, "manual", FakeExa())
+    assert person_named(session, "Dev Testperson") is None, "Bangalore is outside Germany: nothing kept"
+    assert person_named(session, "Ada Testperson") is not None
+    assert row.report["refused"].get("outside_countries", 0) >= 1

@@ -158,7 +158,16 @@ def company_facts_many(session: Session, companies: list[Company]) -> dict[uuid.
     for c in session.scalars(select(Claim).where(Claim.org_id == PUBLIC_ORG_ID, Claim.subject_id.in_(list(owner) or [None]),
                                                  Claim.status.in_(LIVE))):
         claims[owner[c.subject_id]].append(c)
-    return {cid: _facts_from(rows) for cid, rows in claims.items()}
+    from maindscout.domain import tiers
+
+    out = {cid: _facts_from(rows) for cid, rows in claims.items()}
+    for c in companies:
+        if out.get(c.id) is not None:
+            out[c.id].luxury = tiers.luxury_company(c.exa_profile, out[c.id].domains)
+            p = c.exa_profile or {}
+            out[c.id].words = " ".join([p.get("offering") or "", p.get("about") or "", p.get("industry") or "",
+                                        " ".join(p.get("categories") or []), " ".join(out[c.id].domains)]).lower()
+    return out
 
 
 def _facts_from(rows: list[Claim]) -> rubric.CompanyFacts | None:
@@ -201,7 +210,9 @@ def inputs(session: Session, org_id, candidate_id) -> tuple[list[rubric.Stint], 
         companies_of.append(company)
         stints.append(rubric.Stint(
             id=str(c.id), company=p["company"]["raw_name"], title=p["title_raw"], start=c.valid_from, end=c.valid_to,
-            employment=p.get("employment_type") or "unknown", company_key=str(company.id) if company else p["company"]["raw_name"].lower(),
+            # A board seat, volunteering or mentoring is read from the title at build time, like the level: not a job.
+            employment="side" if rubric.side_role(p["title_raw"]) else p.get("employment_type") or "unknown",
+            company_key=str(company.id) if company else p["company"]["raw_name"].lower(),
             family=label.get("role_family"), level=level, domains=label.get("domains") or [],
             signals=label.get("signals") or [],
             facts=None,  # filled below: every company's facts are read at once
@@ -265,8 +276,8 @@ def build(session: Session, org_id, candidate_id, as_of: date | None = None) -> 
     stints, edu = inputs(session, org_id, candidate_id)
     digest = _hash(stints, edu, as_of)
     last = latest(session, candidate_id)
-    if last is not None and last.inputs_hash == digest:
-        return last
+    if last is not None and last.inputs_hash == digest and last.rubric_version == rubric.RUBRIC_VERSION:
+        return last  # nothing new, and the same rules: the snapshot stands
     snapshot = CareerProfile(org_id=org_id, candidate_id=candidate_id, profile=rubric.build(stints, edu, as_of),
                              inputs_hash=digest, rubric_version=rubric.RUBRIC_VERSION,
                              # Not the database's now(): that is the transaction start, equal for every snapshot in it.
@@ -295,6 +306,29 @@ def latest_readings(session: Session, candidate_ids: list) -> dict[uuid.UUID, st
               .ext(distinct_on(CareerProfile.candidate_id))
               .order_by(CareerProfile.candidate_id, CareerProfile.computed_at.desc(), CareerProfile.id.desc()))
     return {cid: label for cid, label in session.execute(newest)}
+
+
+def latest_work(session: Session, candidate_ids: list) -> dict[uuid.UUID, dict[str, Any]]:
+    """Many people's kind of work, years in it and level, from their latest profiles in one query (the suggestion
+    card's "11.5 years in marketing, manager")."""
+    from sqlalchemy.dialects.postgresql import distinct_on
+
+    if not candidate_ids:
+        return {}
+    dims = CareerProfile.profile["dimensions"]
+    newest = (select(CareerProfile.candidate_id, dims["relevant_years"]["label"].astext, dims["relevant_years"]["main_years"].astext,
+                     dims["seniority"]["label"].astext)
+              .where(CareerProfile.candidate_id.in_(candidate_ids))
+              .ext(distinct_on(CareerProfile.candidate_id))
+              .order_by(CareerProfile.candidate_id, CareerProfile.computed_at.desc(), CareerProfile.id.desc()))
+    out: dict[uuid.UUID, dict[str, Any]] = {}
+    for cid, label, years, level in session.execute(newest):
+        try:
+            y = float(years) if years is not None else None
+        except ValueError:
+            y = None
+        out[cid] = {"label": label, "years": y, "level": level}
+    return out
 
 
 def run(session: Session, org_id, candidate_id, client_factory, task_id: uuid.UUID | None = None,

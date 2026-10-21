@@ -43,13 +43,22 @@ cockpit  →  api/  →  database
   agreeing names; anything else becomes a card for a person.
 - **Where someone lives and works now, never where they are from.** Country alone never puts anyone in
   `do_not_submit`. Never protected characteristics, appearance, personality, culture or fit.
-- **Company research** asks only the fixed list of public facts: never people (names, titles), never tech stack.
+- **Company research** asks only the fixed list of public facts: never people (names, titles), never tech stack. A
+  company's stack, tools and methods are read only from its own job adverts, each with its advert as evidence
+  ([employer evidence](docs/decisions/2026-10-17-evidence-for-strong-matches.md)): "likely" for its people, never proof.
 - **The desk never sends mail** or LinkedIn messages: drafts go into the user's own mailbox, or are copied by the
   owner. Calls need no consent step (the call tools' notetakers already have it).
 - **Sourcing** ([decision](docs/decisions/2026-10-12-sourcing-engine.md)): people found on the web are public data only,
   a guide to contact them, read through the CV path with every value quoted; never a photo. Searches name roles,
-  companies and places, never a person. Off-limits companies and "stop" win; "stop" and erasure win over everything.
-  The talent-release radar quotes company news only, never a person's name. Keep `SOURCING_AUTO=false` while testing.
+  companies and places, never a person, with one exception: a strong match found on the web gets an evidence check
+  that may search their name with their company (owner, 2026-10-17). Off-limits companies and "stop" win; "stop" and
+  erasure win over everything.
+  The talent-release radar quotes company news only, never a person's name. Keep `SOURCING_AUTO=false`,
+  `EVIDENCE_AUTO=false` and `PRACTICES_AUTO=false` while testing with real keys.
+- **A rule change is measured before it goes live** (owner, 2026-10-19: "what we do not want is to have worse results"):
+  `python -m maindscout match-eval` re-matches stored people with the new code (free, rolled back). With the code
+  unchanged it must report no moves; after the change every move is explained, and the owner's own decisions and
+  the labels in `core/eval-reports/match-labels.json` must not get worse ([match eval](docs/build/components/match-eval.md)).
 - **Model and Exa calls cost the owner money.** Tests and e2e use fakes or recordings (`LLM_REPLAY`); keep
   `RESEARCH_AUTO=false` while testing; run paid checks only when the owner has agreed to them.
 - **Secrets and real data stay out of git**: `core/.env`, `cockpit/.env.local`, real CVs, `core/eval-reports/`,
@@ -66,6 +75,15 @@ point to a person, never be a contact source), a workflow engine (Temporal, Lang
 
 Tests green (`python -m pytest` in `core/`, `npm run e2e:free` in `cockpit/`). Only the owner declares a gate green, in
 `docs/decisions/`; a coding agent never does.
+
+The core suite runs in Docker, with the real files mounted and the live-file tests replayed from their recordings (free;
+re-recorded 2026-10-20, see [golden eval](docs/build/components/golden-eval.md)):
+```
+docker compose --profile core run --rm -T -v "<test_artifacts folder>:/artifacts:ro" -e TEST_ARTIFACTS=/artifacts -e RUN_LIVE=1 -e LLM_REPLAY=replay core python -m pytest -q
+```
+A test must exercise code the product runs: when a feature goes, its tests go too, or move to the path that replaced
+it. A suite that skips quietly is not green: a recording that no longer matches fails loudly in replay mode, and is
+recorded again (paid, the owner's call).
 
 ## Documentation is part of done
 

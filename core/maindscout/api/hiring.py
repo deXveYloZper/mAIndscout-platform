@@ -24,7 +24,7 @@ from maindscout.intelligence.llm import LLMClient
 
 LIVE = ("proposed", "approved")
 VALUE_FIELDS = ("role_family", "level", "min_years", "employer_kinds", "domains", "employment", "normalized_token", "mobility",
-                "cities", "relocation")
+                "cities", "relocation", "min_staff", "max_staff", "recent_months")
 CATEGORY = {"role": "role", "employer": "employer", "domain": "domain", "target_company": "target_company",
             "employment": "employment", "skill": "skill", "other": "other", "location": "location"}
 
@@ -33,13 +33,20 @@ def _norm(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
 
 
+def _words(text: str) -> str:
+    """An ask in words, without a leading article ("the salary will peak…" is "salary will peak…", 2026-10-19).
+    Never used for company names ("The National Chamber…")."""
+    return re.sub(r"^(the|a|an) ", "", _norm(text))
+
+
 def key_for(job_id, p: dict[str, Any]) -> str:
     """One requirement per subject: the same subject read again (or from the intake) is the same requirement."""
     cat = p["category"]
     if cat == "role":
-        part = "role"  # a job has one role
+        part = "role" if p.get("strength") != "anti" else "role|anti"  # one role, and one limit on seniority
     elif cat == "employer":
-        part = ",".join(sorted(p.get("employer_kinds") or [])) + f"|{'anti' if p['strength'] == 'anti' else 'want'}"
+        size = f"|{p.get('min_staff') or ''}-{p.get('max_staff') or ''}" if p.get("min_staff") or p.get("max_staff") else ""
+        part = ",".join(sorted(p.get("employer_kinds") or [])) + size + f"|{'anti' if p['strength'] == 'anti' else 'want'}"
     elif cat == "domain":
         part = ",".join(sorted(p.get("domains") or [])) + f"|{'anti' if p['strength'] == 'anti' else 'want'}"
     elif cat == "target_company":
@@ -49,9 +56,9 @@ def key_for(job_id, p: dict[str, Any]) -> str:
     elif cat == "location" and (p.get("mobility") or {}).get("facet") == "residence":
         part = "residence"  # one "must live in" per job: the hiring manager's word replaces the ad's
     elif cat == "skill":
-        part = p.get("normalized_token") or _norm(p["text_raw"])
+        part = p.get("normalized_token") or _words(p["text_raw"])
     else:
-        part = _norm(p["text_raw"])
+        part = _words(p["text_raw"])
     return f"{job_id}|{cat}|{part}"
 
 
@@ -83,8 +90,18 @@ def _payload(session: Session, item: engine.Item, source: str) -> dict[str, Any]
 def _write(session: Session, job: Job, items: list[engine.Item], source: str, evidence: dict[str, Any]) -> dict[str, int]:
     written = replaced = seen = 0
     today = date.today()
+    current = list(session.scalars(select(Claim).where(Claim.org_id == job.org_id, Claim.subject_id == job.id,
+                                                       Claim.claim_type == "JobRequirementClaim", Claim.status.in_(LIVE))))
+    said = {_words((c.approved_view or c.payload).get("text_raw") or "") for c in current}
+    role_family = next((p["role_family"] for c in current for p in [c.approved_view or c.payload]
+                        if p.get("category") == "role" and p.get("strength") != "anti" and p.get("role_family")), None)
     for item in items:
         p = _payload(session, item, source)
+        if p["category"] == "role" and p["strength"] == "anti" and p.get("role_family") in (None, "other") and role_family:
+            p["role_family"] = role_family  # a limit on seniority is about this job's kind of work
+        if p["category"] == "other" and _words(p["text_raw"]) in said:
+            seen += 1  # the same ask is already on the role under another kind ("early-stage startup experience")
+            continue
         key = key_for(job.id, p)
         live = session.scalar(select(Claim).where(Claim.org_id == job.org_id, Claim.subject_id == job.id,
                                                   Claim.claim_type == "JobRequirementClaim", Claim.natural_key == key,
@@ -142,14 +159,16 @@ def from_ad(session: Session, job_id: uuid.UUID, client: LLMClient, force: bool 
     return {**result, "rejected": len(outcome.rejected), "usd": outcome.cost.get("usd", 0)}
 
 
-def add_intake(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, text: str, actor: str, client: LLMClient) -> dict[str, Any]:
-    """Keep the recruiter's notes as written and read requirements from them (each with its quote)."""
+def add_intake(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, text: str, actor: str, client: LLMClient,
+               shortest: int = 20) -> dict[str, Any]:
+    """Keep the recruiter's notes as written and read requirements from them (each with its quote). `shortest`: a
+    line typed on the hiring profile ("Japanese is a must") may be short; pasted call notes are not."""
     job = session.get(Job, job_id)
     if job is None or job.org_id != org_id:
         raise LookupError(f"No job {job_id}")
     text = text.strip()
-    if len(text) < 20:
-        raise ValueError("Paste the notes from the call (a few sentences at least).")
+    if len(text) < shortest:
+        raise ValueError("Paste the notes from the call (a few sentences at least)." if shortest >= 20 else "Write a few words first.")
     costs.ensure_budget(session, org_id)
     intake = JobIntake(org_id=org_id, job_id=job.id, text=text[:20000], created_by=actor)
     session.add(intake)
@@ -165,6 +184,52 @@ def add_intake(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, text: str
         "type": "intake_note", "locator": {"intake_id": str(intake.id)}, "authority": "human_assertion", "origin": "relayed"})
     return {"intake_id": str(intake.id), **result, "hiring_company": hiring_company, "rejected": outcome.rejected,
             "usd": outcome.cost.get("usd", 0)}
+
+
+def reread_intakes(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, client: LLMClient) -> dict[str, Any]:
+    """Read the role's notes again with today's reader (about a cent each): asks an older reader dropped are added
+    (2026-10-19: "not too senior", "not from big brands" and "up to 200 people" had been lost). What a person already
+    decided stays."""
+    job = session.get(Job, job_id)
+    if job is None or job.org_id != org_id:
+        raise LookupError(f"No job {job_id}")
+    out = {"written": 0, "replaced": 0, "seen": 0, "rejected": [], "usd": 0.0}
+    for intake in session.scalars(select(JobIntake).where(JobIntake.job_id == job.id).order_by(JobIntake.created_at)):
+        costs.ensure_budget(session, org_id)
+        outcome = engine.read(intake.text, client, "intake")
+        costs.record(session, org_id, "hiring_intake", outcome.cost, subject_type="job", subject_id=job.id)
+        items = [i for i in outcome.items if i.kind != "hiring_company"]
+        r = _write(session, job, items, "intake", {
+            "type": "intake_note", "locator": {"intake_id": str(intake.id)}, "authority": "human_assertion", "origin": "relayed"})
+        for k in ("written", "replaced", "seen"):
+            out[k] += r[k]
+        out["rejected"] += outcome.rejected
+        out["usd"] += outcome.cost.get("usd", 0) or 0
+    return out
+
+
+def confirm(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, ids: list[str], actor: str) -> dict[str, Any]:
+    """"Confirm all" (step E, 2026-10-20): the requirements the desk read, as the recruiter saw them, approved together;
+    everyone on the role is re-matched once. A line someone already decided is left as it is."""
+    from maindscout.api import review
+
+    job = session.get(Job, job_id)
+    if job is None or job.org_id != org_id:
+        raise LookupError(f"No job {job_id}")
+    todo: list[Claim] = []
+    for i in dict.fromkeys(ids):
+        try:
+            c = session.get(Claim, uuid.UUID(str(i)))
+        except ValueError:
+            c = None
+        if c is None or c.org_id != org_id or c.subject_id != job.id or c.claim_type != "JobRequirementClaim":
+            raise LookupError(f"No requirement {i} on this role")
+        if c.status == "proposed":
+            todo.append(c)
+    with review.job_batched(session, org_id, {"act": "confirm_all", "job_id": str(job.id), "n": len(todo)}, actor):
+        for c in todo:
+            review.approve_claim(session, org_id, c.id, actor)
+    return {"confirmed": len(todo), "already": len(dict.fromkeys(ids)) - len(todo)}
 
 
 def residence(session: Session, job: Job) -> list[Claim]:
@@ -316,12 +381,22 @@ def add_requirement(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, fiel
     from maindscout.api import review
 
     p = {k: v for k, v in fields.items() if v not in (None, "", [])}
-    if p.get("category") == "employer" and not p.get("employer_kinds"):
-        raise ValueError("Tick a background (start-up, agency, …). For an industry such as luxury, choose Industry instead.")
-    if p.get("category") == "domain" and not p.get("domains"):
-        raise ValueError("Choose the industry from the list.")
+    if p.get("category") == "employer" and not p.get("employer_kinds") and not (p.get("min_staff") or p.get("max_staff")):
+        raise ValueError("Tick a background (start-up, agency, …) or choose a company size. For an industry such as luxury, "
+                         "choose Industry instead.")
+    if p.get("min_staff") and p.get("max_staff") and p["min_staff"] > p["max_staff"]:
+        raise ValueError("The smallest company size is above the largest.")
+    if p.get("company_words"):
+        p["company_words"] = list(dict.fromkeys(w.strip().lower() for w in p["company_words"] if w and w.strip()))[:12]
+    if p.get("category") == "domain" and not p.get("domains") and not p.get("company_words"):
+        raise ValueError("Choose the industry from the list, or write it as companies describe themselves (e.g. leather goods, bags).")
     p.setdefault("distinctive", False)
     p["source"] = "recruiter"
+    if p.get("category") == "skill" and not p.get("normalized_token"):
+        from maindscout.intelligence.extract import skill_name_token
+
+        if token := skill_name_token(p.get("text_raw")):  # "influencer marketing" can be shown by a profile or CV
+            p["normalized_token"] = token
     if p.get("category") == "target_company":
         out = []
         for c in p.get("companies") or []:
@@ -333,6 +408,57 @@ def add_requirement(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, fiel
         p["companies"] = out
     return review.assert_claim(session, org_id, actor, subject_type="job", subject_id=job_id,
                                claim_type="JobRequirementClaim", payload=p)
+
+
+# Years said in words ("5 or more years", "5+ years", "at least 5 years"): read by code, never by the model.
+_YEARS = re.compile(r"(\d+(?:\.\d+)?)\s*\+?\s*(?:or more\s+|plus\s+)?years?", re.I)
+# The kinds the notes reader knows: a rewritten line of these is read again for its values (kind of work, size, …).
+_READ_AGAIN = set(CATEGORY)
+
+
+def edit_requirement(session: Session, org_id: uuid.UUID, claim_id: uuid.UUID, text: str, strength: str | None,
+                     actor: str, client: LLMClient) -> Claim:
+    """A requirement in the recruiter's own words (owner, 2026-10-20: "the ad says 7 years, but if I want 5 I have no
+    option"). The new wording is kept as theirs (approved, the old line superseded); its values follow the words:
+    years by code, the rest read again from the words (one model call, about a third of a cent) when the line is of
+    a kind the notes reader knows. Nothing else of the line changes."""
+    old = session.get(Claim, claim_id)
+    if old is None or old.org_id != org_id or old.claim_type != "JobRequirementClaim":
+        raise LookupError(f"No requirement {claim_id}")
+    before = old.approved_view or old.payload
+    said = " ".join((text or "").split())
+    if len(said) < 2:
+        raise ValueError("Write the requirement in a few words.")
+    strength = strength or before.get("strength")
+    if said == before.get("text_raw"):
+        return set_strength(session, org_id, claim_id, strength, actor)
+    p = {**before, "text_raw": said, "strength": strength, "source": "recruiter"}
+    years = _YEARS.search(said)
+    if "min_years" in before or before.get("category") == "seniority":
+        if years:
+            p["min_years"] = float(years.group(1))
+        else:
+            p.pop("min_years", None)
+    if before.get("category") in _READ_AGAIN and before.get("category") != "location" and not before.get("mobility"):
+        # (a place stays a place: read again it would become "must live in", which only Where people must live sets)
+        costs.ensure_budget(session, org_id)
+        outcome = engine.read(said, client, "intake")
+        costs.record(session, org_id, "hiring_intake", outcome.cost, subject_type="job", subject_id=old.subject_id)
+        item = next((i for i in outcome.items if CATEGORY.get(i.kind) == before.get("category")), None)
+        if item is not None:
+            fresh = _payload(session, item, "recruiter")
+            for k in (*VALUE_FIELDS, "companies", "company_words"):
+                if k in fresh:
+                    p[k] = fresh[k]
+            for k in ("min_staff", "max_staff", "level"):
+                if k not in fresh:
+                    p.pop(k, None)  # "up to 200 people" rewritten as "small brands": the old size no longer applies
+            if years and "min_years" in before:
+                p["min_years"] = float(years.group(1))
+    from maindscout.api import review
+
+    return review.assert_claim(session, org_id, actor, subject_type="job", subject_id=old.subject_id,
+                               claim_type="JobRequirementClaim", payload=p, replaces=old.id)
 
 
 def set_strength(session: Session, org_id: uuid.UUID, claim_id: uuid.UUID, strength: str, actor: str) -> Claim:

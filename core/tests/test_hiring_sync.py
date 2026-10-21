@@ -143,3 +143,15 @@ def test_the_strategy_reads_industries_from_the_ads_background_sentences(client,
     client.post(f"/v1/jobs/{job_id}/requirements", json={"category": "skill", "strength": "must", "text_raw": "retail marketing"})
     assert strategy.profile_queries(session, job, ["IT"]) == ["luxury, fashion and beauty companies in Italy"], \
         "the background sentence names the industry; a skill like retail marketing does not"
+
+
+def test_a_nice_to_have_industry_does_not_decide_where_to_hunt_when_the_role_requires_one(client, session):
+    # An InSAR role: earth observation required, "asset monitoring" (water, energy) only nice (2026-10-21).
+    job_id = make_job(client)
+    job = session.get(Job, uuid.UUID(job_id))
+    client.post(f"/v1/jobs/{job_id}/requirements", json={"category": "domain", "strength": "must", "text_raw": "InSAR pipelines",
+                                                         "domains": ["space / earth observation"]})
+    client.post(f"/v1/jobs/{job_id}/requirements", json={"category": "domain", "strength": "nice", "text_raw": "asset monitoring",
+                                                         "domains": ["environment / water"]})
+    queries = strategy.profile_queries(session, job, ["GB"])
+    assert queries == ["space and earth observation companies in United Kingdom"]

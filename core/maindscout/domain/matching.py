@@ -16,11 +16,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from datetime import date, timedelta
+from typing import Any, Callable
 
-from maindscout.domain.profile import FAMILY_LABEL, LEVEL_RANK, Stint, group_of
+from maindscout.domain.profile import (FAMILY_LABEL, LEVEL_RANK, NOT_EXPERIENCE, Stint, employer_years, group_of, staff_words,
+                                       years_at_size)
 
-ENGINE_VERSION = "match-2026-10-06.1"
+ENGINE_VERSION = "match-2026-10-21.3"  # step C: the move check, the level against the role, a specialist for an all-round role
 MUST = ("must", "deal_breaker")
 
 # The desk's rules, as data: id -> what it says. The order of evaluation is the order of this list.
@@ -34,9 +36,13 @@ RULES: list[dict[str, str]] = [
     {"id": "substitution", "text": "A requirement the intake says can substitute for another is met, so that one counts as met."},
     {"id": "domain_over_seniority", "text": "A strong industry match outweighs one level below the level asked for."},
     {"id": "contractor_fit", "text": "A contract job and a contractor with long engagements: a strong plus."},
+    {"id": "wrong_field", "text": "The role's kind of work is a must and the person works in another field altogether: unlikely."},
     {"id": "must_gaps", "text": "Two or more must-haves are gaps: unlikely; one: possible."},
     {"id": "partial_must", "text": "A must-have is only partly met (a related kind of work, a level below, fewer years): possible."},
-    {"id": "too_little_known", "text": "Too little is known about the person to compare (no career profile yet): the coarse band stands."},
+    {"id": "too_little_known", "text": "Too little is known about the person to compare (no career profile yet): never Priority until it is read; otherwise the coarse band stands."},
+    {"id": "too_big_a_move", "text": "A reach: their employer is 20 or more times the client's size, with no recent time at a company near the client's size and no step up."},
+    {"id": "above_the_role", "text": "A reach: their level now is well above the role's (or at the role's seniority limit, or global or regional above it)."},
+    {"id": "specialist", "text": "A specialist (CRM, media, merchandising...) for a role that asks for an all-round person: possible, not strong."},
     {"id": "strong_match", "text": "Every must-have is fully met or only needs asking, and at least half of the known strong-plus items are met."},
 ]
 RULE_TEXT = {r["id"]: r["text"] for r in RULES}
@@ -67,7 +73,9 @@ class Match:
                 "rows": [v.__dict__ for v in self.rows]}
 
 
-GAP_TO_VERDICT = {"evidence": "strong", "missing": "gap", "conflict": "gap", "question": "ask"}
+# "likely" (their employer uses it, by its own advert) is partly met: it can lift a missing must-have to possible,
+# never make a match strong on its own (owner, 2026-10-17).
+GAP_TO_VERDICT = {"evidence": "strong", "likely": "partial", "missing": "gap", "conflict": "gap", "question": "ask"}
 
 
 def _years(x: float) -> str:
@@ -116,41 +124,162 @@ def _role(p: dict[str, Any], profile: dict[str, Any]) -> tuple[str, str]:
     return v, "; ".join(parts)
 
 
-def _employer(p: dict[str, Any], profile: dict[str, Any]) -> tuple[str, str]:
-    mix = profile["dimensions"]["employer_mix"]
-    years = mix.get("years") or {}
-    known = {k: y for k, y in years.items() if k != "unknown"}
+# Kinds of employer in plain words. Without a funding round, size decides the kind (domain/profile.stint_category):
+# up to 50 people is a start-up, up to 1,000 a scale-up, so an established 62-person brand reads as a scale-up. A size
+# asked in people ("a small or mid-size brand") is its own range instead (min_staff / max_staff; profile.SIZE_BANDS).
+KIND_WORDS = {"startup": "start-ups or small companies (up to 50 people)",
+              "scaleup": "scale-ups or mid-size companies (51-1,000 people)", "large": "large companies",
+              "consultancy": "consultancies", "agency": "agencies", "public_sector": "the public sector", "non_profit": "non-profits"}
+
+
+def _relevant(family: str | None) -> Callable[[Stint], bool] | None:
+    """The role's kind of work, and the work that builds on it (as relevant years count it). None: every job counts."""
+    if not family:
+        return None
+    group = group_of(family)
+    return lambda s: s.family is None or group_of(s.family) == group
+
+
+# A size alone asks about companies like a client: agencies, consultancies, public bodies and non-profits do not count
+# unless the requirement names them (the start-up / scale-up reading never counted them either; a PR agency and a
+# fashion trade body read as "small-brand experience" in the what-if of 2026-10-19).
+NOT_LIKE_A_CLIENT = ("agency", "consultancy", "outsourcing", "public_sector", "non_profit")
+
+
+def _employer(p: dict[str, Any], profile: dict[str, Any], stints: list[Stint] | None = None,
+              family: str | None = None) -> tuple[str, str]:
+    """A kind of company (start-up, agency…) or a size in people. What is wanted counts only years in the role's kind of
+    work (owner, 2026-10-19: six months as a baker in a 4-person bakery is not "small-brand experience" for a marketing
+    role); what is not wanted counts every job, as before."""
+    from maindscout.domain.profile import stint_category
+
     kinds = p.get("employer_kinds") or []
+    keep = _relevant(family) if stints is not None else None
+    jobs = [s for s in stints or [] if s.employment not in NOT_EXPERIENCE and (keep is None or keep(s))]
+    low, high = p.get("min_staff"), p.get("max_staff")
+    if p.get("strength") != "anti" and (low is not None or high is not None):
+        size = staff_words(low, high)
+        if keep is not None and not jobs:
+            return "gap", f"no time at companies of {size} in this kind of work"
+        if not any(s.facts is not None and s.facts.team_min is not None for s in jobs):
+            return "ask", f"the sizes of their employers are not known yet ({size})"
+        like = (lambda s: stint_category(s) in kinds) if kinds else (
+            lambda s: (s.facts.kind if s.facts is not None else None) not in NOT_LIKE_A_CLIENT)
+        have, hits, _ = years_at_size(jobs, date.today(), low, high, like)
+        names = list(dict.fromkeys(s.company for s in hits))[:3]
+        at = f" ({', '.join(names)})" if names else ""
+        if have >= 1:
+            return "strong", f"{_years(have)} at companies of {size}{at}"
+        if have > 0:
+            return "partial", f"{_years(have)} at companies of {size}{at}"
+        return "gap", f"no time at companies of {size} in this kind of work (as far as research shows)"
+    mix = profile["dimensions"]["employer_mix"]
+    names = " or ".join(KIND_WORDS.get(k, k.replace("_", " ")) for k in kinds)
+    if p.get("strength") == "anti" or keep is None:
+        years = mix.get("years") or {}
+    elif not jobs:
+        return "gap", f"no time at {names} in this kind of work"
+    else:
+        years = employer_years(jobs, date.today())
+    known = {k: y for k, y in years.items() if k != "unknown"}
     if not known:
         return "ask", "the kinds of employer are not known yet"
     have = sum(known.get(k, 0) for k in kinds)
     total = sum(years.values()) or 1
-    names = ", ".join(k.replace("_", " ") for k in kinds)
     if p.get("strength") == "anti":
         share = have / total
         return ("against", f"{_years(have)} of the last 10 at {names}") if share >= 0.5 else ("strong", f"mostly not at {names}")
-    if have >= 2:
+    if have >= 1:  # a year in that kind of company is enough (owner, 2026-10-18; it was two)
         return "strong", f"{_years(have)} at {names}"
     if have > 0:
         return "partial", f"{_years(have)} at {names}"
     return "gap", f"no time at {names} (as far as research shows)"
 
 
-def _domain(p: dict[str, Any], profile: dict[str, Any]) -> tuple[str, str]:
+def _tier_years(stints: list[Stint], wanted: list[str]) -> dict[str, float]:
+    """Years in each wanted industry, counting an industry other than luxury itself (hotels, travel…) only at luxury
+    companies: a luxury role's "hospitality" means luxury hospitality, not a 4-star chain (owner, 2026-10-18)."""
+    from datetime import date
+
+    from maindscout.domain.profile import NOT_EXPERIENCE, _span
+    from maindscout.domain.profile import _years as span_years
+    from maindscout.domain.tiers import INHERENT
+
+    spans: dict[str, list] = {}
+    for s in stints:
+        span = _span(s, date.today())
+        d = (s.domains[0] if s.domains else "").strip().lower().replace("_", " ")
+        if span is None or s.employment in NOT_EXPERIENCE or d not in wanted:
+            continue
+        if d == INHERENT or (s.facts is not None and s.facts.luxury):
+            spans.setdefault(d, []).append(span)
+    return {d: round(span_years(v), 1) for d, v in spans.items()}
+
+
+def _company_words(p: dict[str, Any], stints: list[Stint]) -> tuple[str, str]:
+    """A niche industry in the companies' own words ("leather goods", "bags"): years at employers that say they make
+    or sell it, from their profiles. A year is enough."""
+    from datetime import date
+
+    from maindscout.domain.profile import NOT_EXPERIENCE, _span
+    from maindscout.domain.profile import _years as span_years
+
+    words = [w.strip().lower() for w in p.get("company_words") or [] if w.strip()]
+    stems = [re.escape(w[:-1] if w.endswith("s") else w) + "s?" for w in words]
+    pattern = re.compile(r"\b(" + "|".join(stems) + r")\b", re.I)
+    spans, names, known = [], [], False
+    for s in stints:
+        span = _span(s, date.today())
+        if s.facts is None or not s.facts.words:
+            continue
+        known = True
+        if span is None or s.employment in NOT_EXPERIENCE or not pattern.search(s.facts.words):
+            continue
+        spans.append(span)
+        if s.company not in names:
+            names.append(s.company)
+    label = ", ".join(words[:3])
+    if not known:
+        return "ask", f"what their employers make is not known yet ({label})"
+    have = round(span_years(spans), 1) if spans else 0.0
+    at = f" ({', '.join(names[:3])})" if names else ""
+    if p.get("strength") == "anti":
+        return ("against", f"{_years(have)} at companies making {label}{at}") if have >= 2 else ("strong", f"little or no time in {label}")
+    if have >= 1:
+        return "strong", f"{_years(have)} at companies making {label}{at}"
+    if have > 0:
+        return "partial", f"{_years(have)} at companies making {label}{at}"
+    return "gap", f"no time at companies making {label}"
+
+
+def _domain(p: dict[str, Any], profile: dict[str, Any], stints: list[Stint] | None = None, luxury: bool = False) -> tuple[str, str]:
+    from maindscout.domain.tiers import INHERENT
+
+    if p.get("company_words"):
+        return _company_words(p, stints or [])
     dom = profile["dimensions"]["domain_exposure"]
     years = dom.get("years") or {}
     wanted = p.get("domains") or []
     if not years:
         return "ask", "industries not known yet"
-    have = max((years.get(d, 0) for d in wanted), default=0)
     names = ", ".join(wanted)
+    if luxury and stints and p.get("strength") != "anti" and any(d != INHERENT for d in wanted):
+        years = _tier_years(stints, wanted)
+        names += " (luxury companies only)"
+    have = max((years.get(d, 0) for d in wanted), default=0)
     if p.get("strength") == "anti":
         return ("against", f"{_years(have)} in {names}") if have >= 2 else ("strong", f"little or no time in {names}")
-    if have >= 2:
+    if have >= 1:  # a year in the industry is enough (owner, 2026-10-18; it was two)
         return "strong", f"{_years(have)} in {names}"
     if have > 0:
         return "partial", f"{_years(have)} in {names}"
     return "gap", f"no time in {names}"
+
+
+# "Not from" a company: its people now, and anyone who left it less than this long ago; earlier leavers are fine
+# (owner, 2026-10-19: no-compete clauses rarely run past two years, and six months is the line). A setting on each
+# restriction ("recent_months").
+RECENT_MONTHS = 6
 
 
 def _target(p: dict[str, Any], stints: list[Stint]) -> tuple[str, str]:
@@ -158,7 +287,17 @@ def _target(p: dict[str, Any], stints: list[Stint]) -> tuple[str, str]:
     hit = [s for s in stints if s.company_key in ids]
     names = ", ".join(c["name"] for c in p.get("companies") or [])
     if p.get("strength") == "anti":
-        return ("against", f"worked at {hit[0].company}") if hit else ("strong", f"never at {names}")
+        months = RECENT_MONTHS if p.get("recent_months") is None else int(p["recent_months"])
+        cutoff = date.today() - timedelta(days=round(months * 30.44))
+        now = [s for s in hit if s.end is None]
+        if now:
+            return "against", f"works at {now[0].company}"
+        recent = [s for s in hit if s.end >= cutoff]
+        if recent:
+            return "against", f"left {recent[0].company} in {max(s.end for s in recent):%B %Y}, less than {months} months ago"
+        if hit:
+            return "strong", f"left {hit[0].company} in {max(s.end for s in hit):%B %Y}, more than {months} months ago"
+        return "strong", f"never at {names}"
     return ("strong", f"worked at {', '.join(sorted({s.company for s in hit}))}") if hit else ("gap", f"never at {names}")
 
 
@@ -199,11 +338,16 @@ def _covers(note: str, text: str, token: str | None = None) -> bool:
 
 def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str, Any] | None, stints: list[Stint],
           coarse: tuple[str, str], answers: dict[str, dict[str, Any]] | None = None, blocked: str | None = None,
-          preferences: list[tuple[str, str, str, str, str]] | None = None) -> Match:
+          preferences: list[tuple[str, str, str, str, str]] | None = None, client: dict[str, Any] | None = None) -> Match:
     """`requirements`: [{id, payload}] (live, no process dates); `gap_rows`: domain.gaps rows for the same job and
     person; `profile`: the latest career profile (or None); `coarse`: the token triage (band, reason) as fallback;
     `preferences`: domain.preferences.rows for what the person said they want."""
     by_id = {r["id"]: r["payload"] for r in requirements}
+    from maindscout.domain.tiers import luxury_role
+
+    luxury = luxury_role([p.get("text_raw") or "" for p in by_id.values() if p.get("strength") != "anti"])
+    family = next((p["role_family"] for p in by_id.values() if p.get("category") == "role" and p.get("role_family")
+                   and p.get("strength") != "anti"), None)  # the role's kind of work
     rows: list[Verdict] = []
     for g in gap_rows:  # skills, years, education, languages, mobility, and anything the gap table already reads
         p = by_id.get(g.requirement_id, {})
@@ -214,6 +358,20 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
         if g.kind == "skill" and g.status == "missing" and not g.distinctive:
             # A broad skill not written on a CV is not evidence of its absence: ask (distinctive ones decide, rule 1).
             verdict, detail = "ask", f"{g.detail}; not shown on the CV: ask"
+        elif g.kind == "seniority" and g.status in ("evidence", "conflict") and by_id.get(g.requirement_id, {}).get("min_years")                 and profile is not None and profile["reading"]["label"] != "unclear"                 and (profile["dimensions"].get("relevant_years") or {}).get("label") not in (None, "unknown"):
+            # "7 or more years of marketing experience" is years of that kind of work, not of a whole career (a junior
+            # specialist with 8.2 years across translating, retail and 5.3 in marketing read as met, 2026-10-18).
+            need = float(by_id[g.requirement_id]["min_years"])
+            ry = profile["dimensions"]["relevant_years"]
+            have = float(ry.get("main_years") or 0)
+            verdict = "strong" if have >= need else "partial" if have >= 0.75 * need else "gap"
+            detail = f"{_years(have)} of related work ({ry['label']}) against {need:g} asked; {g.detail}"
+        elif g.kind == "language" and g.status == "missing":
+            # Many profiles never list languages: a Milan marketing manager without "Italian" on their profile is a
+            # question, never two must-have gaps that make them unlikely (a real marketing role, 2026-10-18).
+            verdict = "ask"
+        elif g.status == "likely" and not g.distinctive:
+            verdict = "ask"  # their employer's stack: at least as good as a broad skill not written down
         rows.append(Verdict(g.requirement_id, g.requirement, g.kind, g.strength, verdict, detail, g.distinctive))
     thin = profile is None or profile["reading"]["label"] == "unclear"
     for r in requirements:
@@ -221,14 +379,18 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
         cat = p.get("category")
         if cat not in ("role", "employer", "domain", "target_company", "employment"):
             continue
+        if p.get("strength") == "anti" and (cat == "role" or (cat == "employer" and (p.get("min_staff") or p.get("max_staff")))):
+            # A limit on seniority ("not too senior") or "not from" companies of a size: read since 2026-10-19, rated
+            # from step C of understanding the hire, once match-eval has shown what they change.
+            continue
         if thin:
             v, d = "ask", "no career profile yet"
         elif cat == "role":
             v, d = _role(p, profile)
         elif cat == "employer":
-            v, d = _employer(p, profile)
+            v, d = _employer(p, profile, stints, family)
         elif cat == "domain":
-            v, d = _domain(p, profile)
+            v, d = _domain(p, profile, stints, luxury)
         elif cat == "target_company":
             v, d = _target(p, stints)
         else:
@@ -281,6 +443,10 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
         return Match("unlikely", "do_not_submit", f"match:unlikely:not what they want ({hard[0].requirement})", rows, fired)
     if thin:
         fire("too_little_known", "no career profile yet" if profile is None else "the career profile is unclear")
+        # Nobody is strong before their career reading (owner, 2026-10-21: "obviously, this is a real bug"): a coarse
+        # Priority waits in Review later until the reading arrives; Do not submit and Review later stand.
+        if coarse[0] == "priority":
+            return Match("unclear", "review_later", "match:unclear:being read", rows, fired)
         return Match("unclear", None, coarse[1], rows, fired)
     # 3. Substitutions stated in the intake: a met requirement stands in for the one its note names.
     for a in rows:
@@ -303,7 +469,14 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
     # 5. Contract job, contractor with long engagements.
     if any(v.kind == "employment" and v.verdict == "strong" and "contractor" in v.detail for v in rows):
         fire("contractor_fit", "long contract engagements fit a contract job")
-    # 6. Must-have gaps.
+    # 6. Another field altogether: a CFO, an HR manager or a store manager for a marketing role (owner's 0-to-1 test,
+    # 2026-10-21) was "possible" on one must-have gap. A related field (sales for marketing) is partial, not this.
+    wrong = [v for v in rows if v.kind == "role" and v.strength in MUST and v.verdict == "gap" and ", not " in v.detail.split(";")[0]
+             and not v.detail.startswith(f"works in {FAMILY_LABEL.get('other', 'other')},")]  # a field read as "other" is unknown
+    if wrong:
+        fire("wrong_field", wrong[0].detail.split(";")[0])
+        return Match("unlikely", "do_not_submit", f"match:unlikely:{wrong[0].detail.split(';')[0]}", rows, fired)
+    # 7. Must-have gaps.
     must_gaps = [v for v in rows if v.strength in MUST and v.verdict == "gap"]
     if len(must_gaps) >= 2:
         fire("must_gaps", ", ".join(v.requirement for v in must_gaps[:4]))
@@ -318,7 +491,83 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
         return Match("possible", "review_later", f"match:possible:{partial_musts[0].requirement} only partly met", rows, fired)
     plus = [v for v in rows if v.strength == "strong_plus" and v.verdict != "ask"]
     met = [v for v in plus if v.verdict == "strong"]
+    reaches = _reaches(by_id, profile, stints, client or {}, family)
+    if (not plus or len(met) * 2 >= len(plus)) and reaches:
+        # Step C (owner, 2026-10-21: "its a standard recruiter logic"): strong on paper, but a reach.
+        for rule, detail in reaches:
+            fire(rule, detail)
+        return Match("possible", "review_later", f"match:possible:a reach: {reaches[0][1]}", rows, fired)
     if not plus or len(met) * 2 >= len(plus):
         fire("strong_match", f"{len(met)} of {len(plus)} known strong-plus items met" if plus else "every must-have met or to ask")
         return Match("strong", "priority", f"match:strong:{len(met)} of {len(plus)} strong-plus met" if plus else "match:strong:must-haves met", rows, fired)
     return Match("possible", "review_later", f"match:possible:{len(met)} of {len(plus)} strong-plus met", rows, fired)
+
+
+# --- step C: is the move realistic? (owner, 2026-10-19 and 2026-10-21) ------------------------------------------------
+
+BIG_MOVE = 20  # an employer this many times the client's size: from 12,203 people to 62 is a reach; 1,027 to 93 is not
+NEAR = 5  # a company up to this many times the client's size counts as "near the client's size"
+RECENT_YEARS = 3
+SCOPE = re.compile(r"\b(global|worldwide|international|regional|emea|apac|americas)\b", re.I)
+# Narrow kinds of marketing work, read from the current title. A role that asks for an all-round marketer ("360",
+# "broad marketing experience") finds them possible, unless the role asks for that work itself.
+SPECIALISMS = {"social media": r"social media", "crm": r"\bcrm\b|clienteling|client (development|experience)",
+               "media": r"\bmedia\b",
+               "performance marketing": r"performance marketing|\bseo\b|\bsem\b|paid (social|search)",
+               "merchandising": r"merchandis", "trade marketing": r"trade marketing", "events": r"\bevents?\b",
+               "public relations": r"\bpr\b|public relations|press office", "copywriting": r"copywrit",
+               "content production": r"content production",
+               "analytics": r"analytic|insights"}
+GENERALIST_TITLE = re.compile(r"\b(marketing (manager|director|lead)|head of marketing|marketing (and|&) communications? manager"
+                              r"|brand manager|cmo)\b", re.I)
+
+
+def _size(facts) -> int | None:
+    return None if facts is None or facts.team_min is None else facts.team_min
+
+
+def _reaches(by_id: dict[str, dict[str, Any]], profile: dict[str, Any] | None, stints: list[Stint],
+             client: dict[str, Any], family: str | None) -> list[tuple[str, str]]:
+    """Why a match that is strong on paper is a reach: [(rule, detail)]. Nothing without a career profile."""
+    if profile is None:
+        return []
+    out: list[tuple[str, str]] = []
+    today = date.today()
+    now = [s for s in stints if s.end is None and s.employment not in NOT_EXPERIENCE]
+    level = ((profile.get("dimensions") or {}).get("seniority") or {}).get("label")
+    rank, role_rank = LEVEL_RANK.get(level or ""), LEVEL_RANK.get(client.get("level") or "")
+    # 1. The move: from a company far bigger than the client, unless it is a step up or they were recently at a
+    #    company near the client's size (in the role's kind of work).
+    staff = client.get("staff")
+    if staff and now:
+        biggest = max(now, key=lambda s: _size(s.facts) or 0)
+        theirs = _size(biggest.facts)
+        step_up = rank is not None and role_rank is not None and rank < role_rank
+        keep = _relevant(family)
+        recent_near = any((s.end is None or (today - s.end).days <= RECENT_YEARS * 365)
+                          and s.start is not None and ((s.end or today) - s.start).days >= 365
+                          and _size(s.facts) is not None and _size(s.facts) <= NEAR * staff and (keep is None or keep(s))
+                          for s in stints if s.employment not in NOT_EXPERIENCE)
+        if theirs and theirs >= BIG_MOVE * staff and not step_up and not recent_near:
+            out.append(("too_big_a_move", f"from {biggest.company} ({theirs:,} people) to a {staff:,}-person company, "
+                                          "with no recent time at a company near that size"))
+    # 2. The level: well above the role, at the role's seniority limit, or global or regional above it.
+    if rank is not None and role_rank is not None:
+        limit = next((LEVEL_RANK.get(p.get("level") or "") for p in by_id.values()
+                      if p.get("category") == "role" and p.get("strength") == "anti" and p.get("level")), None)
+        title = now[0].title if now else ""
+        if rank - role_rank >= 2:
+            out.append(("above_the_role", f"{level} now ({title}), well above a {client.get('level')} role"))
+        elif limit is not None and rank >= limit:
+            out.append(("above_the_role", f"{level} now ({title}): at the role's seniority limit"))
+        elif rank > role_rank and SCOPE.search(title):
+            out.append(("above_the_role", f"{title}: a {level} with a global or regional scope, above a {client.get('level')} role"))
+    # 3. A specialist for an all-round role.
+    if client.get("generalist") and family == "marketing" and now:
+        title = now[0].title
+        wanted = client.get("wanted") or ""
+        for name, rx in SPECIALISMS.items():
+            if re.search(rx, title, re.I) and not GENERALIST_TITLE.search(title) and not re.search(rx, wanted, re.I):
+                out.append(("specialist", f"{title}: a {name} specialist, for an all-round marketing role"))
+                break
+    return out

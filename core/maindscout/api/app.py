@@ -721,6 +721,25 @@ def build_sourcing_strategy(job_id: uuid.UUID, org_id: uuid.UUID = Depends(get_o
     return {"task_id": str(task.id), "status": task.status}
 
 
+@app.post("/v1/jobs/{job_id}/sourcing/people/{candidate_id}/evidence", status_code=202)
+def check_deeper(job_id: uuid.UUID, candidate_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org),
+                 session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """"Check deeper": look at a suggestion's public work against the role, in the background (their links, and a
+    search for their name with their company; about 1-3 cents). Strong matches get it on their own."""
+    from maindscout.api import autosource, evidence
+    from maindscout.db.models import CandidateJob
+
+    job = autosource._job(session, org_id, job_id)
+    pair = session.scalar(select(CandidateJob).where(CandidateJob.job_id == job.id, CandidateJob.candidate_id == candidate_id))
+    if pair is None or pair.org_id != org_id:
+        raise HTTPException(404, "This person is not on this role")
+    if not evidence.found_on_the_web(session, job.id, candidate_id):
+        raise HTTPException(422, "Only people found on the web are checked this way: the desk already has their file")
+    task = evidence.queue(session, org_id, job.id, candidate_id, actor)
+    session.commit()
+    return {"task_id": str(task.id), "status": task.status}
+
+
 class WidenBody(BaseModel):
     option: str
     value: str | list[str] | None = None
@@ -1043,6 +1062,81 @@ def add_intake(job_id: uuid.UUID, body: IntakeBody, org_id: uuid.UUID = Depends(
     return {**result, "job": queries.job_page(session, org_id, job_id)}
 
 
+@app.post("/v1/jobs/{job_id}/role-brief")
+def read_role_brief(job_id: uuid.UUID, reread_notes: bool = False, org_id: uuid.UUID = Depends(get_org),
+                    session: Session = Depends(get_session), llm: LLMClient = Depends(get_llm)):
+    """Read the role brief (what the hire will really do, from the ad, the notes and research; about a cent), and with
+    `reread_notes` read the notes again first with today's reader."""
+    from maindscout.api import hiring, role_brief
+
+    notes = hiring.reread_intakes(session, org_id, job_id, llm) if reread_notes else None
+    result = role_brief.read(session, org_id, job_id, llm)
+    session.commit()
+    return {**result, "notes": notes, "brief": role_brief.view(session, job_id)}
+
+
+class BriefAnswerBody(BaseModel):
+    facet: str
+    answer: str
+
+
+@app.post("/v1/jobs/{job_id}/role-brief/answer")
+def answer_role_brief(job_id: uuid.UUID, body: BriefAnswerBody, org_id: uuid.UUID = Depends(get_org),
+                      session: Session = Depends(get_session), actor: str = Depends(get_actor), llm: LLMClient = Depends(get_llm)):
+    """Answer one of the brief's questions: read like notes from the hiring manager, then the brief again (two cents)."""
+    from maindscout.api import role_brief
+
+    result = role_brief.answer(session, org_id, job_id, body.facet, body.answer, actor, llm)
+    session.commit()
+    return {**result, "brief": role_brief.view(session, job_id)}
+
+
+class TellBody(BaseModel):
+    text: str
+
+
+@app.post("/v1/jobs/{job_id}/tell")
+def tell_desk(job_id: uuid.UUID, body: TellBody, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+              actor: str = Depends(get_actor), llm: LLMClient = Depends(get_llm)):
+    """Anything about the role in your own words: read like notes, then the brief again."""
+    from maindscout.api import role_brief
+
+    result = role_brief.tell(session, org_id, job_id, body.text, actor, llm)
+    session.commit()
+    return result
+
+
+class EditBody(BaseModel):
+    text: str
+    strength: str | None = None
+
+
+@app.post("/v1/requirements/{claim_id}/edit")
+def edit_requirement(claim_id: uuid.UUID, body: EditBody, org_id: uuid.UUID = Depends(get_org),
+                     session: Session = Depends(get_session), actor: str = Depends(get_actor), llm: LLMClient = Depends(get_llm)):
+    """A requirement in your own words and how much it matters; its values follow the words."""
+    from maindscout.api import hiring
+
+    claim = hiring.edit_requirement(session, org_id, claim_id, body.text, body.strength, actor, llm)
+    session.commit()
+    return {"id": str(claim.id), "text": claim.payload["text_raw"], "strength": claim.payload["strength"]}
+
+
+class ConfirmBody(BaseModel):
+    ids: list[str]
+
+
+@app.post("/v1/jobs/{job_id}/requirements/confirm")
+def confirm_requirements(job_id: uuid.UUID, body: ConfirmBody, org_id: uuid.UUID = Depends(get_org),
+                         session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Confirm the requirements the desk read, together: each approved as read, everyone re-matched once."""
+    from maindscout.api import hiring
+
+    result = hiring.confirm(session, org_id, job_id, body.ids, actor)
+    session.commit()
+    return result
+
+
 class RequirementBody(BaseModel):
     category: str
     strength: str
@@ -1056,6 +1150,10 @@ class RequirementBody(BaseModel):
     employment: str | None = None
     normalized_token: str | None = None
     note: str | None = None
+    company_words: list[str] | None = None  # an industry as companies describe themselves (leather goods, bags)
+    min_staff: int | None = None  # employer: a company size in people (owner, 2026-10-19)
+    max_staff: int | None = None
+    recent_months: int | None = None  # "not from" a company: leavers of less than this many months count (default 6)
 
 
 @app.post("/v1/jobs/{job_id}/requirements", status_code=201)
