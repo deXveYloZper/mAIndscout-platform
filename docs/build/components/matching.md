@@ -75,6 +75,26 @@ Plan section 4.6 and phase I5: replace keyword triage with a comparison of what 
 - Pair reasons `match:<tier>:<why>`. Today's `no_support_for_must_have:<token>` stays for rule 1.
 - `GET /v1/jobs/{id}/people/{cid}/gaps` returns `match`; `GET /v1/jobs/{id}` returns `match_tier` per person.
 
+## Step C: is the move realistic? (2026-10-21, `match-2026-10-21.3`)
+The owner: "1st its not a competitor, 2. its not similar company compare to 12k people and 62 people, its a
+standard recruiter logic." A match that is strong on paper becomes possible, a reach, with its reason on the card:
+- **Too big a move** (`too_big_a_move`): their current employer is 20 or more times the client's size (Prada Group,
+  12,203 people, for a 62-person brand), unless the role is a step up for them or they spent a year or more in the
+  last 3 years at a company up to 5 times the client's size, in the role's kind of work. A ratio, not size bands:
+  1,027 to 93 (Viridien to Catalyst, a normal move for InSAR people) is 11x, 12,203 to 62 is 197x.
+- **Above the role** (`above_the_role`): two or more levels above the role's level (its role requirement, else the
+  role brief), at the role's own seniority limit ("not too senior: lead and above" now rates), or above it with a
+  global or regional scope.
+- **A specialist for an all-round role** (`specialist`): the role asks for an all-round person ("360", "broad
+  marketing experience") and their title is a narrow kind of marketing work (CRM and clienteling, media, social
+  media, merchandising, events, PR…), unless the role's must-haves or strong pluses ask for that work. A list of
+  everything an all-round marketer touches (a nice-to-have, the brief's scope) does not ask for it.
+
+The client's side (`process.client_context`): its size (a counted headcount first), the role's level, whether it
+asks for an all-round person, and the words of its must-haves and strong pluses. match-eval: the marketing role from
+28 strong to 5 (the 23 moved: 21 Prada Group people, two specialists), the owner's four labels from 0 to 4 right;
+InSAR's two leads at the ad's own seniority limit; Procure AI unchanged.
+
 ## Nobody is strong before their career reading (2026-10-21, `match-2026-10-21.2`)
 The owner: "People can't be considered strong before their career reading is done, obviously, this is a real bug!"
 Someone with no career profile yet was Priority on the first, coarse reading (their skills against the must-haves);

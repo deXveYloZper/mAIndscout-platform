@@ -7,6 +7,7 @@ The caller owns the transaction: this flushes, the caller commits (or rolls ever
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -346,6 +347,40 @@ def _triage_now(session: Session, org_id, candidate_id, job: Job, inputs: tuple[
     return triage.triage(requirements, skills, titles, likely)
 
 
+# "360", "broad marketing experience", "all-round": the role wants a generalist, so a narrow specialist is a reach.
+GENERALIST = re.compile(r"\b(360|all[- ]round|broad\b|integrated|generalist|full[- ]funnel)", re.I)
+
+
+def client_context(session: Session, job: Job) -> dict[str, Any]:
+    """What step C compares a person with (owner, 2026-10-21): the client's size (a counted headcount first, then Exa's
+    count, then the bottom of a bracket), the role's level (its role requirement, else the role brief), whether the
+    role asks for an all-round person, and the words of what it asks for (a specialism it wants is never held against
+    anyone)."""
+    from maindscout.db.models import Company, PUBLIC_ORG_ID
+
+    staff = None
+    company = session.get(Company, job.hiring_company_id) if job.hiring_company_id else None
+    if company is not None:
+        team = session.scalar(select(Claim).where(Claim.org_id == PUBLIC_ORG_ID, Claim.subject_id == company.id,
+                                                  Claim.claim_type == "TeamSizeClaim", Claim.status.in_(("proposed", "approved"))))
+        counted = team is not None and team.payload.get("min") is not None and team.payload.get("min") == team.payload.get("max")
+        staff = (team.payload["min"] if counted else (company.exa_profile or {}).get("employees")
+                 or (team.payload.get("min") if team is not None else None))
+    reqs = [c.approved_view or c.payload for c in session.scalars(select(Claim).where(
+        Claim.subject_id == job.id, Claim.claim_type == "JobRequirementClaim", Claim.status.in_(("proposed", "approved"))))]
+    level = next((p.get("level") for p in reqs if p.get("category") == "role" and p.get("strength") != "anti" and p.get("level")), None)
+    brief = {(c.approved_view or c.payload).get("facet"): (c.approved_view or c.payload) for c in session.scalars(select(Claim).where(
+        Claim.subject_id == job.id, Claim.claim_type == "RoleScopeClaim", Claim.status.in_(("proposed", "approved"))))}
+    if level is None:
+        level = (brief.get("level") or {}).get("value")
+    # What it asks for: its must-haves and strong pluses only. A list of everything an all-round marketer touches (the
+    # ad's nice-to-have "brand, digital, CRM, PR, events…", the brief's "360° plans, influencer seeding, events, CRM")
+    # describes the scope; it does not ask for a CRM specialist (Michela Bassani, 2026-10-21).
+    words = " ".join(p.get("text_raw") or "" for p in reqs if p.get("strength") in ("must", "deal_breaker", "strong_plus"))
+    every = " ".join([p.get("text_raw") or "" for p in reqs if p.get("strength") != "anti"] + [b.get("words") or "" for b in brief.values()])
+    return {"staff": int(staff) if staff else None, "level": level, "generalist": bool(GENERALIST.search(every)), "wanted": words}
+
+
 def _match_now(session: Session, org_id, candidate_id, job: Job, rows=None, coarse: triage.Triage | None = None,
                inputs: tuple[list[Claim], list[Claim]] | None = None):
     """Matching v2: the career profile against the hiring profile; token triage is rule 1 and the fallback.
@@ -369,7 +404,8 @@ def _match_now(session: Session, org_id, candidate_id, job: Job, rows=None, coar
     return matching.match(reqs, rows, snap.profile if snap else None, stints,
                           (coarse.band, coarse.reason), answers_for(session, org_id, candidate_id),
                           blocked=block.reason if block is not None else None,
-                          preferences=preference_rows(session, job, inputs[1], [r["payload"] for r in reqs]))
+                          preferences=preference_rows(session, job, inputs[1], [r["payload"] for r in reqs]),
+                          client=client_context(session, job))
 
 
 def job_side(session: Session, job: Job, requirements: list[dict]):

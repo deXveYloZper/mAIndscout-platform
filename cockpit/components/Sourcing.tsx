@@ -17,6 +17,7 @@ export const TARGET_TIER: Record<string, string> = {
   named: "named by the hiring manager", known: "our people worked there", peer: "peer company",
   adjacent: "adjacent industry", release: "releasing talent", manual: "added by you",
   feeder: "their people came from here", feeder_large: "large feeder", snowball: "strong candidates worked here",
+  large_peer: "in the client's market, much bigger",
 };
 const STOP: Record<string, string> = {
   target: "target reached", budget: "the role's budget is used up", desk_budget: "the desk's budget is used up",
@@ -33,7 +34,7 @@ const CHANNEL: Record<string, string> = { pool: "our own pool", exa_people: "web
 const TIER_NAME: Record<string, string> = {
   A: "Tier A: named by the hiring manager, and where the hiring company's people came from",
   B: "Tier B: similar companies, and where strong candidates worked before",
-  C: "Tier C: very large feeders, companies releasing talent, adjacent industries",
+  C: "Tier C: very large feeders and much bigger companies in the market, companies releasing talent, adjacent industries",
 };
 const KIND: Record<string, string> = { product: "product company", consultancy: "consultancy", outsourcing: "outsourcing",
   agency: "agency", public_sector: "public sector", non_profit: "non-profit", other: "other", unknown: "kind unknown" };

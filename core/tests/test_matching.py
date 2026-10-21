@@ -119,3 +119,48 @@ def test_another_field_altogether_is_unlikely_a_related_one_possible():
     seller = [stint(1, "Leather Co", "Commercial Manager", "2012-01", None, family="sales", level="manager")]
     m, _ = run(reqs, seller)
     assert m.tier != "unlikely" or not any(r["id"] == "wrong_field" for r in m.rules), "sales is related to marketing"
+
+
+# --- step C: is the move realistic? (owner, 2026-10-21: "its a standard recruiter logic") ---------------------------
+
+from maindscout.domain.profile import CompanyFacts  # noqa: E402
+
+BRAND = {"staff": 62, "level": "manager", "generalist": True, "wanted": "influencer marketing with direct contact to creators"}
+MARKETER = [req(1, "role", "must", "Marketing manager", role_family="marketing", level="manager")]
+
+
+def at(company, staff, title="Marketing Manager", start="2016-01", end=None, level="manager"):
+    return stint(len(company) + len(title), company, title, start, end, family="marketing", level=level,
+                 facts=CompanyFacts(team_min=staff, team_max=staff))
+
+
+def test_from_a_twelve_thousand_person_group_to_a_62_person_brand_is_a_reach():
+    m = matching.match(MARKETER, [], run(MARKETER, [at("Prada Group", 12203)])[1], [at("Prada Group", 12203)], ("priority", "x"),
+                       client=BRAND)
+    assert m.tier == "possible" and any(r["id"] == "too_big_a_move" for r in m.rules)
+    near = [at("Prada Group", 12203), at("Small Leather Co", 90, start="2022-01", end="2025-06")]
+    m = matching.match(MARKETER, [], run(MARKETER, near)[1], near, ("priority", "x"), client=BRAND)
+    assert m.tier == "strong", "recent time at a company near the client's size: the move is realistic"
+    peer = [at("Leather Testhaus", 96)]
+    m = matching.match(MARKETER, [], run(MARKETER, peer)[1], peer, ("priority", "x"), client=BRAND)
+    assert m.tier == "strong", "a competitor of the client's size"
+
+
+def test_well_above_the_role_or_at_its_seniority_limit_is_a_reach():
+    director = [at("Leather Testhaus", 96, title="Marketing Director", level="director")]
+    m = matching.match(MARKETER, [], run(MARKETER, director)[1], director, ("priority", "x"), client=BRAND)
+    assert any(r["id"] == "above_the_role" for r in m.rules) and m.tier == "possible"
+    limited = MARKETER + [req(2, "role", "anti", "Not too senior", role_family="marketing", level="head")]
+    head = [at("Leather Testhaus", 96, title="Head of Marketing", level="head")]
+    m = matching.match(limited, [], run(limited, head)[1], head, ("priority", "x"), client=BRAND)
+    assert any("seniority limit" in r.get("detail", "") for r in m.rules) and m.tier == "possible"
+
+
+def test_a_specialist_for_an_all_round_role_is_possible_unless_the_role_asks_for_that_work():
+    crm = [at("Leather Testhaus", 96, title="CRM & Client Experience Manager")]
+    m = matching.match(MARKETER, [], run(MARKETER, crm)[1], crm, ("priority", "x"), client=BRAND)
+    assert any(r["id"] == "specialist" for r in m.rules) and m.tier == "possible"
+    m = matching.match(MARKETER, [], run(MARKETER, crm)[1], crm, ("priority", "x"), client={**BRAND, "wanted": "CRM leadership"})
+    assert m.tier == "strong", "the role asks for CRM itself"
+    m = matching.match(MARKETER, [], run(MARKETER, crm)[1], crm, ("priority", "x"), client={**BRAND, "generalist": False})
+    assert m.tier == "strong", "a role that does not ask for an all-round person"

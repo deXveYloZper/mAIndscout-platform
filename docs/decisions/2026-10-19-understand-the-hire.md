@@ -141,6 +141,16 @@ profile/link/linkedin". Nothing in matching changed: the same people, the same v
 3. **Checked by hand** on both roles, at laptop and phone width, with a throwaway sign-in. The Sourcing tab's market
    map was found too wide on a phone (up to 139 px, before step E) and fixed.
 
+## Step C (built 2026-10-21, the owner's "go ahead with step C")
+The owner: Prada is "not a competitor" and "not similar company compare to 12k people and 62 people, its a standard
+recruiter logic". Built as code, measured with match-eval first ([matching](../build/components/matching.md)):
+the move check (20x the client's size, unless a step up or recent time near that size), the level against the role
+(including the role's seniority limit), a specialist for an all-round role, and competitors of comparable size on
+the market map ([sourcing strategy](../build/components/sourcing-strategy.md)). The owner's four labels on the
+rebuilt marketing role all agree now (none did before); its strong list went from 28 (23 at Prada Group) to 5, all
+at small leather-goods competitors. The finer kind of work is read from titles, not a second model reading: free,
+and the owner can see the rule; a model reading stays possible if titles prove too thin.
+
 ## Not changed
 - The kinds start-up and scale-up keep their meaning (a stage; by size only when no funding is known).
 - Industry years still count every real job.

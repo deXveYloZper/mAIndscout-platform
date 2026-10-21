@@ -54,11 +54,16 @@ def why(rows: list[dict[str, Any]], work: dict[str, Any] | None, tier: str | Non
     return out
 
 
-def short_of(rows: list[dict[str, Any]]) -> list[str]:
-    """What keeps a match from strong: must-haves that are gaps or only partly met, then strong-plus items they miss."""
+STEP_C = ("too_big_a_move", "above_the_role", "specialist")
+
+
+def short_of(rows: list[dict[str, Any]], rules: list[dict[str, Any]] | None = None) -> list[str]:
+    """What keeps a match from strong: a reach first (step C: too big a move, above the role, a specialist), then
+    must-haves that are gaps or only partly met, then strong-plus items they miss."""
+    out_: list[str] = [f"a reach: {r['detail']}" for r in rules or [] if r.get("id") in STEP_C]
     musts = [r for r in rows if r.get("strength") in MUST and r.get("verdict") in ("gap", "partial")]
     plus = [r for r in rows if r.get("strength") == "strong_plus" and r.get("verdict") in ("gap", "partial")]
-    out: list[str] = []
+    out: list[str] = out_
     for r in musts + plus:
         s = short(r.get("detail")) or (r.get("requirement") or "")
         s = f"{s} (partly)" if r.get("verdict") == "partial" and "partly" not in s and "likely" not in s else s

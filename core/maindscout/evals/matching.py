@@ -87,7 +87,8 @@ def fresh_match(session: Session, pair, job, today: date | None = None):
     block = active_block(session, pair.org_id, job.id, pair.candidate_id)
     return matching.match(reqs, rows, profile, stints, (coarse.band, coarse.reason), answers_for(session, pair.org_id, pair.candidate_id),
                           blocked=block.reason if block is not None else None,
-                          preferences=process.preference_rows(session, job, inputs[1], [r["payload"] for r in reqs]))
+                          preferences=process.preference_rows(session, job, inputs[1], [r["payload"] for r in reqs]),
+                          client=process.client_context(session, job))
 
 
 def _row_words(r: dict[str, Any]) -> str:

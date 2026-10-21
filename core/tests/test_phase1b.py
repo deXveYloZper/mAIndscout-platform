@@ -431,3 +431,11 @@ def test_a_counted_headcount_beats_a_size_bracket_whichever_comes_first(session,
     team = session.scalar(select(Claim).where(Claim.subject_id == company.id, Claim.claim_type == "TeamSizeClaim"))
     assert (team.payload["min"], team.payload["max"]) == (62, 62)
     assert team.flags.get("sources_disagree"), "both sources are kept, and the disagreement shows"
+
+
+def test_a_company_twenty_times_the_clients_size_is_no_competitor_until_tier_c(session):
+    big = Company(name="Big Testgroup", normalized="big testgroup", exa_profile={"employees": 12203})
+    small = Company(name="Small Testhaus", normalized="small testhaus", exa_profile={"employees": 96})
+    assert strategy.fit(session, big, set(), client_staff=62)["why"].startswith("about 197x the client's size")
+    assert strategy.fit(session, big, set(), client_staff=62, wide=True)["searched"] is True, "searched once Tier C is open"
+    assert strategy.fit(session, small, set(), client_staff=62)["searched"] is True

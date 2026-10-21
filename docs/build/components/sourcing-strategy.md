@@ -102,6 +102,12 @@ The owner (2026-10-13): "we should be aware that our initial list of companies w
   - A background it does not want (consultancy, agency, public sector, non-profit) keeps companies of that kind out of the peer list and the batches.
 - The old "Find peer companies on the web" button is gone: the strategy finds peers.
 
+## A competitor is of comparable size (step C, 2026-10-21)
+A company 20 or more times the client's size is in its market but no competitor (`much_bigger`, the same factor as
+the move check): a new map lists it in Tier C ("in the client's market, much bigger"), and on an existing map it
+says "about 197x the client's size: not a competitor (searched only if you widen to Tier C)". It is searched once
+Tier C is open, or when pinned; a company the hiring manager or the owner named is always searched.
+
 ## From the owner's 0-to-1 test (2026-10-21)
 Three roles rebuilt from an empty desk showed four kinds of wrong target; each is now refused by code:
 - **A search by the role's skill** ("insar companies in United Kingdom") also returned look-alike names: a

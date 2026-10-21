@@ -676,6 +676,9 @@ def _page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "
     state = strategy.company_state(session, job.id, p)
     avoid_ids, avoid_kinds = strategy.not_from(session, job)
     lux = strategy.luxury(session, job)
+    from maindscout.api.process import client_context
+
+    client_staff = client_context(session, job)["staff"]
     profiles_by_id = {str(c.id): c for c in session.scalars(select(Company).where(
         Company.id.in_([uuid.UUID(t["company_id"]) for t in p.targets if t.get("company_id")] or [None])))}
     strategy.prefetch_closed(session, list(profiles_by_id.values()))  # one query for every target, not one each
@@ -684,7 +687,8 @@ def _page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "
                 "progress": {k: v for k, v in (state.get(t.get("company_id") or "") or {}).items() if k not in ("texts", "recent")} or None,
                 "fit": ({"searched": False, "why": "the hiring profile says not to recruit from here"}
                         if (t.get("company_id") or "") in avoid_ids else
-                        strategy.fit(session, profiles_by_id.get(t.get("company_id") or ""), set(p.countries or []), avoid_kinds, lux)),
+                        strategy.fit(session, profiles_by_id.get(t.get("company_id") or ""), set(p.countries or []), avoid_kinds, lux,
+                                     None if t.get("tier") in ("named", "manual") else client_staff, "C" in (p.open_tiers or []))),
                 "profile": company_profiles.summary(profiles_by_id.get(t.get("company_id") or ""))}
                for t in p.targets]
     hits = {h.candidate_id: h for h in session.scalars(select(SourcingHit).where(SourcingHit.job_id == job.id))}
@@ -764,7 +768,7 @@ def _page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "
                           "hint": "looks strong" if machine == "priority" else "possible",
                           "reach": reach,
                           "why": cards.why(match_rows, work.get(x.candidate_id), x.match_tier),
-                          "short_of": cards.short_of(match_rows),
+                          "short_of": cards.short_of(match_rows, (x.match or {}).get("rules")),
                           "settle": cards.settle(home, place, cities, reach),
                           "place": cards.place_words(place),
                           "contact": track or None,

@@ -36,7 +36,7 @@ LIVE = ("proposed", "approved")
 DNA_SEARCHES = 3
 LARGE = 5000  # a feeder this big is a kind of employer (tier C), not a list of people to search one by one
 GROUP_OF_TIER = {"named": "A", "manual": "A", "feeder": "A", "known": "B", "peer": "B", "snowball": "B",
-                 "adjacent": "C", "release": "C", "feeder_large": "C"}
+                 "adjacent": "C", "release": "C", "feeder_large": "C", "large_peer": "C"}
 GROUPS = ("A", "B", "C")
 RULES = {"batch": 5, "exhausted_after": 2, "known_share": 0.8, "low_yield": 0.2, "recheck_days": 90, "yield_window": 15,
          "max_results": 50}
@@ -270,6 +270,9 @@ def _peers(session: Session, org_id: uuid.UUID, job: Job, of: Company | None, ca
     made: list[Company] = []
     lux = luxury(session, job)
     like_client = of is not None and (of.exa_profile or {}).get("kind") in (None, "product") and queries is None
+    from maindscout.api.process import client_context
+
+    client_staff = client_context(session, job)["staff"]
     for query in queries if queries is not None else peer_queries(of, countries, skills):
         # A search by the role's skill ("insar companies in United Kingdom") also returns look-alike names (ISAR3, a
         # rescue firm; INSPHERE, automotive; 2026-10-21): a company found that way must name the skill itself.
@@ -297,7 +300,9 @@ def _peers(session: Session, org_id: uuid.UUID, job: Job, of: Company | None, ca
                 continue  # a kind of company the hiring profile does not want, or not luxury for a luxury role
             have.add(str(company.id))
             made.append(company)
-            out.append(_target(company, "peer", [why, f'company search: "{query}"'], "exa_company"))
+            times = much_bigger(company, client_staff)  # 20x the client's size: in its market, but no competitor
+            out.append(_target(company, "large_peer" if times else "peer",
+                               [why, f'company search: "{query}"'] + ([f"about {times}x the client's size"] if times else []), "exa_company"))
             if len(out) >= limit:
                 break
         if len(out) >= limit:
@@ -502,11 +507,17 @@ def not_from(session: Session, job: Job) -> tuple[set[str], set[str]]:
 
 
 def fit(session: Session, company: Company | None, countries: set[str], avoid_kinds: set[str] | None = None,
-        luxury: bool = False) -> dict[str, Any]:
+        luxury: bool = False, client_staff: int | None = None, wide: bool = False) -> dict[str, Any]:
     """Why a company is or is not searched for this role, for the map. `luxury`: the role asks for luxury, so a
-    company that is known and is not a luxury one is left out (a 4-star chain, a tour operator)."""
+    company that is known and is not a luxury one is left out (a 4-star chain, a tour operator). `client_staff`: a
+    company 20 or more times the client's size is not a competitor (owner, 2026-10-21: "its not similar company
+    compare to 12k people and 62 people, its a standard recruiter logic"); it is searched only once Tier C is open
+    (`wide`)."""
     if closed(session, company):
         return {"searched": False, "why": "shut down"}
+    times = much_bigger(company, client_staff)
+    if times and not wide:
+        return {"searched": False, "why": f"about {times}x the client's size: not a competitor (searched only if you widen to Tier C)"}
     kind = ((company.exa_profile or {}).get("kind") if company is not None else None)
     if kind and avoid_kinds and kind in avoid_kinds:
         return {"searched": False, "why": f"a {kind.replace('_', ' ')}: the hiring profile says not from there"}
@@ -517,6 +528,17 @@ def fit(session: Session, company: Company | None, countries: set[str], avoid_ki
         where = ", ".join(r["country"] for r in (company.exa_profile or {}).get("countries", [])[:2])
         return {"searched": False, "why": f"no team in the role's countries (its team: {where})"}
     return {"searched": True, "why": None}
+
+
+BIG_PEER = 20  # the same factor as matching's move check (domain/matching.BIG_MOVE)
+
+
+def much_bigger(company: Company | None, client_staff: int | None) -> int | None:
+    """How many times the client's size a company is, when that makes it no competitor (20x or more), else None."""
+    staff = ((company.exa_profile or {}).get("employees") if company is not None else None)
+    if not staff or not client_staff or staff < BIG_PEER * client_staff:
+        return None
+    return round(staff / client_staff)
 
 
 def outside_countries(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID, countries: set[str]) -> bool:
@@ -627,12 +649,16 @@ def next_searches(session: Session, job: Job, p: SourcingPlan, releasing: set[st
     countries = set(p.countries or [])
     avoid_ids, avoid_kinds = not_from(session, job)
     lux = luxury(session, job)
+    from maindscout.api.process import client_context
+
+    staff, wide = client_context(session, job)["staff"], "C" in open_groups
     for t in targets:
         s = state.get(t["company_id"])
         if t["company_id"] in avoid_ids:
             continue  # the hiring profile says not from here
         company = session.get(Company, uuid.UUID(t["company_id"]))
-        if not t.get("pinned") and not fit(session, company, countries, avoid_kinds, lux)["searched"]:
+        mine = t.get("tier") in ("named", "manual")  # a company the owner or hiring manager named is always searched
+        if not t.get("pinned") and not fit(session, company, countries, avoid_kinds, lux, None if mine else staff, wide)["searched"]:
             continue  # shut down, its team works only outside the role's countries, or a kind the profile does not want
         if s and s["exhausted"]:
             last = datetime.fromisoformat(s["last_run_at"]) if s["last_run_at"] else None

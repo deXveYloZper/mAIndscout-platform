@@ -22,7 +22,7 @@ from typing import Any, Callable
 from maindscout.domain.profile import (FAMILY_LABEL, LEVEL_RANK, NOT_EXPERIENCE, Stint, employer_years, group_of, staff_words,
                                        years_at_size)
 
-ENGINE_VERSION = "match-2026-10-21.2"  # nobody is Priority before their career reading
+ENGINE_VERSION = "match-2026-10-21.3"  # step C: the move check, the level against the role, a specialist for an all-round role
 MUST = ("must", "deal_breaker")
 
 # The desk's rules, as data: id -> what it says. The order of evaluation is the order of this list.
@@ -40,6 +40,9 @@ RULES: list[dict[str, str]] = [
     {"id": "must_gaps", "text": "Two or more must-haves are gaps: unlikely; one: possible."},
     {"id": "partial_must", "text": "A must-have is only partly met (a related kind of work, a level below, fewer years): possible."},
     {"id": "too_little_known", "text": "Too little is known about the person to compare (no career profile yet): never Priority until it is read; otherwise the coarse band stands."},
+    {"id": "too_big_a_move", "text": "A reach: their employer is 20 or more times the client's size, with no recent time at a company near the client's size and no step up."},
+    {"id": "above_the_role", "text": "A reach: their level now is well above the role's (or at the role's seniority limit, or global or regional above it)."},
+    {"id": "specialist", "text": "A specialist (CRM, media, merchandising...) for a role that asks for an all-round person: possible, not strong."},
     {"id": "strong_match", "text": "Every must-have is fully met or only needs asking, and at least half of the known strong-plus items are met."},
 ]
 RULE_TEXT = {r["id"]: r["text"] for r in RULES}
@@ -335,7 +338,7 @@ def _covers(note: str, text: str, token: str | None = None) -> bool:
 
 def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str, Any] | None, stints: list[Stint],
           coarse: tuple[str, str], answers: dict[str, dict[str, Any]] | None = None, blocked: str | None = None,
-          preferences: list[tuple[str, str, str, str, str]] | None = None) -> Match:
+          preferences: list[tuple[str, str, str, str, str]] | None = None, client: dict[str, Any] | None = None) -> Match:
     """`requirements`: [{id, payload}] (live, no process dates); `gap_rows`: domain.gaps rows for the same job and
     person; `profile`: the latest career profile (or None); `coarse`: the token triage (band, reason) as fallback;
     `preferences`: domain.preferences.rows for what the person said they want."""
@@ -488,7 +491,83 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
         return Match("possible", "review_later", f"match:possible:{partial_musts[0].requirement} only partly met", rows, fired)
     plus = [v for v in rows if v.strength == "strong_plus" and v.verdict != "ask"]
     met = [v for v in plus if v.verdict == "strong"]
+    reaches = _reaches(by_id, profile, stints, client or {}, family)
+    if (not plus or len(met) * 2 >= len(plus)) and reaches:
+        # Step C (owner, 2026-10-21: "its a standard recruiter logic"): strong on paper, but a reach.
+        for rule, detail in reaches:
+            fire(rule, detail)
+        return Match("possible", "review_later", f"match:possible:a reach: {reaches[0][1]}", rows, fired)
     if not plus or len(met) * 2 >= len(plus):
         fire("strong_match", f"{len(met)} of {len(plus)} known strong-plus items met" if plus else "every must-have met or to ask")
         return Match("strong", "priority", f"match:strong:{len(met)} of {len(plus)} strong-plus met" if plus else "match:strong:must-haves met", rows, fired)
     return Match("possible", "review_later", f"match:possible:{len(met)} of {len(plus)} strong-plus met", rows, fired)
+
+
+# --- step C: is the move realistic? (owner, 2026-10-19 and 2026-10-21) ------------------------------------------------
+
+BIG_MOVE = 20  # an employer this many times the client's size: from 12,203 people to 62 is a reach; 1,027 to 93 is not
+NEAR = 5  # a company up to this many times the client's size counts as "near the client's size"
+RECENT_YEARS = 3
+SCOPE = re.compile(r"\b(global|worldwide|international|regional|emea|apac|americas)\b", re.I)
+# Narrow kinds of marketing work, read from the current title. A role that asks for an all-round marketer ("360",
+# "broad marketing experience") finds them possible, unless the role asks for that work itself.
+SPECIALISMS = {"social media": r"social media", "crm": r"\bcrm\b|clienteling|client (development|experience)",
+               "media": r"\bmedia\b",
+               "performance marketing": r"performance marketing|\bseo\b|\bsem\b|paid (social|search)",
+               "merchandising": r"merchandis", "trade marketing": r"trade marketing", "events": r"\bevents?\b",
+               "public relations": r"\bpr\b|public relations|press office", "copywriting": r"copywrit",
+               "content production": r"content production",
+               "analytics": r"analytic|insights"}
+GENERALIST_TITLE = re.compile(r"\b(marketing (manager|director|lead)|head of marketing|marketing (and|&) communications? manager"
+                              r"|brand manager|cmo)\b", re.I)
+
+
+def _size(facts) -> int | None:
+    return None if facts is None or facts.team_min is None else facts.team_min
+
+
+def _reaches(by_id: dict[str, dict[str, Any]], profile: dict[str, Any] | None, stints: list[Stint],
+             client: dict[str, Any], family: str | None) -> list[tuple[str, str]]:
+    """Why a match that is strong on paper is a reach: [(rule, detail)]. Nothing without a career profile."""
+    if profile is None:
+        return []
+    out: list[tuple[str, str]] = []
+    today = date.today()
+    now = [s for s in stints if s.end is None and s.employment not in NOT_EXPERIENCE]
+    level = ((profile.get("dimensions") or {}).get("seniority") or {}).get("label")
+    rank, role_rank = LEVEL_RANK.get(level or ""), LEVEL_RANK.get(client.get("level") or "")
+    # 1. The move: from a company far bigger than the client, unless it is a step up or they were recently at a
+    #    company near the client's size (in the role's kind of work).
+    staff = client.get("staff")
+    if staff and now:
+        biggest = max(now, key=lambda s: _size(s.facts) or 0)
+        theirs = _size(biggest.facts)
+        step_up = rank is not None and role_rank is not None and rank < role_rank
+        keep = _relevant(family)
+        recent_near = any((s.end is None or (today - s.end).days <= RECENT_YEARS * 365)
+                          and s.start is not None and ((s.end or today) - s.start).days >= 365
+                          and _size(s.facts) is not None and _size(s.facts) <= NEAR * staff and (keep is None or keep(s))
+                          for s in stints if s.employment not in NOT_EXPERIENCE)
+        if theirs and theirs >= BIG_MOVE * staff and not step_up and not recent_near:
+            out.append(("too_big_a_move", f"from {biggest.company} ({theirs:,} people) to a {staff:,}-person company, "
+                                          "with no recent time at a company near that size"))
+    # 2. The level: well above the role, at the role's seniority limit, or global or regional above it.
+    if rank is not None and role_rank is not None:
+        limit = next((LEVEL_RANK.get(p.get("level") or "") for p in by_id.values()
+                      if p.get("category") == "role" and p.get("strength") == "anti" and p.get("level")), None)
+        title = now[0].title if now else ""
+        if rank - role_rank >= 2:
+            out.append(("above_the_role", f"{level} now ({title}), well above a {client.get('level')} role"))
+        elif limit is not None and rank >= limit:
+            out.append(("above_the_role", f"{level} now ({title}): at the role's seniority limit"))
+        elif rank > role_rank and SCOPE.search(title):
+            out.append(("above_the_role", f"{title}: a {level} with a global or regional scope, above a {client.get('level')} role"))
+    # 3. A specialist for an all-round role.
+    if client.get("generalist") and family == "marketing" and now:
+        title = now[0].title
+        wanted = client.get("wanted") or ""
+        for name, rx in SPECIALISMS.items():
+            if re.search(rx, title, re.I) and not GENERALIST_TITLE.search(title) and not re.search(rx, wanted, re.I):
+                out.append(("specialist", f"{title}: a {name} specialist, for an all-round marketing role"))
+                break
+    return out
