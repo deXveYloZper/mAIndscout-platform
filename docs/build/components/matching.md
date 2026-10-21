@@ -75,6 +75,14 @@ Plan section 4.6 and phase I5: replace keyword triage with a comparison of what 
 - Pair reasons `match:<tier>:<why>`. Today's `no_support_for_must_have:<token>` stays for rule 1.
 - `GET /v1/jobs/{id}/people/{cid}/gaps` returns `match`; `GET /v1/jobs/{id}` returns `match_tier` per person.
 
+## Nobody is strong before their career reading (2026-10-21, `match-2026-10-21.2`)
+The owner: "People can't be considered strong before their career reading is done, obviously, this is a real bug!"
+Someone with no career profile yet was Priority on the first, coarse reading (their skills against the must-haves);
+web finds counted as strong and stopped a search at its target before anyone was read. Now a coarse Priority waits
+in Review later ("being read") until the reading arrives; a coarse Review later or Do not submit stands. The card
+says "Being read". Tests that judge a person after an upload use the `careers_read_at_once` fixture, which does the
+background reading at once with a stand-in reader.
+
 ## Another field altogether (2026-10-21, `match-2026-10-21.1`)
 A CFO, an HR manager, two operations directors and a store manager were "possible" for a marketing manager role
 on one missing must-have. When the role's kind of work is a must and the person works in an unrelated field ("works

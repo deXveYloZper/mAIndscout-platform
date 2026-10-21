@@ -22,7 +22,7 @@ from typing import Any, Callable
 from maindscout.domain.profile import (FAMILY_LABEL, LEVEL_RANK, NOT_EXPERIENCE, Stint, employer_years, group_of, staff_words,
                                        years_at_size)
 
-ENGINE_VERSION = "match-2026-10-21.1"  # another field altogether is unlikely, not possible
+ENGINE_VERSION = "match-2026-10-21.2"  # nobody is Priority before their career reading
 MUST = ("must", "deal_breaker")
 
 # The desk's rules, as data: id -> what it says. The order of evaluation is the order of this list.
@@ -39,7 +39,7 @@ RULES: list[dict[str, str]] = [
     {"id": "wrong_field", "text": "The role's kind of work is a must and the person works in another field altogether: unlikely."},
     {"id": "must_gaps", "text": "Two or more must-haves are gaps: unlikely; one: possible."},
     {"id": "partial_must", "text": "A must-have is only partly met (a related kind of work, a level below, fewer years): possible."},
-    {"id": "too_little_known", "text": "Too little is known about the person to compare (no career profile yet): the coarse band stands."},
+    {"id": "too_little_known", "text": "Too little is known about the person to compare (no career profile yet): never Priority until it is read; otherwise the coarse band stands."},
     {"id": "strong_match", "text": "Every must-have is fully met or only needs asking, and at least half of the known strong-plus items are met."},
 ]
 RULE_TEXT = {r["id"]: r["text"] for r in RULES}
@@ -440,6 +440,10 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
         return Match("unlikely", "do_not_submit", f"match:unlikely:not what they want ({hard[0].requirement})", rows, fired)
     if thin:
         fire("too_little_known", "no career profile yet" if profile is None else "the career profile is unclear")
+        # Nobody is strong before their career reading (owner, 2026-10-21: "obviously, this is a real bug"): a coarse
+        # Priority waits in Review later until the reading arrives; Do not submit and Review later stand.
+        if coarse[0] == "priority":
+            return Match("unclear", "review_later", "match:unclear:being read", rows, fired)
         return Match("unclear", None, coarse[1], rows, fired)
     # 3. Substitutions stated in the intake: a met requirement stands in for the one its note names.
     for a in rows:

@@ -418,3 +418,16 @@ def test_a_company_the_profile_rules_out_is_never_a_peer(session, job):
     out = strategy._peers(session, job.org_id, job, None, FakeExa(people=[], companies=[ruled_out, fine]), set(), "x", 10,
                           queries=["luxury leather goods companies in Italy"])
     assert [t["name"] for t in out] == ["Leather Testhaus"]
+
+
+@pytest.mark.parametrize("first,second", [("201-500 employees", "62 employees"), ("62 employees", "201-500 employees")])
+def test_a_counted_headcount_beats_a_size_bracket_whichever_comes_first(session, first, second):
+    # Bonaventura, 2026-10-21: LinkedIn's bracket "201-500" was used everywhere though Exa counted 62.
+    company, _ = companies.resolve(session, "Bracket Testworks", "test", keys={"domain": "bracket.example"})
+    now = datetime.now(timezone.utc)
+    research.write_facts(session, company, [engine.Fact("headcount", first, "https://www.linkedin.com/company/bracket", first)], now)
+    research.write_facts(session, company, [engine.Fact("headcount", second, "https://exa.ai/library/organization/bracket", second)], now)
+    research.cross_check(session, company)
+    team = session.scalar(select(Claim).where(Claim.subject_id == company.id, Claim.claim_type == "TeamSizeClaim"))
+    assert (team.payload["min"], team.payload["max"]) == (62, 62)
+    assert team.flags.get("sources_disagree"), "both sources are kept, and the disagreement shows"

@@ -109,8 +109,14 @@ they meet, then newest; each card shows those items as tags (met, partly, missin
 A run that reached its target, ran out of budget or met an Exa error returned before profiling the new people's
 employers and queueing their career readings: 49 people on Procure AI were never read and stayed "too little known",
 yet counted as strong toward the target. The searches now stop, and the people already added are read as usual.
-Still open: the target counts people as strong on their first, coarse reading, before their career reading arrives,
-so a run can stop after two searches and the count drops once they are read.
+The target no longer counts anyone before their career reading ([matching](matching.md)): at search time a run's
+people are "being read", so a run searches on until its searches or budget end, and a run's strong count on the
+Sourcing tab is read from where its people stand now (`strong_now`).
+
+**Outside the role's countries, never kept** (owner, 2026-10-21: "no need to keep them even for future"): a web find
+whose own profile says they live in a country outside the role's countries, and who is new to the desk, is counted
+as refused and never stored, so never read either. A place that names no country is stored and checked as before.
+The 89 such people the test runs had stored were removed the same day (a backup was taken).
 
 ## Tests
 `core/tests/test_autosource.py` uses a fake Exa: synthetic people, nothing spent. It proves:

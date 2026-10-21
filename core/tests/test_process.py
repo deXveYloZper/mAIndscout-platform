@@ -210,6 +210,7 @@ def test_cv_onto_a_job_gets_a_band_and_a_reason_never_a_number(session, blobs, o
     assert pair.triage_band == "do_not_submit"
 
 
+@pytest.mark.usefixtures("careers_read_at_once")
 def test_a_specialist_cv_is_priority(session, blobs, org):
     jd, _ = run(session, blobs, org, JD_LINES, JD_JSON, doc_type="jd")
     data = cv_json()

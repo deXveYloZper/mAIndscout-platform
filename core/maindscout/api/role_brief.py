@@ -104,6 +104,15 @@ def read(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, client: LLMClie
             "rejected": brief.rejected, "usd": brief.cost.get("usd", 0)}
 
 
+def read_at(session: Session, job_id: uuid.UUID) -> str | None:
+    """When the brief was last read (its cost entry: written even when the reading changed nothing)."""
+    from maindscout.db.models import CostEntry
+
+    at = session.scalar(select(CostEntry.created_at).where(CostEntry.purpose == PURPOSE, CostEntry.subject_id == job_id)
+                        .order_by(CostEntry.created_at.desc()).limit(1))
+    return at.isoformat() if at else None
+
+
 def view(session: Session, job_id: uuid.UUID) -> list[dict[str, Any]]:
     """The live brief for the job page, in facet order: each line with where it comes from and its question."""
     order = list(engine.FACETS)
@@ -113,7 +122,8 @@ def view(session: Session, job_id: uuid.UUID) -> list[dict[str, Any]]:
         ev = session.scalar(select(Evidence).where(Evidence.claim_id == c.id).order_by(Evidence.created_at.desc()).limit(1))
         rows.append({"id": str(c.id), "facet": p["facet"], "value": p.get("value"), "words": p["words"], "basis": p["basis"],
                      "quote": ev.snippet if ev is not None and p["basis"] != "reading" else None,
-                     "question": p.get("question"), "why": p.get("why"), "status": c.status})
+                     "question": p.get("question"), "why": p.get("why"), "status": c.status,
+                     "at": c.created_at.isoformat() if c.created_at else None})
     return sorted(rows, key=lambda r: order.index(r["facet"]) if r["facet"] in order else 99)
 
 

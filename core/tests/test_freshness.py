@@ -1,3 +1,4 @@
+import pytest
 """Slice 4 step 3: freshness. Stale people and clients, and who to re-contact first, with why."""
 
 import uuid
@@ -36,6 +37,7 @@ def test_a_logged_call_makes_a_person_fresh_again(client, fake, session):
     assert freshness.of_person(session, org_of(client), uuid.UUID(cid), now=datetime.now(timezone.utc) + timedelta(days=100))["status"] == "fresh"
 
 
+@pytest.mark.usefixtures("careers_read_at_once")
 def test_the_recontact_list_puts_the_most_valuable_stale_people_first(client, fake, session):
     fake.jd = RUST_JD
     job = client.post("/v1/jobs", files=pdf_file(JD_LINES, "rust.pdf")).json()["job_id"]

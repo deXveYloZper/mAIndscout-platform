@@ -133,6 +133,7 @@ export type JobPage = JobSummary & {
   /** Each requirement's group: searched and rated by, for the conversation, or context (domain/groups.py). */
   requirement_groups?: Record<string, [RequirementGroup, string]>;
   role_brief?: BriefLine[];
+  role_brief_read_at?: string | null;
   stages: Record<string, number>;
   hiring: {
     company: { id: string; name: string; kind?: string | null; stage?: string | null; team?: string | null; founded?: string | null;
@@ -146,7 +147,7 @@ export type RequirementGroup = "search" | "conversation" | "context";
 
 /** A line of the role brief (step B): what the hire will really do, where it comes from, and a question when we guessed. */
 export type BriefLine = { id: string; facet: string; value: string | null; words: string; basis: "ad" | "notes" | "research" | "reading";
-  quote: string | null; question: string | null; why: string | null; status: "proposed" | "approved" };
+  quote: string | null; question: string | null; why: string | null; status: "proposed" | "approved"; at?: string | null };
 
 export type PersonPage = {
   id: string;

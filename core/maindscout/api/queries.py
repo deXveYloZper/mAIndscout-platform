@@ -162,6 +162,7 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
         # Step B (2026-10-19): what the desk searches and rates by, what is for the call, and what is context.
         "requirement_groups": {str(c.id): list(groups.group(c.approved_view or c.payload)) for c in reqs},
         "role_brief": role_brief.view(session, job.id),
+        "role_brief_read_at": role_brief.read_at(session, job.id),
         "process_stale": any(c.flags.get("job_process_stale") for c in reqs),
         "rematching": _rematching(session, job.id),
         "people": people,

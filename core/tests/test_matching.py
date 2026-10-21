@@ -75,10 +75,14 @@ def test_where_someone_lives_is_never_a_reason_for_unlikely():
     assert verdict(m, 9).verdict == "ask" and m.tier == "strong"
 
 
-def test_without_a_profile_the_coarse_band_stands():
-    m = matching.match([req(1, "role", "must", "Engineer", role_family="software_engineering")], [], None, [],
-                       ("priority", "supported:insar"))
-    assert (m.tier, m.band) == ("unclear", None) and m.rules[0]["id"] == "too_little_known"
+def test_without_a_profile_nobody_is_priority_and_otherwise_the_coarse_band_stands():
+    # Nobody is strong before their career reading (owner, 2026-10-21).
+    reqs = [req(1, "role", "must", "Engineer", role_family="software_engineering")]
+    m = matching.match(reqs, [], None, [], ("priority", "supported:insar"))
+    assert (m.tier, m.band, m.reason) == ("unclear", "review_later", "match:unclear:being read")
+    assert m.rules[0]["id"] == "too_little_known"
+    m = matching.match(reqs, [], None, [], ("review_later", "no_distinctive_requirements"))
+    assert (m.tier, m.band) == ("unclear", None), "a coarse Review later stands"
 
 
 def test_two_must_gaps_are_unlikely_and_one_is_possible():

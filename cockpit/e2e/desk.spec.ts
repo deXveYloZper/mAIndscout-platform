@@ -102,9 +102,10 @@ test("CVs dropped on a job are read one by one and each is banded", async ({ pag
   await expect(results).toHaveCount(4, { timeout: 200_000 });
   // Rows appear as soon as files are queued; wait until every read has finished before checking bands.
   await expect(results.filter({ hasText: /reading…|waiting/ })).toHaveCount(0, { timeout: 200_000 });
-  await expect(results.filter({ hasText: "Ioannis" })).toContainText("Priority");
+  // Nobody is Priority before their career reading (owner, 2026-10-21): Ioannis waits in Review later until it arrives.
+  await expect(results.filter({ hasText: "Ioannis" })).toContainText(/Review later|Priority/);
   await expect(results.filter({ hasText: "Jure" })).toContainText("Do not submit");
-  await expect(results.filter({ hasText: "Priority" })).toHaveCount(1);
+  await expect(results.filter({ hasText: "Do not submit" })).toHaveCount(3);
   await expect(results.filter({ hasText: "no evidence of insar (must-have)" })).toHaveCount(3);
   // The page itself is refreshed with the new people. Once his career profile is built (in the background, a real
   // model call), matching may move Ioannis between Priority and Review later; the InSAR rule keeps the other three out.

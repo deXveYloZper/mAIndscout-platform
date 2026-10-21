@@ -68,6 +68,9 @@ The owner, 2026-10-19:
   - then the brief is read again, so the answer becomes a line from the notes and the question goes;
   - two model calls, about two cents;
   - an empty answer is refused before anything is spent; a question already answered (or never asked) is refused.
+- **When it was read** (2026-10-21, owner: "how do we otherwise know that this has been done?"): the panel says
+  "Read 21 Oct, 09:12 · 7 lines · 1 question for you", from the reading's cost entry, so a reading that changed
+  nothing still shows its time (`role_brief.read_at`, `role_brief_read_at` on the job page).
 - **Telling the desk** (`role_brief.tell`, 2026-10-20): any text typed on the hiring profile goes the same way as an
   answer: notes first, then the brief again if the role has one. An answer is this with the question in front.
 - **On the page** (step E): the hiring profile opens with the brief, each line with its source ("the ad", "your

@@ -209,6 +209,28 @@ def never_sourced(session: Session, org_id: uuid.UUID) -> set[uuid.UUID]:
     return out
 
 
+def strong_now(session: Session, run_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
+    """How many of each run's people are strong now. At search time nobody is: the career readings come after
+    (2026-10-21), so a run's count is read from where its people stand."""
+    if not run_ids:
+        return {}
+    rows = session.execute(select(SourcingHit.run_id, func.count()).join(
+        CandidateJob, (CandidateJob.job_id == SourcingHit.job_id) & (CandidateJob.candidate_id == SourcingHit.candidate_id)).where(
+        SourcingHit.run_id.in_(run_ids), CandidateJob.triage_band == "priority").group_by(SourcingHit.run_id))
+    return {run_id: n for run_id, n in rows}
+
+
+def _lives_outside(found: Any, countries: set[str]) -> bool:
+    """Does a web profile say, before anything is stored, that the person lives outside the role's countries? Only
+    when its location names a country; an unclear place is stored and checked as usual."""
+    from maindscout.domain import geo
+
+    if not countries or not found.person:
+        return False
+    code = geo.country_in(str(found.person.get("location") or ""))
+    return code is not None and code not in countries
+
+
 def current_employers(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID) -> set[str]:
     from maindscout.api import memo
 
@@ -474,6 +496,11 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
                 report["web"]["off_target"] += 1
                 continue
             seen_pages.add(found.url)
+            if _lives_outside(found, set(p.countries or [])) and discovery.person_by_profile(session, org_id, found.url) is None:
+                # Someone new who lives outside the role's countries is never stored nor read (owner, 2026-10-21: "no
+                # need to keep them even for future"): 67 such people had been kept, and many read, on one InSAR run.
+                refuse("outside_countries")
+                continue
             cid, outcome = discovery.add(session, blobs, org_id, found, skills)
             if cid is None:
                 refuse(outcome)
@@ -751,6 +778,7 @@ def _page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "
                                        "at": h.created_at.isoformat() if h.created_at else None, "new_to_desk": h.new_to_desk}})
     suggestions = lists["to_review"]
     runs = list(session.scalars(select(SourcingRun).where(SourcingRun.job_id == job.id).order_by(SourcingRun.started_at.desc()).limit(10)))
+    strong_by_run = strong_now(session, [r.id for r in runs])
     return {
         "job_id": str(job.id), "title": job.title, "state": job.state,
         "plan": {"version": p.version, "mode": p.mode, "target": p.target, "monthly_budget_usd": float(p.monthly_budget_usd),
@@ -771,7 +799,8 @@ def _page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "
         "running": any(r.status == "running" for r in runs) or session.scalar(select(func.count()).select_from(Task).where(
             Task.kind == "sourcing_run", Task.dedupe_key == f"sourcing:{job.id}", Task.status.in_(("queued", "running")))) > 0,
         "runs": [{"id": str(r.id), "trigger": r.trigger, "status": r.status, "stop_reason": r.stop_reason, "found": r.found,
-                  "new": r.new, "known": r.known, "refused": r.refused, "strong": r.strong, "cost_usd": float(r.cost_usd or 0),
+                  "new": r.new, "known": r.known, "refused": r.refused, "strong": strong_by_run.get(r.id, 0),
+                  "cost_usd": float(r.cost_usd or 0),
                   "report": r.report, "error": r.error, "started_at": r.started_at.isoformat() if r.started_at else None,
                   "ended_at": r.ended_at.isoformat() if r.ended_at else None} for r in runs],
         "suggestions": suggestions,

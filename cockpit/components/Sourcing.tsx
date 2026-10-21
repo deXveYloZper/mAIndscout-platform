@@ -162,8 +162,10 @@ function SuggestionCard({ jobId, s, since }: { jobId: string; s: Suggestion; sin
       <div className="pc-main">
         <div className="pc-head">
           <Link href={`/jobs/${jobId}/people/${s.candidate_id}`} className="pc-name">{s.name ?? "name not read"}</Link>
-          {deciding && <span className={`cardverdict ${strong ? "strong" : "possible"}`}
-            title="The desk's reading of their profile against this role: a guide, not a band">{strong ? "Strong" : "Possible"}</span>}
+          {deciding && (s.match_tier === "unclear"
+            ? <span className="cardverdict reading" title="Their career reading is on its way: never strong before it">Being read</span>
+            : <span className={`cardverdict ${strong ? "strong" : "possible"}`}
+                title="The desk's reading of their profile against this role: a guide, not a band">{strong ? "Strong" : "Possible"}</span>)}
           {ev && EV_TAG[ev] && <span className={`tag ${ev === "confirmed" ? "key" : "warn"}`} title={OUTCOME[ev]}>{EV_TAG[ev]}</span>}
           <QuickLinks jobId={jobId} s={keys} />
           {s.follow_up_due && <span className="pill accent">follow up</span>}

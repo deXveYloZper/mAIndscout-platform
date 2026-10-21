@@ -50,7 +50,7 @@ def test_the_why_line_is_their_work_and_level_then_each_strong_plus_they_meet():
     work = {"label": "marketing", "years": 11.5, "level": "manager"}
     assert cards.why(rows, work) == ["11.5 years in marketing, manager", "4.7 years in luxury", SMALL]
     assert cards.why(rows, {"label": "unknown", "years": 3, "level": "senior"}) == ["4.7 years in luxury", SMALL]
-    assert cards.why(rows, None, "unclear") == ["too little known to compare yet: no career profile"]
+    assert cards.why(rows, None, "unclear") == ["being read: rated once their career reading arrives, never strong before"]
 
 
 def test_a_possible_match_says_what_it_is_short_of_musts_first():
@@ -238,3 +238,11 @@ def test_dates_told_to_the_desk_replace_the_passed_edition_of_the_same_event(ses
     quiet = ByName({"hiring_profile": {"items": []}})
     briefs.tell(session, job.org_id, job.id, "Japanese is a plus", "owner@desk.test", quiet)
     assert [n for n, _ in quiet.calls] == ["hiring_profile"], "no date in the words: the date reader is not asked"
+
+
+def test_the_brief_says_when_it_was_read_even_when_nothing_changed(session, job):
+    assert briefs.read_at(session, job.id) is None
+    briefs.read(session, job.org_id, job.id, FakeClient(READING))
+    first = briefs.read_at(session, job.id)
+    briefs.read(session, job.org_id, job.id, FakeClient(READING))  # the same reading: no line rewritten
+    assert first and briefs.read_at(session, job.id) >= first

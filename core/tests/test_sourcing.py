@@ -1,3 +1,4 @@
+import pytest
 """The pool step of every sourcing run: the desk's own people first, found by the role's distinctive skills (or its
 hiring profile) and put on the role through the same pairing and matching as an uploaded CV. Through
 `autosource.run` with no web client, the way the desk runs it (the old Slice 2 campaign wrapper is gone, 2026-10-19)."""
@@ -34,13 +35,14 @@ def on_role(session, job_id):
     return {str(p.candidate_id): p for p in session.scalars(select(CandidateJob).where(CandidateJob.job_id == uuid.UUID(job_id)))}
 
 
+@pytest.mark.usefixtures("careers_read_at_once")
 def test_the_pool_step_finds_a_specialist_by_the_roles_distinctive_skill(client, fake, session, blobs):
     job = make_job(client)  # distinctive must-have: insar
     specialist = pool_person(client, fake, "Ana Radar", "jane.example@example.com", ["insar", "python"])
     run = pool_run(session, job, blobs)
     assert (run.status, run.stop_reason) == ("done", "pool_only") and run.report["pool"]["added"] == 1
     page = client.get(f"/v1/jobs/{job}/people/{specialist}/gaps").json()
-    assert page["band"] == "priority" and page["reason"] == "supported:insar"
+    assert page["band"] == "priority" and page["reason"] in ("supported:insar", "match:strong:must-haves met")
     assert page["history"][0]["cause"]["act"] == "sourced"
     hit = session.scalar(select(SourcingHit).where(SourcingHit.candidate_id == uuid.UUID(specialist)))
     assert hit.channel == "pool" and hit.new_to_desk is False
@@ -53,6 +55,7 @@ def test_distinctive_skills_do_not_pull_software_generalists_in(client, fake, se
     assert run.report["pool"]["added"] == 0 and generalist not in on_role(session, job)
 
 
+@pytest.mark.usefixtures("careers_read_at_once")
 def test_a_person_found_in_the_pool_is_handled_exactly_like_an_uploaded_one(client, fake, session, blobs):
     job = make_job(client)
     uploaded = drop_cv(client, job)["subject_id"]  # Jane, do_not_submit on this job

@@ -1,3 +1,4 @@
+import pytest
 """Slice 1 step 1: richer requirements. Mobility is always three facts; every value is in its quote."""
 
 from sqlalchemy import select
@@ -85,6 +86,7 @@ def test_years_not_written_are_blocked(session, blobs, org):
     assert any("7 years" in f["detail"] for f in result.span_failures)
 
 
+@pytest.mark.usefixtures("careers_read_at_once")
 def test_mobility_never_decides_a_band(session, blobs, org):
     data = jd()
     data["requirements"].append({"text": "React", "category": "skill", "strength": "must", "token": "react",
@@ -93,7 +95,12 @@ def test_mobility_never_decides_a_band(session, blobs, org):
     job, _ = run(session, blobs, org, LINES, data, doc_type="jd")
     person = cv_json(locations=[{"place": "Bucharest, Romania", "country_code": "RO", "kind": "current", "quote": "Based in Bristol, UK"}])
     result, _ = run(session, blobs, org, CV_LINES, person, job_id=job.job_id)
-    assert result.band == "priority" and "location" not in result.reason
+    from sqlalchemy import select
+
+    from maindscout.db.models import CandidateJob
+
+    pair = session.scalar(select(CandidateJob).where(CandidateJob.candidate_id == result.subject_id, CandidateJob.job_id == job.job_id))
+    assert pair.triage_band != "do_not_submit" and "location" not in pair.triage_reason and "Romania" not in pair.triage_reason,         "living outside the role's countries is a question for the call, never the reason for a band"
 
 
 def test_country_matching_understands_common_names():

@@ -138,6 +138,14 @@ function Residence({ job, r }: { job: JobPage; r: ClaimView | undefined }) {
   );
 }
 
+/** When the brief was read and what it gave, so pressing "Read the brief" visibly did something (owner, 2026-10-21). */
+function readLine(lines: BriefLine[], readAt?: string | null): string {
+  const latest = readAt ?? lines.map((b) => b.at ?? "").sort().pop();
+  const asked = lines.filter((b) => b.question).length;
+  const when = latest ? new Date(latest).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
+  return `Read ${when} · ${lines.length} line${lines.length === 1 ? "" : "s"} · ${asked ? `${asked} question${asked === 1 ? "" : "s"} for you` : "no questions"}`;
+}
+
 function Brief({ job, lines }: { job: JobPage; lines: BriefLine[] }) {
   if (!lines.length) {
     return (
@@ -155,6 +163,7 @@ function Brief({ job, lines }: { job: JobPage; lines: BriefLine[] }) {
         <h3>What this hire will really do</h3>
         <OneClick action={readRoleBrief.bind(null, job.id)} label="Read again" busy="Reading…" />
       </div>
+      <p className="sub briefread" role="status">{readLine(lines, job.role_brief_read_at)}</p>
       <dl className="brieflines">
         {lines.map((b) => (
           <div key={b.id} className="bline">

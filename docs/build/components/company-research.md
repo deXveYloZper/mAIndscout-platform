@@ -56,6 +56,12 @@ Matching and sourcing need to know what kind of company someone worked at (plan 
 - which stints queue research, and the off switch
 - the company page facts and the research route
 
+## A counted headcount beats a size bracket (2026-10-21)
+Bonaventura read "201-500 employees" everywhere (its LinkedIn size field, chosen by the company) though Exa counted
+62: both sources sat on one fact, sizes were never compared, and the first value read stood. Now two sizes are
+compared (a count agrees with a bracket it falls in), and a counted headcount that falls outside a stored bracket
+becomes the fact, flagged `sources_disagree`, with both sources kept. A bracket never replaces a count.
+
 ## Known limits
 - **Nobody can approve public facts yet.** A desk can only approve its own claims, which is deliberate: one desk shouldn't certify shared knowledge for all. Who reviews the public tier (a platform operator, or agreement between desks) is an open question. Until then, facts show as "not yet checked by a person".
 - We store the URL and the quote, not a snapshot of the page. If a page changes or disappears, the quote remains as the record.

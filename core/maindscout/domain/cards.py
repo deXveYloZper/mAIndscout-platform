@@ -44,7 +44,7 @@ def work_line(work: dict[str, Any] | None) -> str | None:
 def why(rows: list[dict[str, Any]], work: dict[str, Any] | None, tier: str | None = None) -> list[str]:
     """Their work and level, then each strong plus they meet, in the role's order."""
     if tier == "unclear":
-        return ["too little known to compare yet: no career profile"]
+        return ["being read: rated once their career reading arrives, never strong before"]
     out = [w for w in [work_line(work)] if w]
     for r in rows:
         if r.get("strength") == "strong_plus" and r.get("verdict") == "strong":

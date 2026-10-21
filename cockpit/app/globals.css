@@ -553,6 +553,7 @@ table.gaps tr.conflict td:first-child { box-shadow: inset 2px 0 0 var(--red); }
 .notes { white-space: pre-wrap; color: var(--cream-dim); }
 /* Step E (2026-10-20): the hiring profile in three groups, the role brief on top, its questions with an answer box */
 .panel.rolebrief { border-color: var(--amber-line); }
+.briefread { margin: -6px 0 8px; font-size: 12px; }
 .brieflines { margin: 4px 0 0; }
 .bline { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 12px; padding: 9px 0; border-top: 1px solid var(--line); }
 .bline:first-child { border-top: 0; }
@@ -619,6 +620,7 @@ table.gaps tr.conflict td:first-child { box-shadow: inset 2px 0 0 var(--red); }
 .cardverdict { font: 600 10.5px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; padding: 2px 8px; border-radius: var(--r-sm); }
 .cardverdict.strong { background: var(--amber-soft); color: var(--amber-text); }
 .cardverdict.possible { background: var(--slate-soft); color: var(--slate); }
+.cardverdict.reading { background: transparent; border: 1px dashed var(--line-strong); color: var(--cream-dim); }
 .quicklinks { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 a.quicklink { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 12px;
   color: var(--amber-text); border: 1px solid var(--amber-line); text-decoration: none; }
