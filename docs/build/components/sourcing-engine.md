@@ -135,3 +135,12 @@ The 89 such people the test runs had stored were removed the same day (a backup 
 - Not yet run on a real role. The phase 1 gate (two weeks on a real role) is the owner's to declare.
 - Exa monitors (results pushed to us instead of fetched) need a public HTTPS address, so they wait for going live (phase 3).
 - One page of results per search (10); a search never pages on to the next 10.
+
+## "Search now" goes on until the role has its strong people (step D, 2026-10-21)
+The owner: "we should not stop until we have found at least 10-15 strong candidates to display". A role's target is
+now 15 strong suggestions (the three roles' plans raised from 10). A run still stops at its batch limit (8
+searches); when "Search now" stopped there, the next batch is queued under the same key (the tab keeps showing
+"Searching…, batch N"). It waits for the last batch's career readings first, since nobody is strong before them (a
+minute at a time, about 20 minutes at most). It stops at the target, the role's or the desk's budget, when no
+searches are left, or after 8 batches. A scheduled run does not continue. Wider searches (Tier C, other countries)
+still wait for the owner's word.

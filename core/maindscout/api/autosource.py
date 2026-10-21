@@ -46,7 +46,7 @@ from maindscout.db.models import (
 )
 from maindscout.storage import BlobStore
 
-DEFAULT_TARGET = 10
+DEFAULT_TARGET = 15  # strong suggestions to find before a search rests (owner, 2026-10-21: "at least 10-15")
 DEFAULT_BUDGET_USD = 5.0
 DEFAULT_DESK_BUDGET_USD = 50.0
 QUERY_COOLDOWN = timedelta(days=30)
@@ -627,6 +627,22 @@ def _follow_up(session: Session, track: dict[str, Any]) -> dict[str, Any]:
             "sent_at": child.sent_at.isoformat() if child is not None and child.sent_at else track.get("followed_up_at")}
 
 
+def _research(session: Session, job_id: uuid.UUID) -> dict[str, Any] | None:
+    """What the last strategy build's competitor research found (step D): found, kept, left out and why."""
+    t = session.scalar(select(Task).where(Task.kind == "sourcing_strategy", Task.dedupe_key == f"strategy:{job_id}",
+                                          Task.status == "done").order_by(Task.created_at.desc()).limit(1))
+    return (t.result or {}).get("competitors") if t is not None else None
+
+
+def _round(session: Session, job_id: uuid.UUID) -> dict[str, Any] | None:
+    """Where a "Search now" that goes on by itself is: its batch, and whether it waits for career readings."""
+    t = session.scalar(select(Task).where(Task.kind == "sourcing_run", Task.dedupe_key == f"sourcing:{job_id}",
+                                          Task.status.in_(("queued", "running"))).order_by(Task.created_at.desc()).limit(1))
+    if t is None or t.payload.get("trigger") != "continue":
+        return None
+    return {"round": t.payload.get("round", 1), "waiting": t.status == "queued"}
+
+
 def _strategy_note(session: Session, job_id: uuid.UUID) -> dict[str, Any] | None:
     """What the last "Build the strategy" did, when it did not do everything: why it stopped, or what it left out."""
     t = session.scalar(select(Task).where(Task.kind == "sourcing_strategy", Task.dedupe_key == f"strategy:{job_id}",
@@ -799,6 +815,8 @@ def _page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "
             Task.kind == "sourcing_strategy", Task.dedupe_key == f"strategy:{job.id}", Task.status.in_(("queued", "running")))) > 0,
         "web_ready": bool(env("EXA_API_KEY")),
         "strategy_note": _strategy_note(session, job.id),
+        "competitor_research": _research(session, job.id),
+        "search_round": _round(session, job.id),
         # Queued counts too: right after "Search now" the task waits for a worker, and the page should wait with it.
         "running": any(r.status == "running" for r in runs) or session.scalar(select(func.count()).select_from(Task).where(
             Task.kind == "sourcing_run", Task.dedupe_key == f"sourcing:{job.id}", Task.status.in_(("queued", "running")))) > 0,

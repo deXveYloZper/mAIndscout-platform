@@ -431,6 +431,10 @@ export type SourcingPage = {
   budget: { role_spent_usd: number; role_budget_usd: number; desk_spent_usd: number; desk_budget_usd: number };
   strong_waiting: number; web_ready: boolean; running: boolean; building: boolean; widening: Widening | null;
   strategy_note: { level: "error" | "info"; text: string; at: string | null } | null;
+  /** Step D: the competitor research (Grok, web) of the last strategy build, and a search going on by itself. */
+  competitor_research?: { found: number; kept: number; much_bigger: string[]; refused: { company: string; reason: string }[];
+    pages: number; usd: number } | null;
+  search_round?: { round: number; waiting: boolean } | null;
   runs: SourcingRunView[]; suggestions: Suggestion[]; suggestions_total: number;
   lists: Record<Exclude<OutreachStage, "to_review">, Suggestion[]>; counts: Record<OutreachStage, number>; follow_ups_due: number;
 };

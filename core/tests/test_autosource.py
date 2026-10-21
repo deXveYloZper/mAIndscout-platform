@@ -223,7 +223,7 @@ def test_the_same_page_again_is_the_same_person_and_a_changed_page_adds_to_them(
 
 def test_a_new_plan_waits_paused_and_every_change_is_a_version(session, job):
     p = autosource.plan(session, job.org_id, job.id, "owner@desk.test")
-    assert (p.version, p.mode, p.target, float(p.monthly_budget_usd)) == (1, "paused", 10, 5.0)
+    assert (p.version, p.mode, p.target, float(p.monthly_budget_usd)) == (1, "paused", 15, 5.0)
     assert p.role_variants[0] == "Radar Interferometry Specialist"
     p2 = autosource.update_plan(session, job.org_id, job.id, "owner@desk.test", mode="weekly", target=4)
     assert (p2.version, p2.mode, p2.target) == (2, "weekly", 4)

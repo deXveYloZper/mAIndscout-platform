@@ -159,3 +159,13 @@ and the owner can see the rule; a model reading stays possible if titles prove t
 
 Pages: [matching](../build/components/matching.md), [career profiles](../build/components/career-profiles.md),
 [hiring profiles](../build/components/hiring-profiles.md), [match eval](../build/components/match-eval.md).
+
+## Step D (built 2026-10-21, the owner's "build step D")
+The owner: "the LLM deep search into competitors and similar companies is a must ... we should not even bother to
+search companies that are way out the size range for example like Prada ... we should not stop until we have found at
+least 10-15 strong candidates ... until we have exhausted all our knowledge, we can move to wider searches confirmed by
+the user". Built: the client's competitors researched on the web, each with a page and a quote, confirmed by Exa, and
+those 20x or more the client's size never listed; one broad search per small company; "Search now" going on, batch
+by batch, after each batch's career readings, to 15 strong, within the budgets and at most 8 batches. Widening is
+unchanged: proposed on the tab, only on the owner's word ([sourcing strategy](../build/components/sourcing-strategy.md),
+[sourcing engine](../build/components/sourcing-engine.md)). match-eval: no moves (ratings untouched).

@@ -134,3 +134,18 @@ Three roles rebuilt from an empty desk showed four kinds of wrong target; each i
 - Not yet built for a real role; the talent DNA was tried by hand on Procure Ai (13 people, $0.041).
 - For a small hiring company the feeder list is thin. The pattern (kinds, sizes, fields) is what guides the owner; it is shown, not yet used to filter tier B automatically.
 - "Relevant" is the band when found, so a later re-match does not change a company's past counts.
+
+## Competitors researched on the web (step D, 2026-10-21)
+The owner: "the LLM deep search into competitors and similar companies is a must ... we should not even bother to
+search companies that are way out the size range". Building the list (`strategy.build`) now starts with one Grok web
+search (`intelligence/competitors.py`, up to 12 searches, about $0.20-0.50) for the client's competitors and similar
+companies with people in the role's countries, 25 to 40 when the market has them. It is given only what the desk knows of
+the client (what it sells, its kinds of work, its size, where), never a person. Each company must come with a page the
+search opened and a short quote from it that names the company, or it is refused (the Sourcing tab says how many and
+why). Each is confirmed by Exa (its size, where its team is); one 20 or more times the client's size is left out
+and never searched, and so is one found by a company search (it used to go to Tier C). The rest are tier "competitor",
+in Tier A with the named and feeder companies: the first places searched. The tab shows what the research found:
+how many, kept, left out as much bigger, refused, pages read and cost.
+
+A small company (150 people or fewer) is searched with one broad search for the role's kind of work ("marketing") in
+place of each title variant: a 40-person brand has two or three marketing people, whatever their titles.

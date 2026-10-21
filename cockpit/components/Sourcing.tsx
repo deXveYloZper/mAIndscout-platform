@@ -17,7 +17,7 @@ export const TARGET_TIER: Record<string, string> = {
   named: "named by the hiring manager", known: "our people worked there", peer: "peer company",
   adjacent: "adjacent industry", release: "releasing talent", manual: "added by you",
   feeder: "their people came from here", feeder_large: "large feeder", snowball: "strong candidates worked here",
-  large_peer: "in the client's market, much bigger",
+  large_peer: "in the client's market, much bigger", competitor: "competitor (researched)",
 };
 const STOP: Record<string, string> = {
   target: "target reached", budget: "the role's budget is used up", desk_budget: "the desk's budget is used up",
@@ -32,7 +32,7 @@ export const REFUSED: Record<string, string> = {
 };
 const CHANNEL: Record<string, string> = { pool: "our own pool", exa_people: "web people search", exa_news: "talent-release radar" };
 const TIER_NAME: Record<string, string> = {
-  A: "Tier A: named by the hiring manager, and where the hiring company's people came from",
+  A: "Tier A: named by the hiring manager, the client's competitors (researched), and where its people came from",
   B: "Tier B: similar companies, and where strong candidates worked before",
   C: "Tier C: very large feeders and much bigger companies in the market, companies releasing talent, adjacent industries",
 };
@@ -303,15 +303,28 @@ function Note({ note }: { note: SourcingPage["strategy_note"] }) {
   return <p className={note.level === "error" ? "warn" : "hint"} role="status">{note.text}{note.at ? ` (${when(note.at)})` : ""}</p>;
 }
 
-function Dna({ jobId, dna, building, ready, note, built }: { jobId: string; dna: TalentDna | null; building: boolean; ready: boolean;
-  note: SourcingPage["strategy_note"]; built: boolean }) {
+/** What the competitor research found: how many, kept, left out as far bigger, refused for want of a source. */
+function ResearchLine({ r }: { r: NonNullable<SourcingPage["competitor_research"]> }) {
+  return (
+    <div className="research">
+      <p className="sub"><strong>Competitor research</strong> (web, {r.pages} pages, {usd(r.usd)}): {r.found} found · {r.kept} on the
+        map as tier A{r.much_bigger.length ? ` · ${r.much_bigger.length} left out as far bigger (never searched)` : ""}
+        {r.refused.length ? ` · ${r.refused.length} refused (no page naming them)` : ""}</p>
+      {r.much_bigger.length > 0 && <p className="hint">Far bigger: {r.much_bigger.join(", ")}</p>}
+    </div>
+  );
+}
+
+function Dna({ jobId, dna, building, ready, note, built, research }: { jobId: string; dna: TalentDna | null; building: boolean; ready: boolean;
+  note: SourcingPage["strategy_note"]; built: boolean; research?: SourcingPage["competitor_research"] }) {
   if (!dna) {
     return (
       <section className="panel">
         <h3>Strategy</h3>
         {!building && <Note note={note} />}
+        {research && <ResearchLine r={research} />}
         <p className="sub">First learn where the hiring company&apos;s own people came from, then build the list of companies to search,
-          in tiers, each with its reason. About $0.30, once; you review the list before any wide search.</p>
+          in tiers, each with its reason: its competitors researched on the web first. About $0.50, once; you review the list before any wide search.</p>
         {building ? <p className="sub" role="status">Building the strategy…</p>
           : ready ? <OneClick action={buildStrategy.bind(null, jobId)} label={built ? "Build again" : "Build the strategy"} busy="Starting…" primary={!built} />
             : <p className="hint">Needs web search (Exa).</p>}
@@ -327,6 +340,7 @@ function Dna({ jobId, dna, building, ready, note, built }: { jobId: string; dna:
           : <OneClick action={buildStrategy.bind(null, jobId)} label="Rebuild" busy="Starting…" />}
       </div>
       {!building && <Note note={note} />}
+      {research && <ResearchLine r={research} />}
       <p className="sub">{dna.people} of their people found ({dna.company.employees ? `${dna.company.employees} staff in all` : "size unknown"})
         {dna.company.team_countries?.length ? ` · the team works in ${dna.company.team_countries.map((c) => `${c.country} ${c.pct}%`).join(", ")}` : ""}
         {` · built ${dna.at.slice(0, 10)} for $${dna.cost_usd.toFixed(3)}`}</p>
@@ -425,8 +439,10 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
         </p>
         {!s.web_ready && <p className="warn">Web search is not set up (no Exa key in core/.env): runs search the desk&apos;s own pool only.</p>}
         <div className="row">
-          {s.running ? <span className="sub live" role="status"><span className="dot" aria-hidden="true" />Searching… new people appear here as soon
-            as the search ends (usually under a minute)</span>
+          {s.running ? <span className="sub live" role="status"><span className="dot" aria-hidden="true" />
+            {s.search_round ? `Searching on until ${p.target} strong are waiting: batch ${s.search_round.round} of up to 8${s.search_round.waiting
+              ? ", waiting for the last batch's career readings" : ""}…`
+              : "Searching… new people appear here as soon as the search ends (usually under a minute)"}</span>
             : <OneClick action={runSourcingNow.bind(null, jobId)} label="Search now" busy="Starting…" primary />}
           {lastRun && <span className="hint">Last run {when(lastRun.started_at)}: {lastRun.stop_reason === "target" && lastRun.found === 0
             ? "did not search, the target was already reached" : STOP[lastRun.stop_reason ?? ""] ?? lastRun.status}</span>}
@@ -450,7 +466,8 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
 
       <Workflow jobId={jobId} s={s} since={since} />
 
-      <Dna jobId={jobId} dna={p.dna} building={s.building} ready={s.web_ready} note={s.strategy_note} built={live.length > 0} />
+      <Dna jobId={jobId} dna={p.dna} building={s.building} ready={s.web_ready} note={s.strategy_note} built={live.length > 0}
+           research={s.competitor_research} />
 
       <section className="panel">
         <h3>Market map</h3>

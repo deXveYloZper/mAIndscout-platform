@@ -35,7 +35,7 @@ from maindscout.intelligence import company_profile, exa
 LIVE = ("proposed", "approved")
 DNA_SEARCHES = 3
 LARGE = 5000  # a feeder this big is a kind of employer (tier C), not a list of people to search one by one
-GROUP_OF_TIER = {"named": "A", "manual": "A", "feeder": "A", "known": "B", "peer": "B", "snowball": "B",
+GROUP_OF_TIER = {"named": "A", "manual": "A", "feeder": "A", "competitor": "A", "known": "B", "peer": "B", "snowball": "B",
                  "adjacent": "C", "release": "C", "feeder_large": "C", "large_peer": "C"}
 GROUPS = ("A", "B", "C")
 RULES = {"batch": 5, "exhausted_after": 2, "known_share": 0.8, "low_yield": 0.2, "recheck_days": 90, "yield_window": 15,
@@ -260,6 +260,49 @@ SERVICES = ("consultancy", "agency", "outsourcing")
 BACKGROUND = re.compile(r"\b(experience (in|with|at|from)|background in|industry|sector|brands?)\b", re.I)
 
 
+def competitors(session: Session, org_id: uuid.UUID, job: Job, company: Company, caller, researcher, have: set[str],
+                countries: list[str], task_id=None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """The client's competitors and similar companies, researched on the web (Grok), each confirmed by Exa: its size
+    and where its team works. A company 20 or more times the client's size is left out, never searched (owner,
+    2026-10-21: "we should not even bother to search companies that are way out the size range"). Returns the targets
+    and what the research found, for the Sourcing tab."""
+    from maindscout.api.process import client_context
+    from maindscout.intelligence import competitors as engine
+
+    p = company.exa_profile or {}
+    staff = client_context(session, job)["staff"]
+    about = "; ".join(x for x in [p.get("offering") or p.get("description"), ", ".join(p.get("domains") or []),
+                                  f"about {staff} people" if staff else None, p.get("hq")] if x)
+    costs.ensure_budget(session, org_id)
+    outcome = engine.read(company.name, about, [geo.name_of(c) for c in countries], researcher)
+    costs.record(session, org_id, "sourcing_competitors", outcome.cost, subject_type="job", subject_id=job.id, task_id=task_id)
+    out: list[dict[str, Any]] = []
+    bigger: list[str] = []
+    for c in outcome.companies:
+        found, _ = companies.resolve(session, c.name, "research", keys={"domain": c.website} if c.website else None)
+        found = companies.canonical(session, found)
+        if found is None or str(found.id) in have or found.id == company.id:
+            continue
+        if not company_profiles.fresh(found) and (found.exa_id or found.domain or found.linkedin):
+            company_profiles.by_name(session, found, caller, org_id, job.id, task_id)  # its size and team, from Exa
+        size = (found.exa_profile or {}).get("employees") or c.staff_hint
+        if size and staff and size >= BIG_PEER * staff:
+            bigger.append(f"{found.name} ({size:,})")
+            continue
+        have.add(str(found.id))
+        out.append(_target(found, "competitor", [f"competitor: {c.why}" if c.why else "competitor", f"research: {_short_host(c.source_url)}"],
+                           "research"))
+    report = {"found": len(outcome.companies) + len(outcome.rejected), "kept": len(out), "much_bigger": bigger,
+              "refused": outcome.rejected, "pages": len(outcome.visited), "usd": round(float(outcome.cost.get("usd") or 0), 4)}
+    return out, report
+
+
+def _short_host(url: str) -> str:
+    from urllib.parse import urlparse
+
+    return (urlparse(url).hostname or url).removeprefix("www.")
+
+
 def _peers(session: Session, org_id: uuid.UUID, job: Job, of: Company | None, caller, have: set[str], why: str, limit: int,
            task_id=None, countries: list[str] | None = None, skills: list[str] | None = None,
            queries: list[str] | None = None) -> list[dict[str, Any]]:
@@ -300,9 +343,9 @@ def _peers(session: Session, org_id: uuid.UUID, job: Job, of: Company | None, ca
                 continue  # a kind of company the hiring profile does not want, or not luxury for a luxury role
             have.add(str(company.id))
             made.append(company)
-            times = much_bigger(company, client_staff)  # 20x the client's size: in its market, but no competitor
-            out.append(_target(company, "large_peer" if times else "peer",
-                               [why, f'company search: "{query}"'] + ([f"about {times}x the client's size"] if times else []), "exa_company"))
+            if much_bigger(company, client_staff):
+                continue  # 20x the client's size: in its market, but no competitor, and never worth the searches (owner, 2026-10-21)
+            out.append(_target(company, "peer", [why, f'company search: "{query}"'], "exa_company"))
             if len(out) >= limit:
                 break
         if len(out) >= limit:
@@ -311,7 +354,7 @@ def _peers(session: Session, org_id: uuid.UUID, job: Job, of: Company | None, ca
     return out
 
 
-def build(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, caller, actor: str, task_id=None) -> dict[str, Any]:
+def build(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, caller, actor: str, task_id=None, researcher=None) -> dict[str, Any]:
     """Stages 1 and 2: the talent DNA and the tiered target list, as a new plan version (paid, under $0.50)."""
     job = autosource._job(session, org_id, job_id)
     p = autosource.plan(session, org_id, job_id, actor)
@@ -350,6 +393,10 @@ def build(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, caller, actor:
             countries = list(dict.fromkeys(c for c in team if c))[:3]
     from maindscout.api.sourcing import query_tokens
 
+    research = None
+    if company is not None and researcher is not None:  # step D: the client's competitors, researched (Grok, web)
+        found, research = competitors(session, org_id, job, company, caller, researcher, have, countries, task_id)
+        targets += found
     if dna is not None:
         targets += _peers(session, org_id, job, company, caller, have, f"like {company.name}", 15, task_id, countries,
                           query_tokens(session, job))
@@ -382,10 +429,10 @@ def build(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, caller, actor:
         return {"version": new.version, "people": 0, "feeders": 0, "note": f"No talent DNA: {skipped}. The list was built from the "
                 "hiring profile instead.",
                 "targets": {g: sum(1 for t in new.targets if group_of(t) == g and not t.get("removed")) for g in GROUPS},
-                "countries": new.countries, "role_variants": new.role_variants}
+                "countries": new.countries, "role_variants": new.role_variants, "competitors": research}
     return {"version": new.version, "people": dna["people"], "feeders": len(dna["feeders"]),
             "targets": {g: sum(1 for t in new.targets if group_of(t) == g and not t.get("removed")) for g in GROUPS},
-            "countries": new.countries, "role_variants": new.role_variants}
+            "countries": new.countries, "role_variants": new.role_variants, "competitors": research}
 
 
 # --- in step with the hiring profile -----------------------------------------------------------------------------------
@@ -570,9 +617,29 @@ def search_cost(results: int) -> float:
     return 0.007 + 0.001 * max(0, results - 10)
 
 
-def variants_for(p: SourcingPlan, company: Company | None) -> list[str]:
+SMALL = 150  # at a company this small, one broad search finds its few people; three titles found the same ones again
+
+
+def broad_word(session: Session, job: Job) -> str | None:
+    """The role's kind of work as a search word ("marketing", "software engineering", "GIS remote sensing")."""
+    from maindscout.domain.profile import FAMILY_LABEL
+
+    for c in session.scalars(select(Claim).where(Claim.subject_id == job.id, Claim.claim_type == "JobRequirementClaim",
+                                                 Claim.status.in_(LIVE))):
+        pl = c.approved_view or c.payload
+        if pl.get("category") == "role" and pl.get("strength") != "anti" and pl.get("role_family") not in (None, "other"):
+            return FAMILY_LABEL.get(pl["role_family"], pl["role_family"]).replace(" / ", " ")
+    return None
+
+
+def variants_for(p: SourcingPlan, company: Company | None, broad: str | None = None) -> list[str]:
+    """The searches at one company. A small one (up to 150 people) gets one broad search for the role's kind of work
+    ("marketing at FRANZI": owner, 2026-10-21, after "brand manager at FRANZI" found nobody new); bigger ones the
+    role's titles."""
     out = list(p.role_variants or [])[:3]
     employees = ((company.exa_profile or {}).get("employees") if company is not None else None) or 0
+    if broad and 0 < employees <= SMALL:
+        return [broad]
     if employees > 1000 and out:
         out.append(f"senior {out[0]}")
     return out
@@ -600,6 +667,8 @@ def company_state(session: Session, job_id: uuid.UUID, p: SourcingPlan) -> dict[
     already known."""
     r = rules(p)
     out: dict[str, dict[str, Any]] = {}
+    job = session.get(Job, job_id)
+    broad = broad_word(session, job) if job is not None else None
     rows = list(session.scalars(select(SourcingQuery).where(SourcingQuery.job_id == job_id, SourcingQuery.company_id.is_not(None),
                                                             SourcingQuery.channel == "exa_people").order_by(SourcingQuery.last_run_at)))
     live = relevant_now(session, job_id)
@@ -622,7 +691,7 @@ def company_state(session: Session, job_id: uuid.UUID, p: SourcingPlan) -> dict[
         except ValueError:
             pass
         name = t.get("name") or (c.name if c else "")
-        wanted = {f"{v} at {name}".lower() for v in variants_for(p, c)}
+        wanted = {f"{v} at {name}".lower() for v in variants_for(p, c, broad)}
         all_done = wanted <= set(s["texts"])
         quiet = len(s["recent"]) >= r["exhausted_after"] and sum(s["recent"][-r["exhausted_after"]:]) == 0
         mostly_known = s["results"] >= 5 and s["known"] / max(s["results"], 1) >= r["known_share"]
@@ -652,6 +721,7 @@ def next_searches(session: Session, job: Job, p: SourcingPlan, releasing: set[st
     from maindscout.api.process import client_context
 
     staff, wide = client_context(session, job)["staff"], "C" in open_groups
+    broad = broad_word(session, job)
     for t in targets:
         s = state.get(t["company_id"])
         if t["company_id"] in avoid_ids:
@@ -665,7 +735,7 @@ def next_searches(session: Session, job: Job, p: SourcingPlan, releasing: set[st
             if last and now - last < timedelta(days=r["recheck_days"]) and t["company_id"] not in releasing:
                 continue
         pending = []
-        for v in variants_for(p, company):
+        for v in variants_for(p, company, broad):
             text = f"{v} at {t['name']}"
             done = (s or {}).get("texts", {}).get(text.lower())
             if done and now - datetime.fromisoformat(done) < autosource.QUERY_COOLDOWN:
