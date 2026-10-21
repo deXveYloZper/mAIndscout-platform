@@ -149,3 +149,13 @@ how many, kept, left out as much bigger, refused, pages read and cost.
 
 A small company (150 people or fewer) is searched with one broad search for the role's kind of work ("marketing") in
 place of each title variant: a 40-person brand has two or three marketing people, whatever their titles.
+
+First live run, Bonaventura (2026-10-21): one call found 10 companies, so the research now goes deeper. Up to three
+rounds, each later one told every company already known and looking from another side (smaller, online and
+direct-to-consumer brands, the same retailers and districts; then neighbouring categories and nearby countries); a
+round adding fewer than 3 new is the last. A quote that does not name the company is kept only when Exa confirms the
+company (a page's "about" sentence often never says its name); a refusal keeps the start of its quote. A listed company
+the research names becomes a competitor. A rebuild drops what the desk's own searches listed earlier that is now known
+to be far bigger, or that the hiring profile says not from (Valentino, Dolce&Gabbana, Armani, Prada Group went);
+never a company a person named, pinned or placed. Bonaventura: 3 rounds, 197 pages, $0.44, 28 kept, Bottega Veneta,
+TOD'S and Brunello Cucinelli left out as far bigger; 49 competitors in Tier A with the earlier round's.

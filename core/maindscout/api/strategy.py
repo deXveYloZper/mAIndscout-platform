@@ -261,40 +261,82 @@ BACKGROUND = re.compile(r"\b(experience (in|with|at|from)|background in|industry
 
 
 def competitors(session: Session, org_id: uuid.UUID, job: Job, company: Company, caller, researcher, have: set[str],
-                countries: list[str], task_id=None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+                countries: list[str], task_id=None, known: list[str] | None = None,
+                upgrade: dict[str, list[str]] | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """The client's competitors and similar companies, researched on the web (Grok), each confirmed by Exa: its size
     and where its team works. A company 20 or more times the client's size is left out, never searched (owner,
-    2026-10-21: "we should not even bother to search companies that are way out the size range"). Returns the targets
-    and what the research found, for the Sourcing tab."""
+    2026-10-21: "we should not even bother to search companies that are way out the size range"). Deeper rounds,
+    told what is already known, until a round finds little new ("search harder from extended list of competitors").
+    `known`: the companies already listed; one of them the research names goes into `upgrade` (its id: why), to become
+    a competitor. Returns the new targets and what the research found, for the Sourcing tab."""
     from maindscout.api.process import client_context
     from maindscout.intelligence import competitors as engine
 
+    upgrade = upgrade if upgrade is not None else {}
     p = company.exa_profile or {}
     staff = client_context(session, job)["staff"]
     about = "; ".join(x for x in [p.get("offering") or p.get("description"), ", ".join(p.get("domains") or []),
                                   f"about {staff} people" if staff else None, p.get("hq")] if x)
-    costs.ensure_budget(session, org_id)
-    outcome = engine.read(company.name, about, [geo.name_of(c) for c in countries], researcher)
-    costs.record(session, org_id, "sourcing_competitors", outcome.cost, subject_type="job", subject_id=job.id, task_id=task_id)
     out: list[dict[str, Any]] = []
     bigger: list[str] = []
-    for c in outcome.companies:
-        found, _ = companies.resolve(session, c.name, "research", keys={"domain": c.website} if c.website else None)
-        found = companies.canonical(session, found)
-        if found is None or str(found.id) in have or found.id == company.id:
-            continue
-        if not company_profiles.fresh(found) and (found.exa_id or found.domain or found.linkedin):
-            company_profiles.by_name(session, found, caller, org_id, job.id, task_id)  # its size and team, from Exa
-        size = (found.exa_profile or {}).get("employees") or c.staff_hint
-        if size and staff and size >= BIG_PEER * staff:
-            bigger.append(f"{found.name} ({size:,})")
-            continue
-        have.add(str(found.id))
-        out.append(_target(found, "competitor", [f"competitor: {c.why}" if c.why else "competitor", f"research: {_short_host(c.source_url)}"],
-                           "research"))
-    report = {"found": len(outcome.companies) + len(outcome.rejected), "kept": len(out), "much_bigger": bigger,
-              "refused": outcome.rejected, "pages": len(outcome.visited), "usd": round(float(outcome.cost.get("usd") or 0), 4)}
+    refused: list[dict[str, str]] = []
+    found_n = pages = rounds = 0
+    usd = 0.0
+    named: list[str] = []
+    for angle in engine.ANGLES:
+        rounds += 1
+        costs.ensure_budget(session, org_id)
+        # the first round may name a listed company (it becomes a competitor); later rounds are told everything known
+        outcome = engine.read(company.name, about, [geo.name_of(c) for c in countries], researcher,
+                              known=[*named, *(known or [])] if rounds > 1 else None, angle=angle)
+        costs.record(session, org_id, "sourcing_competitors", outcome.cost, subject_type="job", subject_id=job.id, task_id=task_id)
+        found_n += len(outcome.companies) + len(outcome.rejected)
+        pages += len(outcome.visited)
+        usd += float(outcome.cost.get("usd") or 0)
+        refused += outcome.rejected
+        named += [r["company"] for r in outcome.rejected]  # never asked about again
+        before = len(out) + len(upgrade)
+        for c in outcome.companies:
+            named.append(c.name)
+            found, _ = companies.resolve(session, c.name, "research", keys={"domain": c.website} if c.website else None)
+            found = companies.canonical(session, found)
+            if found is None or found.id == company.id:
+                continue
+            if not company_profiles.fresh(found) and (found.exa_id or found.domain or found.linkedin):
+                company_profiles.by_name(session, found, caller, org_id, job.id, task_id)  # its size and team, from Exa
+            if not c.quoted and not (found.exa_id or (found.exa_profile or {}).get("employees")):
+                refused.append({"company": c.name, "reason": "neither the quote nor Exa confirms it", "quote": c.quote[:120]})
+                continue
+            size = (found.exa_profile or {}).get("employees") or c.staff_hint
+            if size and staff and size >= BIG_PEER * staff:
+                bigger.append(f"{found.name} ({size:,})")
+                continue
+            why = [f"competitor: {c.why}" if c.why else "competitor", f"research: {_short_host(c.source_url)}"]
+            if str(found.id) in have:
+                upgrade.setdefault(str(found.id), why)  # already listed (a company search found it too)
+                continue
+            have.add(str(found.id))
+            out.append(_target(found, "competitor", why, "research"))
+        if len(out) + len(upgrade) - before < ENOUGH_NEW:
+            break
+    report = {"found": found_n, "kept": len(out) + len(upgrade), "much_bigger": bigger, "refused": refused, "pages": pages,
+              "rounds": rounds, "usd": round(usd, 4)}
     return out, report
+
+
+ENOUGH_NEW = 3  # a research round adding fewer new competitors than this is the last
+AUTO_TIERS = {"peer", "large_peer", "snowball"}  # listed by the desk's own searches, never placed by a person
+
+
+def _stale(session: Session, t: dict[str, Any], client_staff: int | None, avoid: set[str]) -> bool:
+    """On a rebuild, a company the desk's own searches listed earlier goes when it is now known to be far bigger than
+    the client, or the hiring profile says not from it (owner, 2026-10-21: "we should not even bother"). Never one a
+    person named, pinned or placed."""
+    if t.get("tier") not in AUTO_TIERS or t.get("pinned") or not t.get("company_id"):
+        return False
+    if t["company_id"] in avoid:
+        return True
+    return bool(much_bigger(session.get(Company, uuid.UUID(t["company_id"])), client_staff))
 
 
 def _short_host(url: str) -> str:
@@ -375,7 +417,10 @@ def build(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, caller, actor:
                 f"{error}. Or give the hiring profile an industry (Add a requirement → Industry, e.g. luxury / fashion / "
                 "beauty), or add target companies by hand") from error
     limits = autosource.off_limits(session, org_id)
-    targets = [dict(t, group=group_of(t)) for t in p.targets]
+    from maindscout.api.process import client_context
+
+    client_staff, avoid = client_context(session, job)["staff"], not_from(session, job)[0]
+    targets = [dict(t, group=group_of(t)) for t in p.targets if not _stale(session, t, client_staff, avoid)]
     have = {t.get("company_id") for t in targets} | ({str(company.id)} if company is not None else set())
 
     for row in (dna or {}).get("feeders", []):
@@ -395,7 +440,12 @@ def build(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, caller, actor:
 
     research = None
     if company is not None and researcher is not None:  # step D: the client's competitors, researched (Grok, web)
-        found, research = competitors(session, org_id, job, company, caller, researcher, have, countries, task_id)
+        better: dict[str, list[str]] = {}
+        found, research = competitors(session, org_id, job, company, caller, researcher, have, countries, task_id,
+                                      known=[t["name"] for t in targets if t.get("name") and not t.get("removed")], upgrade=better)
+        for t in targets:  # a listed company the research names is a competitor now (unless a person placed it)
+            if t.get("company_id") in better and t.get("tier") in AUTO_TIERS:
+                t.update(tier="competitor", group=GROUP_OF_TIER["competitor"], why=better[t["company_id"]], source="research")
         targets += found
     if dna is not None:
         targets += _peers(session, org_id, job, company, caller, have, f"like {company.name}", 15, task_id, countries,
@@ -708,7 +758,7 @@ def next_searches(session: Session, job: Job, p: SourcingPlan, releasing: set[st
     r = rules(p)
     state = company_state(session, job.id, p)
     open_groups = set(p.open_tiers or ["A", "B"])
-    order = {t: i for i, t in enumerate(("named", "manual", "feeder", "release", "known", "peer", "snowball", "adjacent", "feeder_large"))}
+    order = {t: i for i, t in enumerate(("named", "manual", "feeder", "competitor", "release", "known", "peer", "snowball", "adjacent", "feeder_large"))}
     targets = sorted((t for t in p.targets if not t.get("removed") and group_of(t) in open_groups and t.get("company_id")
                       and not limits.get(t["company_id"])),
                      key=lambda t: (not t.get("pinned"), t["company_id"] not in releasing, group_of(t), order.get(t.get("tier"), 9)))

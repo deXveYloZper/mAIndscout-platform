@@ -11,7 +11,7 @@ from typing import Any
 
 from maindscout.intelligence.research import SearchClient, _host, _same_page
 
-COMPETITORS_PROMPT_VERSION = "2026-10-21.1"
+COMPETITORS_PROMPT_VERSION = "2026-10-21.2"
 
 SCHEMA: dict[str, Any] = {
     "type": "object", "additionalProperties": False, "required": ["companies"],
@@ -46,6 +46,7 @@ class Competitor:
     source_url: str
     quote: str
     staff_hint: int | None = None
+    quoted: bool = True  # the quote names it
 
 
 @dataclass
@@ -56,34 +57,54 @@ class CompetitorsOutcome:
     cost: dict[str, Any] = field(default_factory=dict)
 
 
+GENERIC = {"group", "s.p.a", "spa", "srl", "s.r.l", "ltd", "gmbh", "italia", "italy", "milano", "firenze", "leather",
+           "the", "company", "brand", "brands", "bags", "fashion", "design"}
+
+
 def _names_it(name: str, quote: str) -> bool:
-    """The quote names the company: its name, or its first long word ("IL BISONTE S.p.A." in "Il Bisonte bags")."""
+    """The quote names the company: its name, or one of its own long words ("Il Bisonte" for "IL BISONTE S.p.A.",
+    "Chiarini" for "Gianni Chiarini"), never a word any company could have ("Italia", "leather")."""
     q, n = quote.lower(), name.lower().strip()
-    first = next((w for w in n.replace(".", " ").split() if len(w) >= 4 and w not in ("group", "s.p.a", "spa", "srl", "ltd")), n)
-    return n in q or first in q
+    own = [w for w in n.replace(".", " ").replace("&", " ").split() if len(w) >= 4 and w not in GENERIC]
+    return n in q or any(w in q for w in own)
 
 
-def read(client_name: str, about: str, countries: list[str], client: SearchClient) -> CompetitorsOutcome:
-    """`about`: what the desk knows of the hiring company (what it sells, its size, where), never a person."""
+# A deeper round asks again, told what is already known, from another side of the market (owner, 2026-10-21: "we
+# should however search harder from extended list of competitors").
+ANGLES = [None,
+          "Look further than the first lists: smaller and younger brands, direct-to-consumer and online brands, brands "
+          "sold by the same retailers and marketplaces, makers in the same districts.",
+          "Look at the neighbouring markets: brands selling similar products to the same customers in other categories "
+          "or from nearby countries, with people in the same places."]
+
+
+def read(client_name: str, about: str, countries: list[str], client: SearchClient, known: list[str] | None = None,
+         angle: str | None = None) -> CompetitorsOutcome:
+    """`about`: what the desk knows of the hiring company (what it sells, its size, where), never a person. `known`:
+    companies already listed, so a round finds others."""
     where = ", ".join(countries) or "its markets"
     user = (f"Company: {client_name}\nWhat we know about it: {about or 'nothing more'}\n"
             f"Find its competitors and similar companies, with people in {where}.")
+    if known:
+        user += "\nAlready known, do not repeat them, find others: " + "; ".join(known[:80])
+    if angle:
+        user += "\n" + angle
+    skip = {k.lower() for k in known or []}
     data, visited, cost = client.search_json(SYSTEM, user, SCHEMA, "competitors")
     out = CompetitorsOutcome(visited=visited, cost=cost)
     seen: set[str] = set()
     for raw in data.get("companies") or []:
         name = (raw.get("name") or "").strip()
         url, quote = (raw.get("source_url") or "").strip(), (raw.get("quote") or "").strip()
-        if not name or name.lower() == client_name.lower() or name.lower() in seen:
+        if not name or name.lower() == client_name.lower() or name.lower() in seen or name.lower() in skip:
             continue
         if not any(_same_page(url, v) or _host(url) == _host(v) for v in visited):
             out.rejected.append({"company": name, "reason": "its page was not one the search opened"})
             continue
-        if not quote or not _names_it(name, quote):
-            out.rejected.append({"company": name, "reason": "the quote does not name it"})
-            continue
         seen.add(name.lower())
         hint = raw.get("staff_hint")
+        # A quote that does not name it is not proof on its own; the caller keeps it only if Exa confirms the company.
         out.companies.append(Competitor(name, (raw.get("website") or None), (raw.get("why") or "").strip()[:160], url,
-                                        quote[:300], hint if isinstance(hint, int) and hint > 0 else None))
+                                        quote[:300], hint if isinstance(hint, int) and hint > 0 else None,
+                                        quoted=bool(quote) and _names_it(name, quote)))
     return out

@@ -144,3 +144,5 @@ searches); when "Search now" stopped there, the next batch is queued under the s
 minute at a time, about 20 minutes at most). It stops at the target, the role's or the desk's budget, when no
 searches are left, or after 8 batches. A scheduled run does not continue. Wider searches (Tier C, other countries)
 still wait for the owner's word.
+A run covers one batch of companies; the next round follows a run that finished its batch ("searched") or hit its
+search limit, never one that reached its target, its budget, or had nothing left to search.

@@ -194,7 +194,7 @@ def sourcing_run(session: Session, task: Task) -> dict[str, Any]:
     except autosource.SourcingEngineError as error:
         return {"status": "skipped", "reason": str(error)}
     rounds = p.get("round", 1)
-    more = row.stop_reason == "run_limit" and p.get("trigger") in ("manual", "continue") and rounds < MAX_ROUNDS
+    more = row.stop_reason in ("run_limit", "searched") and p.get("trigger") in ("manual", "continue") and rounds < MAX_ROUNDS
     if more:  # more to search and not enough strong yet: the next batch, once this one is read
         _next_round(session, task, {"job_id": p["job_id"], "trigger": "continue", "actor": p.get("actor"), "round": rounds + 1,
                                     "waits": 0}, READ_WAIT)
