@@ -307,9 +307,10 @@ function Note({ note }: { note: SourcingPage["strategy_note"] }) {
 function ResearchLine({ r }: { r: NonNullable<SourcingPage["competitor_research"]> }) {
   return (
     <div className="research">
-      <p className="sub"><strong>Competitor research</strong> (web, {r.pages} pages, {usd(r.usd)}): {r.found} found · {r.kept} on the
-        map as tier A{r.much_bigger.length ? ` · ${r.much_bigger.length} left out as far bigger (never searched)` : ""}
-        {r.refused.length ? ` · ${r.refused.length} refused (no page naming them)` : ""}</p>
+      <p className="sub"><strong>Competitor research</strong> (web, {r.rounds ? `${r.rounds} rounds, ` : ""}{r.pages} pages, {usd(r.usd)}):
+        {" "}{r.found} found · {r.kept} on the map as tier A{r.much_bigger.length ? ` · ${r.much_bigger.length} left out as far bigger (never searched)` : ""}
+        {r.refused.length ? ` · ${r.refused.length} refused (nothing confirms them)` : ""}</p>
+      {r.lines && r.lines.length > 0 && <p className="hint">The client&apos;s lines of business, as found: {r.lines.join(" · ")}</p>}
       {r.much_bigger.length > 0 && <p className="hint">Far bigger: {r.much_bigger.join(", ")}</p>}
     </div>
   );
@@ -421,13 +422,14 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
   return (
     <>
       {(s.running || s.building || s.suggestions.some((x) => x.evidence?.status === "queued" || x.evidence?.status === "running"))
-        && <Refresh every={3000} upTo={300000} />}
+        && <Refresh every={5000} upTo={1800000} />}
       <section className="panel">
         <div className="row spread">
-          <h3><Radar aria-hidden="true" className="h-icon" />Sourcing: {MODE_LABEL[p.mode]}</h3>
+          <h3><Radar aria-hidden="true" className="h-icon" />Sourcing</h3>
           <div className="row">
+            <span className="hint">Scheduled searches: {p.mode === "paused" ? "none" : MODE_LABEL[p.mode].toLowerCase()} ·</span>
             {(["daily", "weekly", "continuous", "paused"] as SourcingMode[]).filter((m) => m !== p.mode).map((m) => (
-              <OneClick key={m} action={setSourcingMode.bind(null, jobId, m)} label={MODE_LABEL[m]} busy="Saving…" />
+              <OneClick key={m} action={setSourcingMode.bind(null, jobId, m)} label={m === "paused" ? "Stop scheduling" : MODE_LABEL[m]} busy="Saving…" />
             ))}
           </div>
         </div>
@@ -435,17 +437,20 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
           {s.strong_waiting} of {p.target} strong suggestions waiting (to review or to contact) ·
           this month {usd(s.budget.role_spent_usd)} of {usd(s.budget.role_budget_usd)} for this role
           (desk {usd(s.budget.desk_spent_usd)} of {usd(s.budget.desk_budget_usd)})
-          {p.mode === "paused" ? " · paused: choose how often it searches" : ""}
+          {p.mode === "paused" && !s.running && !s.building ? " · searches only when you press Search now, or choose a schedule" : ""}
         </p>
         {!s.web_ready && <p className="warn">Web search is not set up (no Exa key in core/.env): runs search the desk&apos;s own pool only.</p>}
         <div className="row">
-          {s.running ? <span className="sub live" role="status"><span className="dot" aria-hidden="true" />
+          {s.building && !s.running ? <span className="sub live" role="status"><span className="dot" aria-hidden="true" />
+            Building the company list (the client&apos;s competitors, a few minutes); a search you started follows by itself…</span>
+            : s.running ? <span className="sub live" role="status"><span className="dot" aria-hidden="true" />
             {s.search_round ? `Searching on until ${p.target} strong are waiting: batch ${s.search_round.round} of up to 8${s.search_round.waiting
               ? ", waiting for the last batch's career readings" : ""}…`
               : "Searching… new people appear here as soon as the search ends (usually under a minute)"}</span>
             : <OneClick action={runSourcingNow.bind(null, jobId)} label="Search now" busy="Starting…" primary />}
           {lastRun && <span className="hint">Last run {when(lastRun.started_at)}: {lastRun.stop_reason === "target" && lastRun.found === 0
             ? "did not search, the target was already reached" : STOP[lastRun.stop_reason ?? ""] ?? lastRun.status}</span>}
+          <Link className="hint" href={`/activity?job=${jobId}`}>What the desk did</Link>
         </div>
         {s.strong_waiting >= p.target && (
           <p className="warn">Searching waits while {s.strong_waiting} strong suggestions are waiting to be contacted (the target is {p.target}):

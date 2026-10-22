@@ -825,6 +825,35 @@ class Campaign(Base):
 TASK_STATUS = ("queued", "running", "done", "failed")
 
 
+LOG_KINDS = ("button", "task", "search", "model", "error", "step")
+
+
+class DeskLog(Base):
+    """What happened, in plain words, for the owner and for whoever reads an error (owner, 2026-10-22): a button
+    pressed, a task run, a search sent, a model asked (its prompt, unless it carries a person's text), an error and
+    its trace, a step of the desk's own logic. Kept 30 days. Written in its own transaction, so a failed task's
+    story survives its rollback."""
+
+    __tablename__ = "desk_log"
+    __table_args__ = (
+        CheckConstraint(_in("kind", LOG_KINDS), name="desk_log_kind"),
+        CheckConstraint(_in("level", ("info", "warn", "error")), name="desk_log_level"),
+        Index("ix_desk_log_org_at", "org_id", "at"),
+        Index("ix_desk_log_job_at", "job_id", "at"),
+    )
+
+    id: Mapped[uuid.UUID] = _pk()
+    org_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))  # no key: written outside the work's transaction
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    level: Mapped[str] = mapped_column(String, nullable=False, default="info")
+    job_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    task_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    actor: Mapped[str | None] = mapped_column(String)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    detail: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+
+
 class Task(Base):
     """One unit of background work (read a CV, research a company, build a profile). Claimed with SKIP LOCKED."""
 

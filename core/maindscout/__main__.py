@@ -11,6 +11,7 @@
     python -m maindscout coverage-check      apply the coverage rule to everyone already on the desk (free)
     python -m maindscout profiles-rebuild [--reclassify]  rebuild career profiles (reclassify: read step labels again, paid)
     python -m maindscout rematch             match every person on every job again (free)
+    python -m maindscout activity [--job ID] [--kind K] [--since MIN] [--full]   what the desk did, in plain words
     python -m maindscout match-eval [--job ID ...] [--labels FILE]   what the current rules would change, before
                                              they go live, against the owner's decisions (free; writes nothing)
     python -m maindscout demo-seed [--count 60]  add synthetic demo people ("Demo · ", @example.invalid) for testing
@@ -246,6 +247,12 @@ def main() -> None:
     p_prof = sub.add_parser("profiles-rebuild")
     p_prof.add_argument("--reclassify", action="store_true")
     sub.add_parser("rematch")
+    p_act = sub.add_parser("activity")
+    p_act.add_argument("--job", default=None)
+    p_act.add_argument("--kind", default=None, help="button,task,search,model,step,error")
+    p_act.add_argument("--since", type=int, default=120, help="minutes back")
+    p_act.add_argument("--limit", type=int, default=200)
+    p_act.add_argument("--full", action="store_true", help="also print each line's detail (prompts, answers, traces)")
     p_meval = sub.add_parser("match-eval")
     p_meval.add_argument("--job", action="append", default=None)
     p_meval.add_argument("--labels", type=Path, default=None)
@@ -356,6 +363,23 @@ def main() -> None:
             print(profiles.rebuild_all(session, args.reclassify))
             session.commit()
         print("queued: the workers (serve, or `worker`) build them")
+    elif args.cmd == "activity":
+        import json
+        from datetime import datetime, timedelta, timezone
+
+        from maindscout.db.models import DeskLog
+
+        with make_session_factory(make_engine())() as session:
+            stmt = select(DeskLog).where(DeskLog.at > datetime.now(timezone.utc) - timedelta(minutes=args.since))
+            if args.job:
+                stmt = stmt.where(DeskLog.job_id == args.job)
+            if args.kind:
+                stmt = stmt.where(DeskLog.kind.in_(args.kind.split(",")))
+            for r in reversed(list(session.scalars(stmt.order_by(DeskLog.at.desc()).limit(args.limit)))):
+                mark = {"error": "!!", "warn": "! "}.get(r.level, "  ")
+                print(f"{mark}{r.at.astimezone():%H:%M:%S} {r.kind:6} {r.summary}" + (f"  [{r.actor}]" if r.actor else ""))
+                if args.full and r.detail:
+                    print("        " + json.dumps(r.detail, ensure_ascii=False, indent=1).replace("\n", "\n        "))
     elif args.cmd == "rematch":
         from maindscout.api.process import retriage_pair
         from maindscout.db.models import CandidateJob

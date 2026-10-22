@@ -901,13 +901,27 @@ export async function changeSourcingTarget(jobId: string, companyId: string, cha
 }
 
 export async function runSourcingNow(jobId: string, _: FormState): Promise<FormState> {
+  let status = "";
   try {
-    await apiJson(`/v1/jobs/${jobId}/sourcing/run`, {});
+    status = (await apiJson<{ status: string }>(`/v1/jobs/${jobId}/sourcing/run`, {})).status;
   } catch (e) {
     return fail(e);
   }
   revalidatePath(`/jobs/${jobId}`);
-  return { message: "Searching: your own desk first, then the web within the budgets. This page updates by itself." };
+  return {
+    message: status === "building"
+      ? "This role's company list was never built: building it first (the client's competitors, a few minutes), then the search starts by itself."
+      : "Searching: your own desk first, then the web within the budgets. This page updates by itself.",
+  };
+}
+
+/** A page that crashed in the browser says so in the activity log (owner, 2026-10-22). Never throws. */
+export async function reportClientError(report: { message: string; stack?: string; url?: string; digest?: string }): Promise<void> {
+  try {
+    await apiJson("/v1/activity/client-error", report);
+  } catch {
+    // signed out, or the API is down: nothing more to do
+  }
 }
 
 export async function buildStrategy(jobId: string, _: FormState): Promise<FormState> {

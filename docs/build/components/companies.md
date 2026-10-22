@@ -50,3 +50,18 @@ reason, so it stays on record:
   where every later CV is filed. 1,378 such names were removed.
 
 match-eval after settling: no moves on the three roles, the owner's labels 4/4.
+
+## More the desk settles (2026-10-22, the Ferrari run)
+A brand's shops and showrooms ("PRADA BOUTIQUE", "GUCCI SHOWROOM", "Furla Aeroporto …") are the brand; a city tag
+("TWINSET MILANO") and an Italian legal form written out ("Società a Responsabilità Limitata") are ignored; a list of
+brands is read by its first; "Varie aziende" is not an employer; a name in another script, or a common word alone
+("Pelletteria"), is kept apart. 15 of the 22 new questions settled; still asked: KPMG / KPMG Avocats, Danzas / its
+freight agency, Gallo / Galli, Scenart / Scenari, Valentino Garavani Collections / Valentino, Vogue Talent / Vogue, VEGA.
+Later in the same run: a name with a note after a dash ("Agnona - Ermenegildo Zegna") is read by its first part, a web
+suffix is ignored ("WATCHMASTER.COM"), a last word cut short is the same name ("Loro Pian"), and "Fashion" alone is a
+common word. A division of a big group ("Accenture Interactive", "Deloitte xbs") is still asked: a rule would also fold
+"Apple Leisure Group" into Apple.
+
+**A key held by a record merged into a company is never copied onto it** (it already leads there through the redirect).
+The activity log showed a search failing on it: a merged-in shop's Exa id met its parent again in a later search, and
+the second copy of one key was refused by the database.

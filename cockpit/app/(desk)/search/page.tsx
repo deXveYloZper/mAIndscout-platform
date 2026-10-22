@@ -47,7 +47,7 @@ export default async function Search({ searchParams }: { searchParams: Promise<R
       <h1>Search the desk</h1>
       <form className="searchbar" method="get" role="search">
         <input name="q" defaultValue={text} aria-label="Search people" autoFocus
-          placeholder="e.g. senior devops engineer in Germany with at least 3 years working with kubernetes" />
+          placeholder="who you are looking for, in your own words: their work, where, how many years" />
         <button className="btn primary">Search</button>
       </form>
       <p className="hint">Write what you are looking for in your own words: kind of work, level, years, skills, where they live, background, industry, companies. Best matches come first, each with what it meets. People outside coverage are not searched; personality, culture or fit is never a criterion.</p>

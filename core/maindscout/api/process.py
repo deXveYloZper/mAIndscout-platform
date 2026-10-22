@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from maindscout.api import documents, erasure, writer
@@ -381,7 +381,13 @@ def client_context(session: Session, job: Job) -> dict[str, Any]:
     # describes the scope; it does not ask for a CRM specialist (Michela Bassani, 2026-10-21).
     words = " ".join(p.get("text_raw") or "" for p in reqs if p.get("strength") in ("must", "deal_breaker", "strong_plus"))
     every = " ".join([p.get("text_raw") or "" for p in reqs if p.get("strength") != "anti"] + [b.get("words") or "" for b in brief.values()])
-    return {"staff": int(staff) if staff else None, "level": level, "generalist": bool(GENERALIST.search(every)), "wanted": words}
+    from maindscout.domain import specialism
+
+    # The title and what it asks for (a CRM in a marketer's nice-to-have list is scope, not a specialist role)
+    spec = specialism.of_role([job.title, words] + [p.get("normalized_token") or "" for p in reqs
+                                                    if p.get("category") == "skill" and p.get("strength") in ("must", "deal_breaker")])
+    return {"staff": int(staff) if staff else None, "level": level, "generalist": bool(GENERALIST.search(every)), "wanted": words,
+            "specialism": spec}
 
 
 def _match_now(session: Session, org_id, candidate_id, job: Job, rows=None, coarse: triage.Triage | None = None,
@@ -408,7 +414,21 @@ def _match_now(session: Session, org_id, candidate_id, job: Job, rows=None, coar
                           (coarse.band, coarse.reason), answers_for(session, org_id, candidate_id),
                           blocked=block.reason if block is not None else None,
                           preferences=preference_rows(session, job, inputs[1], [r["payload"] for r in reqs]),
-                          client=client_context(session, job))
+                          client=match_context(session, job, candidate_id))
+
+
+def match_context(session: Session, job: Job, candidate_id) -> dict[str, Any]:
+    """The role's context for matching one person: the client (client_context) and whether a CV is on file for them."""
+    return {**client_context(session, job), "has_cv": _has_cv(session, candidate_id)}
+
+
+def _has_cv(session: Session, candidate_id) -> bool:
+    """Is anything more than a public profile on file for them (a CV they or we uploaded)?"""
+    from maindscout.db.models import DocumentSubject
+
+    return session.scalar(select(func.count()).select_from(DocumentSubject).join(Document, Document.id == DocumentSubject.document_id)
+                          .where(DocumentSubject.subject_type == "candidate", DocumentSubject.subject_id == candidate_id,
+                                 Document.doc_type == "cv")) > 0
 
 
 def job_side(session: Session, job: Job, requirements: list[dict]):

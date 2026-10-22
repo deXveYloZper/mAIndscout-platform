@@ -127,3 +127,13 @@ partial, and a field read as "other" (unknown) never counts. match-eval: those 5
 - Rules are written in code as an ordered list. Changing them is a reviewed code change; calibration from recruiter decisions comes in I7.
 - Background and industry use what research and classification know; unknown is "Ask", never a gap.
 - A hand-set band is never moved; the match beside it may disagree, and that's shown.
+
+## A specialist role (2026-10-22, `match-2026-10-22.2`)
+- A person whose recent title says the role's specialist work (CRM, Salesforce, clienteling) works in its field,
+  whatever family their career was filed under (a CRM manager read as marketing, a Salesforce administrator as IT).
+- A must-have that decides the band (Salesforce) and is not on the public profile of someone found on the web, whose
+  title says the specialist work, is "possible: to confirm on the call", not ruled out: a profile seldom lists every
+  tool. With a CV on file, a missing must-have still decides.
+match-eval: Ferrari's CRM role from 3 strong and 51 possible to 5 strong and 153 possible (104 CRM managers, CRM
+specialists and clienteling leads at Prada, Miu Miu, Church's and others had been ruled out on "Salesforce" alone);
+no moves on the three other roles; the owner's labels 4/4.

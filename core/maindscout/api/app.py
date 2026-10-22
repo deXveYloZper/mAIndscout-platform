@@ -35,6 +35,40 @@ from maindscout.storage import BlobStore, LocalBlobStore
 MAX_UPLOAD = 20 * 1024 * 1024
 
 app = FastAPI(title="mAIndscout platform API", version="0.1.0")
+
+
+@app.middleware("http")
+async def activity_log(request: Request, call_next):
+    """Every action a page sends (a button), and every error, as a line in the activity log (owner, 2026-10-22)."""
+    import time
+
+    from starlette.concurrency import run_in_threadpool
+
+    from maindscout import activity
+    from maindscout.api import buttons
+
+    action = buttons.describe(request.method, request.url.path) if request.method in ("POST", "PUT", "PATCH", "DELETE") else None
+    job_id = buttons.job_of(request.url.path)
+    started = time.monotonic()
+    with activity.about(job_id=job_id):
+        try:
+            response = await call_next(request)
+        except Exception as exc:
+            who = getattr(request.state, "principal", None)
+            await run_in_threadpool(activity.error, f"Server error on {request.method} {request.url.path}: {type(exc).__name__}",
+                                    exc, {"action": action}, org_id=getattr(who, "org_id", None),
+                                    actor=getattr(who, "email", None), job_id=job_id)
+            raise
+    ms = int((time.monotonic() - started) * 1000)
+    who = getattr(request.state, "principal", None)
+    if action or response.status_code >= 500:
+        level = "error" if response.status_code >= 500 else "warn" if response.status_code >= 400 else "info"
+        await run_in_threadpool(
+            activity.note, "error" if level == "error" else "button",
+            f"{action or request.method + ' ' + request.url.path}{'' if response.status_code < 400 else f' (refused: {response.status_code})'}",
+            {"route": f"{request.method} {request.url.path}", "status": response.status_code, "ms": ms}, level,
+            org_id=getattr(who, "org_id", None), actor=getattr(who, "email", None), job_id=job_id)
+    return response
 app.add_middleware(
     CORSMiddleware,
     allow_origins=(env("COCKPIT_ORIGINS", "http://localhost:3001") or "").split(","),
@@ -83,10 +117,12 @@ def _principal(session: Session, authorization: str | None, x_org_id: str | None
     return p
 
 
-def get_principal_any(authorization: str | None = Header(default=None), x_org_id: str | None = Header(default=None),
-                      session: Session = Depends(get_session)) -> auth.Principal:
+def get_principal_any(request: Request, authorization: str | None = Header(default=None),
+                      x_org_id: str | None = Header(default=None), session: Session = Depends(get_session)) -> auth.Principal:
     """Signed in, even if an owner still has to set up two-step codes (for the account routes only)."""
-    return _principal(session, authorization, x_org_id)
+    p = _principal(session, authorization, x_org_id)
+    request.state.principal = p  # for the activity log: who pressed the button
+    return p
 
 
 def get_principal(p: auth.Principal = Depends(get_principal_any)) -> auth.Principal:
@@ -530,6 +566,53 @@ def candidate_claims(candidate_id: uuid.UUID, status: str | None = Query(None), 
     return [c for c in claims if not status or c["status"] == status]
 
 
+@app.get("/v1/activity")
+def get_activity(job_id: uuid.UUID | None = Query(None), kind: str | None = Query(None), level: str | None = Query(None),
+                 q: str | None = Query(None), limit: int = Query(200, ge=1, le=1000), before: datetime | None = Query(None),
+                 org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """The activity log, newest first: buttons, tasks, searches, model calls, steps and errors (owner, 2026-10-22)."""
+    from maindscout.db.models import DeskLog, Job
+
+    stmt = select(DeskLog).where(DeskLog.org_id == org_id)
+    if job_id:
+        stmt = stmt.where(DeskLog.job_id == job_id)
+    if kind:
+        stmt = stmt.where(DeskLog.kind.in_(kind.split(",")))
+    if level:
+        stmt = stmt.where(DeskLog.level.in_(level.split(",")))
+    if q:
+        stmt = stmt.where(DeskLog.summary.ilike(f"%{q}%"))
+    if before:
+        stmt = stmt.where(DeskLog.at < before)
+    rows = list(session.scalars(stmt.order_by(DeskLog.at.desc()).limit(limit)))
+    titles = dict(session.execute(select(Job.id, Job.title).where(Job.id.in_({r.job_id for r in rows if r.job_id} or {None}))).all())
+    return [{"id": str(r.id), "at": r.at.isoformat(), "kind": r.kind, "level": r.level, "summary": r.summary,
+             "detail": r.detail, "actor": r.actor, "task_id": str(r.task_id) if r.task_id else None,
+             "job_id": str(r.job_id) if r.job_id else None, "job": titles.get(r.job_id)} for r in rows]
+
+
+class ClientErrorBody(BaseModel):
+    message: str
+    stack: str | None = None
+    url: str | None = None
+    digest: str | None = None
+
+
+@app.post("/v1/activity/client-error")
+def client_error(body: ClientErrorBody, p: auth.Principal = Depends(get_principal)):
+    """A page that crashed in the browser says so, so the error can be read later (owner, 2026-10-22)."""
+    import re
+
+    from maindscout import activity
+
+    path = urllib.parse.urlparse(body.url or "").path
+    m = re.match(r"^/jobs/([0-9a-fA-F-]{36})", path)
+    activity.note("error", f"The page crashed in the browser: {body.message[:200]}",
+                  {"url": body.url, "stack": activity.cut(body.stack or "", 12000), "digest": body.digest}, "error",
+                  org_id=p.org_id, actor=p.email, job_id=m.group(1) if m else None)
+    return {"ok": True}
+
+
 @app.get("/v1/inbox")
 def get_inbox(job_id: uuid.UUID | None = Query(None), band: str | None = Query(None),
               org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
@@ -696,10 +779,21 @@ def run_sourcing_now(job_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), se
     """Search now (in the background): the pool, then the web within the budgets."""
     from maindscout.api import autosource
 
+    from maindscout import activity
+
     job = autosource._job(session, org_id, job_id)
     if job.state != "open":
         raise HTTPException(422, "Only an open role is sourced")
     autosource.plan(session, org_id, job_id, actor)
+    if not autosource.list_built(session, job_id) and task_handlers.exa_factory() is not None:
+        # Never searched from a starting list nobody built: the client's competitors first (owner, 2026-10-22: the
+        # Ferrari role searched the last role's fashion houses because its list was never built).
+        task = tasks.enqueue(session, org_id, "sourcing_strategy", {"job_id": str(job_id), "actor": actor, "then_search": True},
+                             priority=60, dedupe_key=f"strategy:{job_id}", max_attempts=1)
+        session.commit()
+        activity.step("Search now: this role's company list was never built, so it is built first (competitor research, "
+                      "about $0.45), then the search starts", org_id=org_id, job_id=job_id, actor=actor)
+        return {"task_id": str(task.id), "status": "building"}
     task = tasks.enqueue(session, org_id, "sourcing_run", {"job_id": str(job_id), "trigger": "manual", "actor": actor},
                          priority=60, dedupe_key=f"sourcing:{job_id}", max_attempts=1)
     session.commit()

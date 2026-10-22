@@ -144,14 +144,25 @@ def sourcing_strategy(session: Session, task: Task) -> dict[str, Any]:
     """Build a role's strategy: talent DNA and the tiered target list (needs Exa)."""
     from maindscout.api import autosource, strategy
 
+    from maindscout import activity
+
     caller = exa_factory()
     if caller is None:
-        return {"status": "skipped", "reason": "Web search is not set up (no EXA_API_KEY)"}
-    try:
-        return strategy.build(session, task.org_id, uuid.UUID(task.payload["job_id"]), caller, task.payload.get("actor") or "system",
-                              task_id=task.id, researcher=_researcher())
-    except autosource.SourcingEngineError as error:
-        return {"status": "skipped", "reason": str(error)}
+        out = {"status": "skipped", "reason": "Web search is not set up (no EXA_API_KEY)"}
+    else:
+        try:
+            out = strategy.build(session, task.org_id, uuid.UUID(task.payload["job_id"]), caller,
+                                 task.payload.get("actor") or "system", task_id=task.id, researcher=_researcher())
+        except autosource.SourcingEngineError as error:
+            out = {"status": "skipped", "reason": str(error)}
+    if task.payload.get("then_search"):  # "Search now" on a role whose list was never built: the search follows
+        activity.step("The company list is ready: the search starts" if out.get("status") != "skipped"
+                      else f"The company list could not be built ({out.get('reason')}): searching the starting list")
+        session.add(Task(org_id=task.org_id, kind="sourcing_run", priority=task.priority, max_attempts=1,
+                         dedupe_key=f"sourcing:{task.payload['job_id']}",
+                         payload={"job_id": task.payload["job_id"], "trigger": "manual", "actor": task.payload.get("actor")}))
+        session.flush()
+    return out
 
 
 # "Search now" goes on, batch after batch, until the role has its strong suggestions (owner, 2026-10-21: "we should not

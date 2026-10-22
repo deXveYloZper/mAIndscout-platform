@@ -116,3 +116,12 @@ The recruiter.
 - The sourcing screens (Sourcing tab, Sourcing page, Permission panel, LinkedIn drafts) were checked by hand in the browser on a throwaway desk (2026-10-12); they have no e2e test yet. Step E's card was checked by hand on the owner's two roles with a throwaway sign-in (2026-10-20, laptop and phone width).
 - The Sourcing tab's market map was up to 139 px too wide on a phone: a company's long "not searched" tag did not wrap (fixed 2026-10-20).
 - No HTTPS: see "Bound to this machine" above.
+
+## The desk's screens (2026-10-22)
+- Text boxes no longer carry examples from our test roles ("e.g. Buona Ventura", "e.g. Isar Aerospace").
+- The Sourcing tab says "Sourcing" and "Scheduled searches: none" apart from a search you started ("Searching on…
+  batch 2 of up to 8"), which used to read as "paused" and "searching" at once.
+- A page refreshing itself waits for the last refresh before the next (5 seconds apart, up to 30 minutes), so slow
+  pages no longer pile refreshes on top of each other.
+- An error screen with "Reload the page" replaces the browser's bare "Application error"; every crash goes to the
+  activity log.

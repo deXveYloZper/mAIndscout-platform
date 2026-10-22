@@ -433,7 +433,7 @@ export type SourcingPage = {
   strategy_note: { level: "error" | "info"; text: string; at: string | null } | null;
   /** Step D: the competitor research (Grok, web) of the last strategy build, and a search going on by itself. */
   competitor_research?: { found: number; kept: number; much_bigger: string[]; refused: { company: string; reason: string }[];
-    pages: number; usd: number } | null;
+    pages: number; usd: number; rounds?: number; lines?: string[]; role?: string } | null;
   search_round?: { round: number; waiting: boolean } | null;
   runs: SourcingRunView[]; suggestions: Suggestion[]; suggestions_total: number;
   lists: Record<Exclude<OutreachStage, "to_review">, Suggestion[]>; counts: Record<OutreachStage, number>; follow_ups_due: number;
@@ -445,3 +445,7 @@ export type FunnelCounts = { found: number; new_to_desk: number; relevant: numbe
 
 export type SourcingStats = { job_id: string | null; since: string | null; group: string; totals: FunnelCounts;
   groups: (FunnelCounts & { key: string; label: string })[]; flags: { level: "warn" | "info" | "good"; key: string; text: string }[] };
+
+export type LogLine = { id: string; at: string; kind: "button" | "task" | "search" | "model" | "error" | "step";
+  level: "info" | "warn" | "error"; summary: string; detail: Record<string, unknown>; actor: string | null; task_id: string | null;
+  job_id: string | null; job: string | null };

@@ -8,7 +8,7 @@ export function HiringCompanyForm({ action, current }: { action: (s: FormState, 
   const [state, formAction, pending] = useActionState(action, {});
   return (
     <form action={formAction} className="row">
-      <input name="name" defaultValue={current ?? ""} placeholder="hiring company, e.g. Buona Ventura" aria-label="Hiring company" className="grow" />
+      <input name="name" defaultValue={current ?? ""} placeholder="the hiring company's name" aria-label="Hiring company" className="grow" />
       <button className="btn small primary" disabled={pending}>{pending ? "Saving…" : "Save"}</button>
       {state.error && <span className="error" role="alert">{state.error}</span>}
       {state.message && <span className="sub" role="status">{state.message}</span>}

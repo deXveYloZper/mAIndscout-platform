@@ -26,26 +26,61 @@ from maindscout.domain import companies as names
 
 DESK = "desk"
 NOT_EMPLOYER = re.compile(r"\b(club|society|association|students?|studentship|scholarships?|alumni|choir|orchestra|"
-                          r"volunteers?|hockey|football|rugby|rowing|ultimate frisbee)\b", re.I)
+                          r"volunteers?|hockey|football|rugby|rowing|ultimate frisbee|vari[eo] (aziende|ag|societa)|"
+                          r"various (companies|employers|clients))\b", re.I)
 MERGER = re.compile(r"\b(verschmolzen mit|merged (with|into)|now part of|acquired by|part of)\b", re.I)
 UNIT = {"department", "dept", "lab", "labs", "laboratory", "laboratories", "centre", "center", "faculty", "school",
-        "institute", "experiment", "division", "unit", "computer", "college", "programme", "program"}
+        "institute", "experiment", "division", "unit", "computer", "college", "programme", "program",
+        # a brand's own shops and showrooms (the Ferrari run, 2026-10-22: "PRADA BOUTIQUE", "Furla Aeroporto ...")
+        "showroom", "boutique", "store", "stores", "shop", "outlet", "flagship", "aeroporto", "airport", "corner",
+        "concession"}
 COUNTRY = {"uk", "gb", "usa", "us", "italia", "italy", "deutschland", "germany", "france", "espana", "spain", "emea",
-           "europe", "ireland", "nederland", "netherlands", "international", "global", "worldwide"}
+           "europe", "ireland", "nederland", "netherlands", "international", "global", "worldwide",
+           # a city tag on a brand ("TWINSET MILANO")
+           "milano", "milan", "roma", "rome", "firenze", "florence", "napoli", "torino", "venezia", "paris", "london",
+           "munich", "munchen", "berlin", "madrid", "barcelona"}
+COMMON_WORD = {"pelletteria", "calzaturificio", "maglificio", "sartoria", "atelier", "showroom", "boutique", "studio",
+               "consulting", "consultancy", "agency", "agenzia", "holding", "company", "startup", "start up", "freelance",
+               "fashion", "moda", "luxury", "retail", "design", "marketing", "media", "digital"}
+WEB = {"com", "net", "org", "io", "co", "eu"}  # "WATCHMASTER.COM"
 FOLLOWS_ON = timedelta(days=31)
 
 
 def _tokens(name: str) -> list[str]:
     plain = unicodedata.normalize("NFKD", name or "").encode("ascii", "ignore").decode()
     plain = re.sub(r"\bs\.\s?p\.\s?a\b\.?", " spa ", plain, flags=re.I)  # "S.p.A."
+    plain = re.sub(r"\bsocieta (a responsabilita limitata|per azioni|in accomandita semplice)\b", " srl ", plain, flags=re.I)
     return names.normalize(plain).normalized.split()
+
+
+def _first(name: str) -> str:
+    """A list of brands ("Prada, Car shoe, Prada Linea rossa") or a name with a note after a dash ("Agnona - Ermenegildo
+    Zegna", "Calzedonia Group - Intimissimi - …") is read by its first part."""
+    return re.split(r",|\s[-–|]\s", name)[0].strip() or name
+
+
+def _clipped(a: str, b: str) -> bool:
+    """The same name with its last word cut short ("Loro Pian" / "Loro Piana"): two or more words, all equal but the
+    last, which starts the other's (at least 3 letters of it)."""
+    ta, tb = _tokens(a), _tokens(b)
+    if len(ta) != len(tb) or len(ta) < 2 or ta[:-1] != tb[:-1] or ta == tb:
+        return False
+    x, y = sorted((ta[-1], tb[-1]), key=len)
+    return len(x) >= 3 and y.startswith(x)
+
+
+def _scripts_differ(a: str, b: str) -> bool:
+    """One name in Latin letters, the other with letters of another script ("Cafe Noir" / "Cafe 떠나자 배낭여행")."""
+    def other(t: str) -> bool:
+        return any(ch.isalpha() and not unicodedata.name(ch, "").startswith("LATIN") for ch in t)
+    return other(a) != other(b)
 
 
 def _folded(name: str) -> str:
     """One name however it is written: "DeliveryHero" = "Delivery Hero", "Slingshot Aerospace (UK) Ltd" = "Slingshot
     Aerospace", "Tradewings Tour" = "Tradewings Tours", "Ecole Normale Supérieure" = "Ecole normale superieure"."""
     words = _tokens(name)
-    kept = [w for w in words if w not in COUNTRY] or words
+    kept = [w for w in words if w not in COUNTRY and w not in WEB] or words
     return "".join(kept).removesuffix("s")
 
 
@@ -68,12 +103,19 @@ def company_verdict(new: Company, existing: Company, why: str | None,
     """("same", reason) or ("different", reason) when a rule settles it; None for a person to decide. `other_names`:
     the existing company's other names (its aliases), "telespazio vega uk" for Telespazio UK."""
     if NOT_EMPLOYER.search(new.name) or NOT_EMPLOYER.search(existing.name):
-        return "different", "a club, society or studentship, not an employer"
+        return "different", "a club, society, studentship or 'various companies', not an employer"
+    if _scripts_differ(new.name, existing.name):
+        return "different", "names in different scripts"
+    if any(_tokens(n) and " ".join(_tokens(n)) in COMMON_WORD for n in (new.name, existing.name)):
+        return "different", "a name that is only a common word (\"Pelletteria\": a leather workshop), not one company"
     theirs = [existing.name, *(other_names or [])]
-    if any(_folded(new.name) == _folded(n) for n in theirs):
+    mine = list(dict.fromkeys([new.name, _first(new.name)]))
+    if any(_folded(m) == _folded(n) for m in mine for n in theirs):
         return "same", "one name, written differently"
-    if _part_of(new.name, existing.name):
-        return "same", "one is a part or a renamed form of the other"
+    if any(_part_of(m, existing.name) for m in mine):
+        return "same", "one is a part, a shop or a renamed form of the other"
+    if any(_clipped(m, n) for m in mine for n in theirs):
+        return "same", "one name with its last word cut short"
     if why:  # a key clash: here always a website (a shared Exa id or LinkedIn page is the same company, found by key)
         return "different", "they only share a website (one site can carry many organisations)"
     mine = names.normalize(new.name).normalized
@@ -105,6 +147,10 @@ def company(session: Session, decision: Decision) -> bool:
         keep, drop = (new, existing) if part and part[0] == new.name else (existing, new)  # the parent's name stands
         companies.merge(session, keep.id, drop.id, DESK, decision.org_id)
     _seal(decision, {"action": action, "reason": reason}, DESK)
+    from maindscout import activity
+
+    activity.step(f"The desk settled “{new.name}” / “{existing.name}”: "
+                  f"{'the same company' if action == 'same' else 'kept apart'} ({reason})", org_id=decision.org_id)
     session.flush()
     return True
 
@@ -125,6 +171,10 @@ def stint(session: Session, decision: Decision) -> bool:
         return False  # a gap: maybe two jobs there, a person knows
     resolve_decision(session, decision.org_id, decision.id, DESK, "same")
     decision.resolution = {**(decision.resolution or {}), "reason": "one title at one company, one run of time"}
+    from maindscout import activity
+
+    activity.step(f"The desk joined one job written twice: {a.payload.get('title_raw')} at {decision.context.get('company')}",
+                  org_id=decision.org_id)
     session.flush()
     return True
 

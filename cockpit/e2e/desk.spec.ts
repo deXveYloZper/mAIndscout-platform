@@ -564,3 +564,15 @@ test("pages fit a phone screen without sideways scrolling", async ({ page }) => 
     expect(overflow, url).toBeLessThanOrEqual(1);
   }
 });
+
+test("the activity log says what the desk did, in plain words, and fits a phone", async ({ page }) => {
+  await page.goto("/activity");
+  await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
+  await expect(page.getByText("Added a role").first()).toBeVisible();
+  await page.getByText("Added a role").first().click();
+  await page.getByRole("link", { name: "Buttons" }).click();
+  await expect(page).toHaveURL(/kind=button/);
+  await page.setViewportSize({ width: 375, height: 812 });
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+});

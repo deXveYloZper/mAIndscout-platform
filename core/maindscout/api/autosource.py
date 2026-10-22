@@ -447,7 +447,15 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
     searched_companies: dict[str, None] = {}
     reason = None
     stop: tuple[str, str] | None = None  # why the searches ended early; the people already added still get read
-    for q in strategy.next_searches(session, job, p, set(radar.live(session, org_id)), limits):
+    planned = strategy.next_searches(session, job, p, set(radar.live(session, org_id)), limits)
+    from maindscout import activity
+
+    activity.step(f"Search ({trigger}): {len(planned)} searches planned at "
+                  f"{len({q['target'] for q in planned if q.get('target')})} companies, in {', '.join(p.countries or []) or 'any country'}",
+                  {"searches": [f"{q['text']} [{q.get('tier')}, {q.get('country')}]" for q in planned[:60]],
+                   "titles": list(p.role_variants or []), "open_tiers": list(p.open_tiers or ["A", "B"])},
+                  org_id=org_id, job_id=job.id)
+    for q in planned:
         if strong_waiting(session, job.id) >= p.target:
             stop = ("done", "target")
             break
@@ -625,6 +633,12 @@ def _follow_up(session: Session, track: dict[str, Any]) -> dict[str, Any]:
             "drafted": bool(child is not None and child.status in ("draft", "in_mailbox")),
             "draft_id": str(child.id) if child is not None and child.status in ("draft", "in_mailbox") else None,
             "sent_at": child.sent_at.isoformat() if child is not None and child.sent_at else track.get("followed_up_at")}
+
+
+def list_built(session: Session, job_id: uuid.UUID) -> bool:
+    """Has this role's company list ever been built (the strategy, with its competitor research)?"""
+    return session.scalar(select(func.count()).select_from(Task).where(
+        Task.kind == "sourcing_strategy", Task.dedupe_key == f"strategy:{job_id}", Task.status == "done")) > 0
 
 
 def _research(session: Session, job_id: uuid.UUID) -> dict[str, Any] | None:

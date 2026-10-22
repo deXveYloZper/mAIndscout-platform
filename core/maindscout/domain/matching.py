@@ -19,16 +19,18 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any, Callable
 
+from maindscout.domain import specialism as specialism_mod
 from maindscout.domain.profile import (FAMILY_LABEL, LEVEL_RANK, NOT_EXPERIENCE, Stint, employer_years, group_of, staff_words,
                                        years_at_size)
 
-ENGINE_VERSION = "match-2026-10-21.3"  # step C: the move check, the level against the role, a specialist for an all-round role
+ENGINE_VERSION = "match-2026-10-22.2"  # a specialist role (CRM): a title saying that work counts as the role's field
 MUST = ("must", "deal_breaker")
 
 # The desk's rules, as data: id -> what it says. The order of evaluation is the order of this list.
 RULES: list[dict[str, str]] = [
     {"id": "client_block", "text": "The client said no to this person: a wall at this client until a person lifts it."},
     {"id": "distinctive_must_missing", "text": "A must-have that decides the band has no evidence: do not submit."},
+    {"id": "distinctive_must_unproven", "text": "A must-have that decides the band is not on a public profile, but their title says the role's specialist work: possible, ask on the call."},
     {"id": "not_wanted", "text": "The person meets a requirement the hiring manager does not want."},
     {"id": "wants_otherwise", "text": "The job is what the person said they will not consider (a must, said on a call): unlikely."},
     {"id": "prefers_otherwise", "text": "The job is not what the person said they would prefer: a note for the call, never a reason on its own."},
@@ -82,13 +84,22 @@ def _years(x: float) -> str:
     return f"{x:.1f}".rstrip("0").rstrip(".") + (" year" if round(x, 1) == 1 else " years")
 
 
-def _role(p: dict[str, Any], profile: dict[str, Any]) -> tuple[str, str]:
+def _role(p: dict[str, Any], profile: dict[str, Any], stints: list[Stint] | None = None,
+          specialism: str | None = None) -> tuple[str, str]:
     ry, sen = profile["dimensions"]["relevant_years"], profile["dimensions"]["seniority"]
     if ry["label"] == "unknown":
         return "ask", "the kind of work is not clear from the CV"
     want, main = p.get("role_family"), ry["main"]
     parts, verdicts = [], []
-    if want == main:
+    # A specialist role (CRM): a person whose recent title says that work does it, whatever family their career was
+    # filed under (a CRM manager read as marketing, a Salesforce administrator read as IT support), owner 2026-10-22.
+    said = next((s.title for s in sorted(stints or [], key=lambda s: s.end is not None)
+                 if s.employment not in NOT_EXPERIENCE and (s.end is None or (date.today() - s.end).days <= 3 * 365)
+                 and specialism_mod.title_says(specialism, s.title)), None)
+    if said:
+        verdicts.append("strong")
+        parts.append(f"works in {specialism_mod.broad_word(specialism)} ({said})")
+    elif want == main:
         verdicts.append("strong")
         parts.append(f"works in {FAMILY_LABEL[main]}")
     elif want and group_of(want) == group_of(main) and group_of(want) != want:
@@ -386,7 +397,7 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
         if thin:
             v, d = "ask", "no career profile yet"
         elif cat == "role":
-            v, d = _role(p, profile)
+            v, d = _role(p, profile, stints, (client or {}).get("specialism"))
         elif cat == "employer":
             v, d = _employer(p, profile, stints, family)
         elif cat == "domain":
@@ -421,8 +432,19 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
     if blocked:
         fire("client_block", blocked)
         return Match("unlikely", "do_not_submit", f"match:unlikely:the client said no ({blocked})", rows, fired)
-    # 1. Today's rule: a distinctive must-have with no evidence decides the band.
+    # 1. Today's rule: a distinctive must-have with no evidence decides the band. Except for someone known only from a
+    # public profile whose recent title says the role's specialist work: a profile seldom lists every tool, so a CRM
+    # specialist at a luxury house without "Salesforce" on it is asked, not ruled out (Ferrari's CRM role, 2026-10-22:
+    # 190 such people had been dropped).
     if coarse[0] == "do_not_submit" and coarse[1].startswith("no_support_for_must_have"):
+        spec = (client or {}).get("specialism")
+        said = next((s.title for s in stints if s.employment not in NOT_EXPERIENCE
+                     and (s.end is None or (date.today() - s.end).days <= 3 * 365) and specialism_mod.title_says(spec, s.title)), None)
+        if said and not (client or {}).get("has_cv", True):
+            fire("distinctive_must_unproven", f"{coarse[1].split(':', 1)[-1].strip(':')}: not on their public profile; "
+                                               f"their title says the work ({said})")
+            missing = coarse[1].split(":")[1] if ":" in coarse[1] else "a must-have"
+            return Match("possible", "review_later", f"match:possible:{missing} to confirm (not on their public profile)", rows, fired)
         fire("distinctive_must_missing", coarse[1].split(":", 1)[-1])
         return Match("unlikely", "do_not_submit", coarse[1], rows, fired)
     # 2. Not wanted.

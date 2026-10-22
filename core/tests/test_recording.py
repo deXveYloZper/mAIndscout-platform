@@ -106,7 +106,8 @@ def test_record_mode_always_calls_and_overwrites(folder, monkeypatch):
 def test_off_is_the_real_client_and_a_bad_mode_is_refused(monkeypatch):
     monkeypatch.setenv("LLM_REPLAY", "off")
     real = Counting()
-    assert recording.wrap_chat(lambda: real) is real
+    client = recording.wrap_chat(lambda: real)
+    assert client.inner is real, "the real client, only observed (each call goes to the activity log)"
     monkeypatch.setenv("LLM_REPLAY", "sometimes")
     with pytest.raises(recording.LLMError):
         recording.wrap_chat(lambda: real)

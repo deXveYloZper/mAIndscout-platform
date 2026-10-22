@@ -23,6 +23,10 @@ const STRENGTH: Record<string, [string, string]> = { must: ["Must", "must"], dea
 const ORDER = ["must", "deal_breaker", "strong_plus", "nice", "unknown", "anti"];
 const MOBILITY: Record<string, string> = { visa_sponsorship: "Visa sponsorship", relocation_assistance: "Relocation assistance" };
 
+// The level is a minimum: "bachelor" lets a master's or a doctorate through too (owner, 2026-10-22).
+const DEGREE: Record<string, string> = { bachelor: "any degree (bachelor's or higher)", master: "a master's or higher",
+  doctorate: "a doctorate", associate: "an associate degree or higher", diploma: "a diploma or higher" };
+
 function detail(r: ClaimView, targets: Record<string, number>) {
   const p = r.payload;
   const bits: React.ReactNode[] = [];
@@ -33,7 +37,7 @@ function detail(r: ClaimView, targets: Record<string, number>) {
   } else if (p.min_years != null) {
     bits.push(<span key="y">{p.min_years}+ years</span>);
   }
-  if (p.education_level) bits.push(<span key="l">{p.education_level}</span>);
+  if (p.education_level) bits.push(<span key="l">{DEGREE[String(p.education_level)] ?? String(p.education_level)}</span>);
   if (p.employer_kinds?.length) bits.push(<span key="e">{p.employer_kinds.map((k: string) => EMPLOYER_KIND_LABEL[k] ?? k).join(", ")}</span>);
   if ((p.min_staff || p.max_staff) && !/\d/.test(p.text_raw ?? "")) {  // "up to 200 people" already says it
     const n = (x: number) => x.toLocaleString("en-GB");

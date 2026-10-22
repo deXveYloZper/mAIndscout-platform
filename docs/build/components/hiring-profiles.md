@@ -128,3 +128,10 @@ together, and any line can be changed on its own; every control on the hiring pr
 - Where someone must live, and visas, stay with the ad's mobility facts and are asked on the call. Intake items about them are left out.
 - The same industry can appear twice, from the ad and from the intake, when their lists differ. Both are shown with their source.
 - Approving a public company fact is still open (see company research).
+
+## Degrees and the ad's own dates (2026-10-22)
+- "A degree is a must, not necessarily a master's" (the owner wrote "not ecessarily") is any degree: the level is a
+  minimum, read as a bachelor's, so a master's or a doctorate passes too (owner: "any degree is fine, not just
+  bachelor, also masters"). The profile says "any degree (bachelor's or higher)".
+- A date about the ad itself ("Job Description Date", posted, published, last updated) is never a process date: one
+  had said a fresh role's dates had passed.

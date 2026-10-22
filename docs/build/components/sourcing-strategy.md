@@ -159,3 +159,21 @@ the research names becomes a competitor. A rebuild drops what the desk's own sea
 to be far bigger, or that the hiring profile says not from (Valentino, Dolce&Gabbana, Armani, Prada Group went);
 never a company a person named, pinned or placed. Bonaventura: 3 rounds, 197 pages, $0.44, 28 kept, Bottega Veneta,
 TOD'S and Brunello Cucinelli left out as far bigger; 49 competitors in Tier A with the earlier round's.
+
+## The Ferrari investigation (2026-10-22)
+The owner uploaded a CRM role for Ferrari: its list was the last role's fashion houses, its searches were for
+"customer success manager", and 432 of 444 found were unlikely. What was wrong, and what changed:
+- **"Search now" ran on a list nobody built.** It now builds the list first when it was never built (the competitor
+  research, about $0.45), then the search follows by itself; the tab says "Building the company list…".
+- **The starting list ranked companies by how many of our own people worked there**, so a new role got the last
+  role's pool. It now ranks by shared industry, leaves out companies 20x the client's size, and our people only break
+  a tie.
+- **The research did not know the role, nor every line of the client's business.** It now first establishes every
+  line (for Ferrari: its cars, racing, and its fashion and lifestyle collection; owner: "Ferrari has recently also moved
+  into fashion"), then finds competitors for each line, and companies whose people do the role's work for the same
+  customers (line "talent"). The tab shows the lines found. Ferrari: 42 kept of 43, luxury car makers (Pagani,
+  Pininfarina, McLaren, Bentley, Porsche, Dallara) and luxury fashion (Zegna, Canali, Herno, Fratelli Rossetti).
+- **A specialist role searches its specialism's titles** (`domain/specialism.py`): "Salesforce" or "CRM" in the title
+  or must-haves makes a CRM role ("CRM specialist", "CRM manager", "Salesforce administrator", "CRM analyst"; broad
+  search "CRM" at a small company), never the family's defaults ("account manager"); a rebuild drops titles that were
+  only a family's defaults. A CRM in a marketer's nice-to-have list is scope, not a CRM role.

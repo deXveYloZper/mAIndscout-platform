@@ -79,10 +79,13 @@ def learn_keys(session: Session, company: Company, *, exa_id: str | None = None,
     for key, value in found.items():
         if not value or getattr(company, key) == value:
             continue
-        other = canonical(session, session.scalar(select(Company).where(getattr(Company, key) == value,
-                                                                        Company.id != company.id).limit(1)))
-        if other is not None and other.id != company.id:
-            clash = other
+        holder = session.scalar(select(Company).where(getattr(Company, key) == value, Company.id != company.id).limit(1))
+        if holder is not None:
+            other = canonical(session, holder)
+            if other is not None and other.id != company.id:
+                clash = other
+            # Either another company holds it, or a record merged into this one does (it already leads here through
+            # the redirect): never a second copy of one key (a search failed on that, 2026-10-22, after the desk's merges).
             continue
         if getattr(company, key) is None:
             setattr(company, key, value)

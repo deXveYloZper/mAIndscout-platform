@@ -272,23 +272,29 @@ def competitors(session: Session, org_id: uuid.UUID, job: Job, company: Company,
     from maindscout.api.process import client_context
     from maindscout.intelligence import competitors as engine
 
+    from maindscout import activity
+
     upgrade = upgrade if upgrade is not None else {}
     p = company.exa_profile or {}
-    staff = client_context(session, job)["staff"]
+    ctx = client_context(session, job)
+    staff = ctx["staff"]
     about = "; ".join(x for x in [p.get("offering") or p.get("description"), ", ".join(p.get("domains") or []),
                                   f"about {staff} people" if staff else None, p.get("hq")] if x)
+    role = _role_words(session, job, ctx.get("specialism"))
     out: list[dict[str, Any]] = []
     bigger: list[str] = []
     refused: list[dict[str, str]] = []
     found_n = pages = rounds = 0
     usd = 0.0
     named: list[str] = []
+    lines: list[str] = []
     for angle in engine.ANGLES:
         rounds += 1
         costs.ensure_budget(session, org_id)
         # the first round may name a listed company (it becomes a competitor); later rounds are told everything known
         outcome = engine.read(company.name, about, [geo.name_of(c) for c in countries], researcher,
-                              known=[*named, *(known or [])] if rounds > 1 else None, angle=angle)
+                              known=[*named, *(known or [])] if rounds > 1 else None, angle=angle, role=role)
+        lines = lines or outcome.lines
         costs.record(session, org_id, "sourcing_competitors", outcome.cost, subject_type="job", subject_id=job.id, task_id=task_id)
         found_n += len(outcome.companies) + len(outcome.rejected)
         pages += len(outcome.visited)
@@ -311,7 +317,9 @@ def competitors(session: Session, org_id: uuid.UUID, job: Job, company: Company,
             if size and staff and size >= BIG_PEER * staff:
                 bigger.append(f"{found.name} ({size:,})")
                 continue
-            why = [f"competitor: {c.why}" if c.why else "competitor", f"research: {_short_host(c.source_url)}"]
+            kind = "where such people work" if (c.line or "").lower() == "talent" else "competitor"
+            why = [f"{kind}{f' ({c.line})' if c.line and c.line.lower() != 'talent' else ''}: {c.why}" if c.why else kind,
+                   f"research: {_short_host(c.source_url)}"]
             if str(found.id) in have:
                 upgrade.setdefault(str(found.id), why)  # already listed (a company search found it too)
                 continue
@@ -320,8 +328,32 @@ def competitors(session: Session, org_id: uuid.UUID, job: Job, company: Company,
         if len(out) + len(upgrade) - before < ENOUGH_NEW:
             break
     report = {"found": found_n, "kept": len(out) + len(upgrade), "much_bigger": bigger, "refused": refused, "pages": pages,
-              "rounds": rounds, "usd": round(usd, 4)}
+              "rounds": rounds, "usd": round(usd, 4), "lines": lines, "role": role}
+    activity.step(f"Competitor research for {company.name}: {report['kept']} kept of {found_n} found in {rounds} rounds; "
+                  f"{len(bigger)} left out as far bigger, {len(refused)} refused",
+                  {"business_lines": lines, "kept": [t["name"] for t in out], "much_bigger": bigger, "refused": refused,
+                   "role": role}, org_id=org_id, job_id=job.id)
     return out, report
+
+
+def _role_words(session: Session, job: Job, spec: str | None) -> str:
+    """The role, for the competitor research: its title, its kind of work and the industries the ad asks for."""
+    from maindscout.domain import specialism
+    from maindscout.domain.profile import FAMILY_LABEL
+
+    family, domains = None, []
+    for c in session.scalars(select(Claim).where(Claim.subject_id == job.id, Claim.claim_type == "JobRequirementClaim",
+                                                 Claim.status.in_(LIVE))):
+        pl = c.approved_view or c.payload
+        if pl.get("strength") == "anti":
+            continue
+        if pl.get("category") == "role" and pl.get("role_family"):
+            family = pl["role_family"]
+        if pl.get("category") == "domain":
+            domains += [pl.get("text_raw") or ""] + list(pl.get("domains") or [])
+    kind = specialism.broad_word(spec) or (FAMILY_LABEL.get(family, family) if family else None)
+    return "; ".join(x for x in [job.title, f"kind of work: {kind}" if kind else None,
+                                 f"industries: {', '.join(dict.fromkeys(d for d in domains if d))}" if domains else None] if x)
 
 
 ENOUGH_NEW = 3  # a research round adding fewer new competitors than this is the last
@@ -464,7 +496,11 @@ def build(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, caller, actor:
     # usual titles for the kind of work, before any the owner added.
     fresh = marketmap.initial(session, job)["role_variants"]
     raw = " ".join((job.title or "").split()).lower()
-    variants = list(dict.fromkeys([*fresh[:1], *[v for v in p.role_variants if v.lower() != raw], *fresh[1:]]))
+    # A title that was only a family's default and is no longer suggested goes ("account manager" once the role is read
+    # as CRM, 2026-10-22); one a person added stays.
+    defaults = {t.lower() for ts in marketmap.FAMILY_TITLES.values() for t in ts} - {f.lower() for f in fresh}
+    kept = [v for v in p.role_variants if v.lower() != raw and v.lower() not in defaults]
+    variants = list(dict.fromkeys([*fresh[:1], *kept, *fresh[1:]]))
     words = {w for v in variants for w in re.findall(r"[a-z]+", v.lower())}
     for title, n in (dna or {}).get("titles", []):
         other_work = [w for w in NOT_THE_ROLE.findall(title.lower()) if w not in words]  # "marketing" is fine for a marketer
@@ -671,8 +707,15 @@ SMALL = 150  # at a company this small, one broad search finds its few people; t
 
 
 def broad_word(session: Session, job: Job) -> str | None:
-    """The role's kind of work as a search word ("marketing", "software engineering", "GIS remote sensing")."""
+    """The role's kind of work as a search word ("marketing", "software engineering", "GIS remote sensing"; "CRM" for a
+    CRM role)."""
+    from maindscout.api.process import client_context
+    from maindscout.domain import specialism
     from maindscout.domain.profile import FAMILY_LABEL
+
+    word = specialism.broad_word(client_context(session, job)["specialism"])
+    if word:
+        return word
 
     for c in session.scalars(select(Claim).where(Claim.subject_id == job.id, Claim.claim_type == "JobRequirementClaim",
                                                  Claim.status.in_(LIVE))):

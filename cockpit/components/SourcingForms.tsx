@@ -65,7 +65,7 @@ export function AddTarget({ action }: { action: Act }) {
   const [state, formAction, pending] = useActionState(action, {});
   return (
     <form action={formAction} className="row">
-      <input name="name" placeholder="add a company to search, e.g. Isar Aerospace" aria-label="Company to add" className="grow" />
+      <input name="name" placeholder="a company to search" aria-label="Company to add" className="grow" />
       <button className="btn small" disabled={pending}>{pending ? "Adding…" : "Add"}</button>
       <Said state={state} />
     </form>

@@ -44,6 +44,26 @@ def co(name):
     # real questions, for a person
     ("KPMG", "KPMG Avocats", None, None),
     ("VEGA Group plc", "Vega Space Systems Engineering Ltd", None, None),
+    # the Ferrari run's shops, showrooms and lists (2026-10-22)
+    ("PRADA BOUTIQUE", "Prada Group", None, "same"),
+    ("GUCCI SHOWROOM", "Gucci", None, "same"),
+    ("Furla Aeroporto Leonardo Da Vinci", "FURLA", None, "same"),
+    ("Coccinelle spa. Aeroporto di Fiumicino", "Coccinelle", None, "same"),
+    ("TWINSET MILANO", "TWINSET", None, "same"),
+    ("Effeuno Srl", "EFFEUNO SOCIETA A RESPONSABILITA LIMITATA", None, "same"),
+    ("Prada, Car shoe,Prada Linea rossa", "Prada Group", None, "same"),
+    ("Varie Aziende", "Varie Ag", None, "different"),
+    ("Cafe Noir", "Cafe 떠나자 배낭여행", None, "different"),
+    ("Pelletteria", "Pelletteria Almax", None, "different"),
+    ("Danzas Z.F. Freight Agency Co. Ltd.", "Danzas", None, None),
+    ("GALLO - S.P.A.", "Galli S.p.A.", None, None),
+    # the Ferrari run, later batches
+    ("Agnona - Ermenegildo Zegna", "Agnona", None, "same"),
+    ("Calzedonia Group - Intimissimi - Key Two S.a.s of Pomiato Ketty", "Calzedonia Group", None, "same"),
+    ("WATCHMASTER.COM", "Watchmaster", None, "same"),
+    ("Loro Pian", "Loro Piana", None, "same"),
+    ("Fashion", "FASHION SCOUT", None, "different"),
+    ("Accenture Interactive", "Accenture", None, None),
 ])
 def test_the_desk_settles_what_a_rule_can_and_asks_the_rest(new, existing, why, action):
     verdict = settle.company_verdict(co(new), co(existing), why)
@@ -115,3 +135,13 @@ def test_one_job_written_twice_is_joined_over_its_whole_span_and_a_gap_is_asked(
     e = _step(session, org, person, "Analyst", date(2019, 1, 1), date(2020, 1, 1))
     f = _step(session, org, person, "Senior Analyst", date(2020, 1, 1), None)
     assert settle.settle(session, _card(session, org, person, e, f)) is False, "another title: a person decides"
+
+
+def test_a_key_held_by_a_merged_in_record_is_never_copied_onto_its_parent(session, org):
+    parent, _ = companies.resolve(session, "Testbrand Group", "test")
+    shop, _ = companies.resolve(session, "Testbrand Boutique", "test", keys={"exa_id": "https://exa.ai/library/organization/testshop1"})
+    companies.merge(session, parent.id, shop.id, "desk", org.id)
+    found, _ = companies.resolve(session, "Testbrand Group", "exa", keys={"exa_id": "https://exa.ai/library/organization/testshop1",
+                                                                         "linkedin": "testbrand"})
+    session.flush()  # used to fail: the same Exa id set on the parent too
+    assert found.id == parent.id and parent.exa_id is None and shop.exa_id.endswith("testshop1")

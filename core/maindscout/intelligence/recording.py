@@ -170,17 +170,26 @@ class RecordingExaClient:
         return raw
 
 
+# Every client is also observed: each call is a line in the activity log (maindscout/activity.py).
+
+
 def wrap_exa(make_real: Callable[[], Any]):
+    from maindscout.activity import ObservedExa
+
     how = mode()
-    return make_real() if how == "off" else RecordingExaClient(make_real, how)
+    return ObservedExa(make_real() if how == "off" else RecordingExaClient(make_real, how))
 
 
 def wrap_chat(make_real: Callable[[], Any]):
     """The client to use: the real one (mode off), or a recording/replaying one."""
+    from maindscout.activity import ObservedChat
+
     how = mode()
-    return make_real() if how == "off" else RecordingClient(make_real, how)
+    return ObservedChat(make_real() if how == "off" else RecordingClient(make_real, how))
 
 
 def wrap_search(make_real: Callable[[], Any]):
+    from maindscout.activity import ObservedSearch
+
     how = mode()
-    return make_real() if how == "off" else RecordingSearchClient(make_real, how)
+    return ObservedSearch(make_real() if how == "off" else RecordingSearchClient(make_real, how))
