@@ -38,3 +38,21 @@ The only ways a fact becomes official (approve, reject, type a correction, answe
 - No snooze, no batch sealing on first view.
 - Contradictions cover locations only for now.
 - Approving uses the claim's stored view; multi-source reconciled views beyond career steps are not computed yet.
+
+## The desk settles the easy questions itself (2026-10-22)
+The owner: "we should questions that matter, easy and silly questions should be caught and settled and handled by the
+desk". Of 48 questions waiting that day, 45 were settled by rule (`api/settle.py`), each sealed by "desk" with its
+reason, so it stays on record:
+- **Same stint, or two?** The same title at the same company, in periods that overlap or follow on within a month, is
+  one job written twice (a profile splits one job at a renewal): joined over its whole span. A gap, or another title,
+  is still asked. Joining by hand now also keeps the whole span (it used to keep the older step's dates only).
+- **Same company?** Merged when the names are one name written differently (spaces, accents, legal form such as
+  S.p.A., a country tag, a plural), or one is a part or a renamed form of the other (a department, lab, experiment,
+  "verschmolzen mit"); the parent's name stands. Kept apart, not asked, when they only share a website (gov.uk
+  carries every UK department, a university's site its labs, a group's its brands), when either is a club, society or
+  studentship, or when the name is not like any of the company's names. The rest is asked (KPMG / KPMG Avocats).
+- **Other names from a profile** are kept only when they start as the company's own name does: profiles also list
+  places, nicknames and parent bodies ("toro", "virginia", "University of Oxford" for a college), and an alias decides
+  where every later CV is filed. 1,378 such names were removed.
+
+match-eval after settling: no moves on the three roles, the owner's labels 4/4.

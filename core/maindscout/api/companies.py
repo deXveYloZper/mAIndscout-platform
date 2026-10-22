@@ -88,6 +88,8 @@ def learn_keys(session: Session, company: Company, *, exa_id: str | None = None,
             setattr(company, key, value)
     for name in aliases:
         parsed = names.normalize(name)
+        if not alias_fits(company.normalized, parsed.normalized):
+            continue  # a profile's loose "other names" ("toro", "virginia", "university of oxford" for a college)
         if parsed.kind == "company" and parsed.normalized and session.get(CompanyAlias, parsed.normalized) is None:
             session.add(CompanyAlias(normalized=parsed.normalized, company_id=company.id, source="profile"))
             session.flush()
@@ -97,17 +99,31 @@ def learn_keys(session: Session, company: Company, *, exa_id: str | None = None,
     return clash
 
 
+def alias_fits(name: str, alias: str) -> bool:
+    """Another name from a profile is kept only when it starts as the company's own name does ("telespazio vega uk"
+    for Telespazio UK, "the university of cambridge" for the University of Cambridge): a profile's other names also
+    hold places, nicknames and parent bodies, and an alias decides which company every later CV is filed under."""
+    def first(text: str) -> str | None:
+        words = [w for w in text.split() if w != "the"]
+        return words[0] if words else None
+    return bool(alias) and first(alias) is not None and first(alias) == first(name or "")
+
+
 def _same_card(session: Session, company: Company, other: Company, org_id: uuid.UUID, subject_id: uuid.UUID | None,
                why: str | None = None) -> None:
     if session.scalar(select(Decision.id).where(Decision.org_id == org_id, Decision.type == "company_same",
                                                 Decision.sealed_at.is_(None), Decision.subject_id == company.id,
                                                 Decision.context["existing"]["id"].astext == str(other.id)).limit(1)):
         return
-    session.add(Decision(org_id=org_id, type="company_same", priority=30, subject_type="company", subject_id=company.id,
-                         context={"question": "same company?", "new": {"id": str(company.id), "name": company.name},
-                                  "existing": {"id": str(other.id), "name": other.name},
-                                  "candidate_id": str(subject_id) if subject_id else None, **({"why": why} if why else {})}))
+    card = Decision(org_id=org_id, type="company_same", priority=30, subject_type="company", subject_id=company.id,
+                    context={"question": "same company?", "new": {"id": str(company.id), "name": company.name},
+                             "existing": {"id": str(other.id), "name": other.name},
+                             "candidate_id": str(subject_id) if subject_id else None, **({"why": why} if why else {})})
+    session.add(card)
     session.flush()
+    from maindscout.api import settle
+
+    settle.settle(session, card)  # an easy one is settled by the desk, never asked (owner, 2026-10-22)
 
 
 def resolve(session: Session, raw_name: str, source: str, org_id: uuid.UUID | None = None,
@@ -164,13 +180,17 @@ def _suggest_duplicates(session: Session, company: Company, org_id: uuid.UUID, s
             other = canonical(session, session.get(Company, alias.company_id))
             if other is None or other.id == company.id:
                 continue
-            session.add(Decision(org_id=org_id, type="company_same", priority=30, subject_type="company",
-                                 subject_id=company.id, context={
-                                     "question": "same company?",
-                                     "new": {"id": str(company.id), "name": company.name},
-                                     "existing": {"id": str(other.id), "name": other.name},
-                                     "candidate_id": str(subject_id)}))
+            card = Decision(org_id=org_id, type="company_same", priority=30, subject_type="company",
+                            subject_id=company.id, context={
+                                "question": "same company?",
+                                "new": {"id": str(company.id), "name": company.name},
+                                "existing": {"id": str(other.id), "name": other.name},
+                                "candidate_id": str(subject_id)})
+            session.add(card)
             session.flush()
+            from maindscout.api import settle
+
+            settle.settle(session, card)
             return
 
 

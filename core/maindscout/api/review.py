@@ -322,6 +322,9 @@ def resolve_decision(session: Session, org_id: uuid.UUID, decision_id: uuid.UUID
             for ev in session.scalars(select(Evidence).where(Evidence.claim_id == newer.id)):
                 ev.claim_id = older.id
             newer.status, newer.superseded_by = "superseded", older.id
+            starts = [d for d in (older.valid_from, newer.valid_from) if d is not None]
+            older.valid_from = min(starts) if starts else None  # one job: its whole span (2026-10-22)
+            older.valid_to = None if None in (older.valid_to, newer.valid_to) else max(older.valid_to, newer.valid_to)
             writer.set_flags(session, older, {k: v for k, v in older.flags.items() if k != "possible_duplicate_stint"})
         elif action == "two":
             for claim in (left, right):

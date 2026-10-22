@@ -32,3 +32,21 @@ The intelligence track ([plan](../../intelligence/PLAN.md)) needs companies as t
 - No company facts yet (domain, stage, funding, size): phase I2.
 - Different offices of one firm written with a city ("KPMG Moscow", "KPMG Toronto") stay separate companies unless a human merges them.
 - 2026-10-06: a "Same company?" card can be handed to the person ("Not sure: ask them on the call"): it becomes a Brief question (kind `company`, kept until answered); a yes merges the companies, a no keeps them apart and is recorded on the card's resolution.
+
+## The desk settles the easy questions itself (2026-10-22)
+The owner: "we should questions that matter, easy and silly questions should be caught and settled and handled by the
+desk". Of 48 questions waiting that day, 45 were settled by rule (`api/settle.py`), each sealed by "desk" with its
+reason, so it stays on record:
+- **Same stint, or two?** The same title at the same company, in periods that overlap or follow on within a month, is
+  one job written twice (a profile splits one job at a renewal): joined over its whole span. A gap, or another title,
+  is still asked. Joining by hand now also keeps the whole span (it used to keep the older step's dates only).
+- **Same company?** Merged when the names are one name written differently (spaces, accents, legal form such as
+  S.p.A., a country tag, a plural), or one is a part or a renamed form of the other (a department, lab, experiment,
+  "verschmolzen mit"); the parent's name stands. Kept apart, not asked, when they only share a website (gov.uk
+  carries every UK department, a university's site its labs, a group's its brands), when either is a club, society or
+  studentship, or when the name is not like any of the company's names. The rest is asked (KPMG / KPMG Avocats).
+- **Other names from a profile** are kept only when they start as the company's own name does: profiles also list
+  places, nicknames and parent bodies ("toro", "virginia", "University of Oxford" for a college), and an alias decides
+  where every later CV is filed. 1,378 such names were removed.
+
+match-eval after settling: no moves on the three roles, the owner's labels 4/4.

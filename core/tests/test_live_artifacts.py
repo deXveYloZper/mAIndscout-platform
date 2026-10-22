@@ -72,7 +72,15 @@ def test_each_cv_is_a_person_with_a_history_and_defensible_evidence(world, path)
         assert session.scalars(select(Decision).where(Decision.subject_id == result.subject_id)).all(), "a card for a person"
         return
     claims = list(session.scalars(select(Claim).where(Claim.subject_id == result.subject_id)))
-    assert {c.status for c in claims} == {"proposed"}, "nothing is believed before a human acts"
+    # Nothing is believed before a human acts; the one thing the desk does by itself is join one job written twice
+    # (the same title at the same company, back to back), and the joined step stays proposed.
+    joined = {c.id for c in claims if c.status == "superseded"}
+    assert {c.status for c in claims if c.id not in joined} == {"proposed"}, "nothing is believed before a human acts"
+    for c in claims:
+        if c.id in joined:
+            keep = session.get(Claim, c.superseded_by)
+            assert c.claim_type == keep.claim_type == "CareerStepClaim" and keep.status == "proposed"
+            assert c.payload.get("title_raw") == keep.payload.get("title_raw")
     assert any(c.claim_type == "CareerStepClaim" for c in claims)
     has_name = any(c.claim_type == "IdentityClaim" for c in claims)
     notes = session.scalars(select(Decision).where(Decision.subject_id == result.subject_id, Decision.type == "identity_note")).all()

@@ -287,7 +287,10 @@ def _flag_careers(session: Session, org_id, candidate_id, run: IntelligenceRun, 
                     {"company": claim.payload["company"]["raw_name"], "question": "same stint, or two?"},
                     [("option", claim.id), ("option", other.id)],
                 )
-                decisions.append(decision.id)
+                from maindscout.api import settle
+
+                if not settle.settle(session, decision):  # one job written twice: joined by the desk (2026-10-22)
+                    decisions.append(decision.id)
     # Different companies, genuinely overlapping employment: a flag on both, never a merge.
     partners: dict[str, list[str]] = {}
     for a, b in stints.concurrent_pairs([_step(c) for c in careers]):
