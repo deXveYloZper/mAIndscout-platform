@@ -21,6 +21,8 @@ class FakeResearch:
         self.data, self.calls = {"companies": companies_}, []
 
     def search_json(self, system, user, schema, name):
+        if name == "talent_pools":
+            return {"business_lines": [], "pools": []}, VISITED, {"model": self.model, "usd": 0.1}
         self.calls.append((name, user))
         return self.data, VISITED, {"model": self.model, "usd": 0.21, "sources": 9}
 
@@ -70,6 +72,8 @@ def test_research_goes_deeper_told_what_is_known_and_upgrades_a_listed_company(s
 
     class Rounds(FakeResearch):
         def search_json(self, system, user, schema, name):
+            if name == "talent_pools":
+                return {"business_lines": [], "pools": []}, VISITED, {"usd": 0.1}  # no map: the plain rounds
             self.calls.append((name, user))
             return {"companies": rounds[len(self.calls) - 1]}, VISITED, {"usd": 0.2}
 

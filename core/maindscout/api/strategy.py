@@ -288,12 +288,40 @@ def competitors(session: Session, org_id: uuid.UUID, job: Job, company: Company,
     usd = 0.0
     named: list[str] = []
     lines: list[str] = []
-    for angle in engine.ANGLES:
+    where = [geo.name_of(c) for c in countries]
+    # The talent map first (owner, 2026-10-23: "Luxury is Luxury"): where people for this role work, across industries.
+    talent: list[dict[str, Any]] = []
+    try:
+        costs.ensure_budget(session, org_id)
+        mapped = engine.pools(company.name, about, where, researcher, role)
+        costs.record(session, org_id, "sourcing_talent_pools", mapped.cost, subject_type="job", subject_id=job.id, task_id=task_id)
+        usd += float(mapped.cost.get("usd") or 0)
+        lines, talent = mapped.lines, mapped.pools
+        if talent:
+            activity.step(f"Talent map for {company.name}: {len(talent)} pools ({'; '.join(t['name'] for t in talent)})",
+                          {"business_lines": lines, "pools": talent}, org_id=org_id, job_id=job.id)
+    except costs.BudgetExceeded:
+        raise
+    except Exception as exc:  # no map: the competitor rounds alone, as before
+        activity.error("The talent map could not be made: the competitor rounds go on alone", exc, org_id=org_id, job_id=job.id)
+    # The client's own competitors first, then each pool, then a deeper round for every pool that was still giving.
+    plan: list[tuple[dict[str, Any] | None, str | None, bool]] = [(None, None, False)]
+    if talent:
+        plan += [(t, None, False) for t in talent] + [(t, None, True) for t in talent]
+    else:
+        plan += [(None, a, False) for a in engine.ANGLES[1:]]
+    gave: dict[str, int] = {}
+    for pool, angle, deeper in plan:
+        if rounds >= MAX_RESEARCH_CALLS:
+            break
+        if pool is not None and deeper and gave.get(pool["name"], 0) < ENOUGH_NEW:
+            continue  # this pool gave little the first time: no deeper round
         rounds += 1
         costs.ensure_budget(session, org_id)
         # the first round may name a listed company (it becomes a competitor); later rounds are told everything known
-        outcome = engine.read(company.name, about, [geo.name_of(c) for c in countries], researcher,
-                              known=[*named, *(known or [])] if rounds > 1 else None, angle=angle, role=role)
+        outcome = engine.read(company.name, about, where, researcher,
+                              known=[*named, *(known or [])] if rounds > 1 else None,
+                              angle=engine.pool_angle(pool, deeper) if pool else angle, role=role)
         lines = lines or outcome.lines
         costs.record(session, org_id, "sourcing_competitors", outcome.cost, subject_type="job", subject_id=job.id, task_id=task_id)
         found_n += len(outcome.companies) + len(outcome.rejected)
@@ -317,18 +345,25 @@ def competitors(session: Session, org_id: uuid.UUID, job: Job, company: Company,
             if size and staff and size >= BIG_PEER * staff:
                 bigger.append(f"{found.name} ({size:,})")
                 continue
-            kind = "where such people work" if (c.line or "").lower() == "talent" else "competitor"
-            why = [f"{kind}{f' ({c.line})' if c.line and c.line.lower() != 'talent' else ''}: {c.why}" if c.why else kind,
-                   f"research: {_short_host(c.source_url)}"]
+            if pool is not None:
+                kind = f"talent pool ({pool['name']})"
+            else:
+                kind = "where such people work" if (c.line or "").lower() == "talent" else "competitor"
+                kind += f" ({c.line})" if c.line and c.line.lower() != "talent" else ""
+            why = [f"{kind}: {c.why}" if c.why else kind, f"research: {_short_host(c.source_url)}"]
             if str(found.id) in have:
                 upgrade.setdefault(str(found.id), why)  # already listed (a company search found it too)
                 continue
             have.add(str(found.id))
-            out.append(_target(found, "competitor", why, "research"))
-        if len(out) + len(upgrade) - before < ENOUGH_NEW:
-            break
+            out.append({**_target(found, "competitor", why, "research"), "pool": pool["name"] if pool else None})
+        added = len(out) + len(upgrade) - before
+        if pool is not None:
+            gave[pool["name"]] = added
+        elif not talent and added < ENOUGH_NEW:
+            break  # no map: the old rounds, until one adds little
     report = {"found": found_n, "kept": len(out) + len(upgrade), "much_bigger": bigger, "refused": refused, "pages": pages,
-              "rounds": rounds, "usd": round(usd, 4), "lines": lines, "role": role}
+              "rounds": rounds, "usd": round(usd, 4), "lines": lines, "role": role,
+              "pools": [{"name": t["name"], "why": t["why"], "kept": sum(1 for o in out if o.get("pool") == t["name"])} for t in talent]}
     activity.step(f"Competitor research for {company.name}: {report['kept']} kept of {found_n} found in {rounds} rounds; "
                   f"{len(bigger)} left out as far bigger, {len(refused)} refused",
                   {"business_lines": lines, "kept": [t["name"] for t in out], "much_bigger": bigger, "refused": refused,
@@ -356,7 +391,9 @@ def _role_words(session: Session, job: Job, spec: str | None) -> str:
                                  f"industries: {', '.join(dict.fromkeys(d for d in domains if d))}" if domains else None] if x)
 
 
+RESEARCHED = ("competitor", "named", "manual")  # placed by research or by a person: no word check on what they are
 ENOUGH_NEW = 3  # a research round adding fewer new competitors than this is the last
+MAX_RESEARCH_CALLS = 16  # the talent map's web research rounds per build, at most (about $0.15 each)
 AUTO_TIERS = {"peer", "large_peer", "snowball"}  # listed by the desk's own searches, never placed by a person
 
 
@@ -806,6 +843,7 @@ def next_searches(session: Session, job: Job, p: SourcingPlan, releasing: set[st
                       and not limits.get(t["company_id"])),
                      key=lambda t: (not t.get("pinned"), t["company_id"] not in releasing, group_of(t), order.get(t.get("tier"), 9)))
     now = _now()
+    queue: list[tuple[dict[str, Any], Company | None, list[str], bool]] = []
     out: list[dict[str, Any]] = []
     used = 0
     countries = set(p.countries or [])
@@ -821,7 +859,10 @@ def next_searches(session: Session, job: Job, p: SourcingPlan, releasing: set[st
             continue  # the hiring profile says not from here
         company = session.get(Company, uuid.UUID(t["company_id"]))
         mine = t.get("tier") in ("named", "manual")  # a company the owner or hiring manager named is always searched
-        if not t.get("pinned") and not fit(session, company, countries, avoid_kinds, lux, None if mine else staff, wide)["searched"]:
+        # A company the research found is luxury by that research: Exa's own words ("super sports cars") never overrule
+        # it (Lamborghini, Pagani and McLaren were left out as "not a luxury company", 2026-10-23).
+        if not t.get("pinned") and not fit(session, company, countries, avoid_kinds, lux and t.get("tier") not in RESEARCHED,
+                                           None if mine else staff, wide)["searched"]:
             continue  # shut down, its team works only outside the role's countries, or a kind the profile does not want
         if s and s["exhausted"]:
             last = datetime.fromisoformat(s["last_run_at"]) if s["last_run_at"] else None
@@ -836,10 +877,17 @@ def next_searches(session: Session, job: Job, p: SourcingPlan, releasing: set[st
             pending.append(text)
         if not pending:
             continue
+        queue.append((t, company, pending, not (s or {}).get("texts")))
+    # Wide before deep (2026-10-23: the budget went on four titles at a few houses and 13 researched competitors were
+    # never reached): while some company has never been searched, each gets its first search, one per company; the
+    # other titles follow once every company has had one.
+    fresh = [q for q in queue if q[3]]
+    wide_first = bool(fresh)
+    for t, company, pending, _ in (fresh if wide_first else queue):
         used += 1
-        if used > r["batch"]:
+        if used > (autosource.MAX_WEB_QUERIES_PER_RUN if wide_first else r["batch"]):
             break
-        for text in pending:
+        for text in (pending[:1] if wide_first else pending):
             out.append({"text": text, "target": t["name"], "company_id": t["company_id"], "tier": t.get("tier"),
                         "group": group_of(t), "country": t.get("country") or (p.countries[0] if p.countries else None),
                         "results": results_for(company, r)})

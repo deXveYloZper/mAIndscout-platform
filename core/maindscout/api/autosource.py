@@ -717,7 +717,8 @@ def _page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "
                 "progress": {k: v for k, v in (state.get(t.get("company_id") or "") or {}).items() if k not in ("texts", "recent")} or None,
                 "fit": ({"searched": False, "why": "the hiring profile says not to recruit from here"}
                         if (t.get("company_id") or "") in avoid_ids else
-                        strategy.fit(session, profiles_by_id.get(t.get("company_id") or ""), set(p.countries or []), avoid_kinds, lux,
+                        strategy.fit(session, profiles_by_id.get(t.get("company_id") or ""), set(p.countries or []), avoid_kinds,
+                                     lux and t.get("tier") not in strategy.RESEARCHED,
                                      None if t.get("tier") in ("named", "manual") else client_staff, "C" in (p.open_tiers or []))),
                 "profile": company_profiles.summary(profiles_by_id.get(t.get("company_id") or ""))}
                for t in p.targets]

@@ -177,3 +177,21 @@ The owner uploaded a CRM role for Ferrari: its list was the last role's fashion 
   or must-haves makes a CRM role ("CRM specialist", "CRM manager", "Salesforce administrator", "CRM analyst"; broad
   search "CRM" at a small company), never the family's defaults ("account manager"); a rebuild drops titles that were
   only a family's defaults. A CRM in a marketer's nice-to-have list is scope, not a CRM role.
+
+## The talent map (2026-10-23)
+The owner: "Pomellato was not even in our list ... Luxury is Luxury ... we need to ensure that Exa does not rule out our
+hard work". The research now starts with one call for the client's lines of business and the role's **talent pools**:
+its direct competitors and every industry serving the same customers at the same level (for a luxury client: luxury
+cars, fashion and leather goods, jewellery and watches, beauty, hospitality, e-commerce), six to ten pools with
+examples. Each pool gets its own research round; a pool that gave three or more new companies gets a deeper round
+(smaller, less obvious names). At most 16 rounds per build (about $2). Each company keeps its pool; the tab and the
+activity log show the pools. Without a map (no answer), the old rounds run as before.
+
+**Exa confirms, never judges, a researched company.** A company the research or a person placed is never left out by
+Exa's own words: Lamborghini, Pagani, McLaren and Dallara had been "not a luxury company" because Exa calls them "super
+sports cars" and "hypercars". Exa still supplies size and team; far bigger than the client, or no team in the role's
+countries, still leaves a company out.
+
+**Wide before deep.** While a company on the list has never been searched, each gets its first search, one per company,
+up to 8 per run; other titles follow once all had one (13 of Ferrari's 37 competitors had never been reached when its
+budget ran out, after four titles at each of the first houses).

@@ -80,6 +80,66 @@ def _names_it(name: str, quote: str) -> bool:
     return n in q or any(w in q for w in own)
 
 
+# The talent map (owner, 2026-10-23: "our understanding of Ferrari, apart from its competitors but also pool of
+# companies we should find, is thin ... Luxury is Luxury"): first the pools of companies where the people for this
+# role work, across industries; then each pool is researched in rounds of its own.
+POOLS_SCHEMA: dict[str, Any] = {
+    "type": "object", "additionalProperties": False, "required": ["business_lines", "pools"],
+    "properties": {
+        "business_lines": {"type": "array", "items": {"type": "string"},
+                           "description": "every line of business the company has today, each in a few words"},
+        "pools": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False, "required": ["name", "why", "examples"],
+            "properties": {
+                "name": {"type": "string", "description": "the pool in a few words, e.g. 'luxury jewellery and watches'"},
+                "why": {"type": "string", "description": "why people for this role are found there"},
+                "examples": {"type": "array", "items": {"type": "string"}, "description": "three to six real company names"}}}}}}
+
+POOLS_SYSTEM = (
+    "You plan where a recruiter should look for people for a role. First establish every line of business the hiring "
+    "company has today, including recent ones (a carmaker that also sells fashion and lifestyle goods). Then list the "
+    "pools of companies where people who could do this role work: the client's direct competitors for each line, and "
+    "every other industry whose companies serve the same kind of customer at the same level, with the same kind of "
+    "work. Positioning carries across industries: for a luxury brand, luxury in every industry is a pool (luxury cars, "
+    "luxury fashion and leather goods, luxury jewellery and watches, luxury beauty and fragrance, luxury hospitality, "
+    "luxury e-commerce and retail); for a deep-tech start-up, deep-tech companies of every kind. Six to ten pools, most "
+    "relevant first, each with why and three to six real example companies. Search the web to know the company well. "
+    "Never research or name any person.")
+
+
+@dataclass
+class Pools:
+    lines: list[str] = field(default_factory=list)
+    pools: list[dict[str, Any]] = field(default_factory=list)
+    cost: dict[str, Any] = field(default_factory=dict)
+
+
+def pools(client_name: str, about: str, countries: list[str], client: SearchClient, role: str | None = None) -> Pools:
+    """The client's lines of business and the role's talent pools (one web search call)."""
+    where = ", ".join(countries) or "its markets"
+    user = (f"Company: {client_name}\nWhat we know about it: {about or 'nothing more'}\n"
+            + (f"The role we are filling: {role}\n" if role else "")
+            + f"The people must live in: {where}.")
+    data, _visited, cost = client.search_json(POOLS_SYSTEM, user, POOLS_SCHEMA, "talent_pools")
+    found = []
+    for raw in (data.get("pools") or [])[:10]:
+        name = (raw.get("name") or "").strip()
+        if name:
+            found.append({"name": name[:80], "why": (raw.get("why") or "").strip()[:200],
+                          "examples": [str(e)[:60] for e in (raw.get("examples") or [])][:6]})
+    return Pools([str(x)[:80] for x in data.get("business_lines") or []][:12], found, cost)
+
+
+def pool_angle(pool: dict[str, Any], deeper: bool) -> str:
+    """One pool's round: only its companies; a deeper round asks for the smaller and less obvious names."""
+    text = (f"Only this pool: {pool['name']} ({pool['why']}). List every company in it with people in the places "
+            f"given, as many as the market has, e.g. {', '.join(pool['examples'][:4])}; mark each with line "
+            f"'{pool['name']}'.")
+    if deeper:
+        text += " Look further: smaller, younger and less obvious names in this pool, not the best known."
+    return text
+
+
 # A deeper round asks again, told what is already known, from another side of the market (owner, 2026-10-21: "we
 # should however search harder from extended list of competitors").
 ANGLES = [None,
