@@ -16,7 +16,7 @@ from maindscout.intelligence import competitors as engine
 from maindscout.intelligence.extract import _ABOUT_THE_AD
 from maindscout.intelligence.llm import LLMResult
 from tests.test_api import client, fake, make_job  # noqa: F401 (fixtures)
-from tests.test_autosource import FakeExa, job  # noqa: F401
+from tests.test_autosource import FakeExa, blobs, job  # noqa: F401
 from tests.test_competitors import VISITED, FakeResearch, rival
 
 
@@ -232,3 +232,39 @@ def test_years_for_a_mid_role_and_the_side_of_the_company():
     assert m.band == "do_not_submit" and "too senior" in m.reason, m.reason
     assert matching.same_side("customer_success", "marketing") and not matching.same_side("customer_success", "it_support")
     assert matching.same_side("customer_success", None) and matching.same_side("customer_success", "other")
+
+
+def test_clearly_out_from_a_public_profile_is_not_read_and_kept_for_another_role():
+    from datetime import date
+
+    from maindscout.domain import matching
+    from maindscout.domain.profile import Stint
+
+    def st(title, years_ago, end=None):
+        return Stint("s", "Testmoda", title, date(date.today().year - years_ago, 1, 1), end)
+    crm = {"specialism": "crm", "level": "mid", "has_cv": False}
+    m = matching.match([], [], None, [st("Store Manager", 3)], ("review_later", "x"), client=crm)
+    assert m.band == "do_not_submit" and m.reason.startswith("match:unlikely:not read: no title"), m.reason
+    m = matching.match([], [], None, [st("CRM Specialist", 9)], ("review_later", "x"), client=crm)
+    assert m.reason.startswith("match:unlikely:not read: 9 years"), m.reason
+    m = matching.match([], [], None, [st("Stagista CRM", 9, date(date.today().year - 8, 1, 1)), st("Client Development Specialist", 4)],
+                       ("review_later", "x"), client=crm)
+    assert m.tier == "unclear", "an internship does not count, and client development is CRM work: read it"
+    assert matching.match([], [], None, [st("Store Manager", 3)], ("review_later", "x"), client={**crm, "has_cv": True}).tier == "unclear", \
+        "a CV is always read"
+    assert specialism.of_role(["Marketing Manager", "high sensitivity to luxury customer experience"]) is None, \
+        "an ad's 'customer experience' is no CRM role"
+
+
+def test_an_unread_person_in_the_pool_is_found_and_read_by_a_role_that_wants_them(session, job, blobs):
+    from maindscout.api import autosource, discovery
+    from maindscout.intelligence import exa
+    from tests.test_phase1b import profile
+
+    raw = profile("crm-later-demo", "Una Testperson", "Client Development Specialist", "Milan, Lombardy, Italy", "IT",
+                  [("Client Development Specialist", "Testmoda", "Jan 2022", "Present", "2022-01-01", None)])
+    found = exa.parse({"results": [raw]}, "q", "people").found[0]
+    cid, _ = discovery.add(session, blobs, job.org_id, found, [])
+    _crm_role(session, job)
+    p = autosource.plan(session, job.org_id, job.id)
+    assert cid in autosource.unread_wanted(session, job.org_id, job, p), "unread, and the title says CRM work"

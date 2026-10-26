@@ -432,6 +432,18 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
             report["pool"]["strong"] += strong
     except sourcing.SourcingError:
         pass
+    # 1b. People in the pool never read (clearly out for the role that found them): those this role may want, by a
+    # recent title that says its specialist work or a job at one of its companies, are put on it and read now.
+    from maindscout.api import profiles as profiles_mod
+
+    unread = unread_wanted(session, org_id, job, p)
+    for cid in unread:
+        added, strong = put_on(cid, "pool", None, new_to_desk=False)
+        report["pool"]["added"] += added
+        reason = session.scalar(select(CandidateJob.triage_reason).where(CandidateJob.job_id == job.id, CandidateJob.candidate_id == cid))
+        if added and not (reason or "").startswith("match:unlikely:not read:"):
+            profiles_mod.queue(session, org_id, cid)
+    report["pool"]["unread_read_now"] = len(unread)
 
     # 2. The web, when there is an Exa client: only searches not made in the last 30 days.
     if caller is None:
@@ -540,8 +552,20 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
             report["profiles"] = {"companies": len(done_ids), "people": len(added_people)}
         except exa.ExaError as error:
             row.error = str(error)[:500]
+    # Someone clearly out from their public profile alone is not read for this role (they stay in the pool, unread,
+    # and are read when another role's search wants them): 98% of Ferrari's ruled-out people had been read first.
+    skipped = set(session.scalars(select(CandidateJob.candidate_id).where(
+        CandidateJob.job_id == job.id, CandidateJob.candidate_id.in_(added_people or [None]),
+        CandidateJob.triage_reason.like("match:unlikely:not read:%"))))
     for cid in added_people:
-        profiles.queue(session, org_id, cid)
+        if cid not in skipped:
+            profiles.queue(session, org_id, cid)
+    report["not_read"] = len(skipped)
+    if added_people:
+        from maindscout import activity
+
+        activity.step(f"Career readings: {len(added_people) - len(skipped)} queued, {len(skipped)} not read (clearly out "
+                      "from their public profile)", org_id=org_id, job_id=job.id)
     # 3b. What the searched companies use, from their own job adverts (employer evidence, owner 2026-10-17): in the
     # background, once per company per 180 days; its people are matched again when it is read.
     from maindscout.api import practices
@@ -633,6 +657,40 @@ def _follow_up(session: Session, track: dict[str, Any]) -> dict[str, Any]:
             "drafted": bool(child is not None and child.status in ("draft", "in_mailbox")),
             "draft_id": str(child.id) if child is not None and child.status in ("draft", "in_mailbox") else None,
             "sent_at": child.sent_at.isoformat() if child is not None and child.sent_at else track.get("followed_up_at")}
+
+
+UNREAD_LOOK = 300  # unread pool people looked at per run
+
+
+def unread_wanted(session: Session, org_id: uuid.UUID, job: Job, p: SourcingPlan) -> list[uuid.UUID]:
+    """People in the pool with no career reading yet (another role passed on them unread) whom this role may want: a
+    title in the last 3 years that says its specialist work, or a job, now or in the last 3 years, at one of its listed
+    companies. Not yet on the role."""
+    from datetime import timedelta
+
+    from maindscout.api.process import client_context
+    from maindscout.db.models import CareerProfile
+    from maindscout.domain import specialism
+
+    spec = client_context(session, job)["specialism"]
+    targets = {t["company_id"] for t in p.targets if t.get("company_id") and not t.get("removed")}
+    if not spec and not targets:
+        return []
+    since = _now().date() - timedelta(days=3 * 365)
+    read = select(CareerProfile.candidate_id).where(CareerProfile.org_id == org_id)
+    on_role = select(CandidateJob.candidate_id).where(CandidateJob.job_id == job.id)
+    out: dict[uuid.UUID, None] = {}
+    for c in session.scalars(select(Claim).join(Candidate, Candidate.id == Claim.subject_id).where(
+            Claim.org_id == org_id, Claim.claim_type == "CareerStepClaim", Claim.status.in_(("proposed", "approved")),
+            Candidate.archived_at.is_(None), Candidate.merged_into_id.is_(None), Candidate.do_not_contact_at.is_(None),
+            Claim.subject_id.not_in(read), Claim.subject_id.not_in(on_role),
+            (Claim.valid_to.is_(None)) | (Claim.valid_to >= since)).limit(UNREAD_LOOK * 4)):
+        pl = c.approved_view or c.payload
+        if specialism.title_says(spec, pl.get("title_raw")) or (pl.get("company") or {}).get("company_id") in targets:
+            out[c.subject_id] = None
+        if len(out) >= UNREAD_LOOK:
+            break
+    return list(out)
 
 
 def list_built(session: Session, job_id: uuid.UUID) -> bool:

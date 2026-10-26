@@ -23,13 +23,14 @@ from maindscout.domain import specialism as specialism_mod
 from maindscout.domain.profile import (FAMILY_LABEL, LEVEL_RANK, NOT_EXPERIENCE, Stint, employer_years, group_of, staff_words,
                                        years_at_size)
 
-ENGINE_VERSION = "match-2026-10-23.1"  # a specialist role (CRM): a title saying that work counts as the role's field
+ENGINE_VERSION = "match-2026-10-26.1"  # a specialist role (CRM): a title saying that work counts as the role's field
 MUST = ("must", "deal_breaker")
 
 # The desk's rules, as data: id -> what it says. The order of evaluation is the order of this list.
 RULES: list[dict[str, str]] = [
     {"id": "client_block", "text": "The client said no to this person: a wall at this client until a person lifts it."},
     {"id": "distinctive_must_missing", "text": "A must-have that decides the band has no evidence: do not submit."},
+    {"id": "not_read", "text": "Clearly out for this role from the public profile alone (no title says the specialist work, or far too many years): not read, kept in the pool."},
     {"id": "too_senior", "text": "Many more years of work than the role's level: a no two years past its band, a reach one year past unless the match is excellent."},
     {"id": "distinctive_must_unproven", "text": "A must-have that decides the band is not on a public profile, but their title says the role's specialist work: possible, ask on the call."},
     {"id": "not_wanted", "text": "The person meets a requirement the hiring manager does not want."},
@@ -477,6 +478,12 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
     if hard:
         fire("wants_otherwise", "; ".join(f"{v.requirement}: {v.detail}" for v in hard))
         return Match("unlikely", "do_not_submit", f"match:unlikely:not what they want ({hard[0].requirement})", rows, fired)
+    if profile is None and not (client or {}).get("has_cv", True):
+        # Not worth a career reading for this role, from the public profile alone (owner, 2026-10-26: 1,603 of Ferrari's
+        # 1,632 ruled-out people had each been read first). They stay in the pool, unread, for another role.
+        if why := not_worth_reading(stints, client or {}):
+            fire("not_read", why)
+            return Match("unlikely", "do_not_submit", f"match:unlikely:not read: {why} (public profile)", rows, fired)
     if thin:
         fire("too_little_known", "no career profile yet" if profile is None else "the career profile is unclear")
         # Nobody is strong before their career reading (owner, 2026-10-21: "obviously, this is a real bug"): a coarse
@@ -563,6 +570,28 @@ YEARS_BAND = {"intern": (0, 1), "junior": (0, 2), "mid": (2, 5)}
 # The sides of a company, for a specialist title: CRM done in marketing, sales, client service or a boutique is the
 # business side; CRM done in IT, data or product is another department (owner, 2026-10-23).
 SIDES = {"business": {"sales", "marketing", "customer_success", "business_consulting", "retail", "hospitality"}}
+
+
+_INTERN_TITLE = re.compile(r"\b(intern|internship|stage|stagista|tirocin\w*|trainee|apprentice\w*|praktik\w*|working student|"
+                           r"werkstudent\w*|summer analyst)\b", re.I)
+
+
+def not_worth_reading(stints: list[Stint], client: dict[str, Any]) -> str | None:
+    """Why someone found on the web is clearly out for this role from their public profile alone (so they are not
+    read), or None: no title in the last 3 years says a specialist role's work, or their first real job (titles of
+    internships left out) already puts them two years past the role's band."""
+    today = date.today()
+    spec = client.get("specialism")
+    recent = [s for s in stints if s.end is None or (today - s.end).days <= 3 * 365]
+    if spec and stints and not any(specialism_mod.title_says(spec, s.title) for s in recent):
+        return f"no title in the last 3 years says {specialism_mod.broad_word(spec)} work"
+    band = YEARS_BAND.get(client.get("level") or "")
+    starts = [s.start for s in stints if s.start and not _INTERN_TITLE.search(s.title or "")]
+    if band and starts:
+        years = int((today - min(starts)).days // 365.25)
+        if years >= band[1] + 2:
+            return f"{years} years of work, for a {client.get('level')} role"
+    return None
 
 
 def same_side(want: str | None, main: str | None) -> bool:
