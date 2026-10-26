@@ -28,6 +28,7 @@ ACTIONS: dict[tuple[str, str], str] = {
     ("POST", "/v1/jobs/{}/sourcing/targets"): "Added a company to search",
     ("PATCH", "/v1/jobs/{}/sourcing/targets/{}"): "Pinned or removed a company on the list",
     ("PATCH", "/v1/jobs/{}/sourcing/plan"): "Changed how often, the target or the budget",
+    ("PUT", "/v1/jobs/{}/sourcing/focus"): "Focused or widened the search",
     ("PUT", "/v1/sourcing/settings"): "Changed the desk's sourcing settings",
     ("POST", "/v1/jobs/{}/sourcing/people/{}/evidence"): "Asked for a deeper public check on a person",
     ("POST", "/v1/jobs/{}/people/{}/decide"): "Chose or passed on a suggestion",

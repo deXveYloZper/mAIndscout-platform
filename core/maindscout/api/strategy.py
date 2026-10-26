@@ -262,7 +262,7 @@ BACKGROUND = re.compile(r"\b(experience (in|with|at|from)|background in|industry
 
 def competitors(session: Session, org_id: uuid.UUID, job: Job, company: Company, caller, researcher, have: set[str],
                 countries: list[str], task_id=None, known: list[str] | None = None,
-                upgrade: dict[str, list[str]] | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+                upgrade: dict[str, list[str]] | None = None, reader=None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """The client's competitors and similar companies, researched on the web (Grok), each confirmed by Exa: its size
     and where its team works. A company 20 or more times the client's size is left out, never searched (owner,
     2026-10-21: "we should not even bother to search companies that are way out the size range"). Deeper rounds,
@@ -291,6 +291,7 @@ def competitors(session: Session, org_id: uuid.UUID, job: Job, company: Company,
     where = [geo.name_of(c) for c in countries]
     # The talent map first (owner, 2026-10-23: "Luxury is Luxury"): where people for this role work, across industries.
     talent: list[dict[str, Any]] = []
+    role_line: dict[str, Any] | None = None
     from maindscout.api import segments
 
     known_segments = segments.known(session)
@@ -300,6 +301,7 @@ def competitors(session: Session, org_id: uuid.UUID, job: Job, company: Company,
         costs.record(session, org_id, "sourcing_talent_pools", mapped.cost, subject_type="job", subject_id=job.id, task_id=task_id)
         usd += float(mapped.cost.get("usd") or 0)
         lines, talent = mapped.lines, mapped.pools
+        role_line = mapped.role_line
         if talent:
             activity.step(f"Talent map for {company.name}: {len(talent)} pools ({'; '.join(t['name'] for t in talent)})",
                           {"business_lines": lines, "pools": talent}, org_id=org_id, job_id=job.id)
@@ -332,6 +334,24 @@ def competitors(session: Session, org_id: uuid.UUID, job: Job, company: Company,
             n += 1
         reused[t["name"]] = n
         gave[t["name"]] = n
+    from maindscout.api import company_lines
+
+    for t in talent:  # and every known company whose lines fit the pool, by its dimensions (owner, 2026-10-26)
+        if not t.get("industry"):
+            continue
+        n = 0
+        for member in company_lines.members(session, t):
+            if str(member.id) in have or member.id == company.id or much_bigger(member, staff):
+                continue
+            named.append(member.name)
+            have.add(str(member.id))
+            fit_words = " · ".join(x for x in (t.get("positioning"), t.get("market") or t.get("industry")) if x and x != "unknown")
+            out.append({**_target(member, "competitor", [f"talent pool ({t['name']}): a known company that fits ({fit_words})"],
+                                  "company_lines"), "pool": t["name"]})
+            n += 1
+        if n:
+            reused[t["name"]] = reused.get(t["name"], 0) + n
+            gave[t["name"]] = gave.get(t["name"], 0) + n
     if reused:
         activity.step(f"Talent map: {len(reused)} pools already known, {sum(reused.values())} companies reused without research "
                       f"({'; '.join(f'{k}: {v}' for k, v in reused.items())})", org_id=org_id, job_id=job.id)
@@ -390,8 +410,19 @@ def competitors(session: Session, org_id: uuid.UUID, job: Job, company: Company,
             gave[pool["name"]] = added + (reused.get(pool["name"], 0) if not deeper else 0)
         elif not talent and added < ENOUGH_NEW:
             break  # no map: the old rounds, until one adds little
+    if reader is not None:  # the client's lines (with what its research found) and every company kept, by dimension
+        from maindscout.api import company_lines
+
+        try:
+            company_lines.classify(session, org_id, [company], reader, task_id, extra={company.id: lines}, again=True)
+            kept = [session.get(Company, uuid.UUID(o["company_id"])) for o in out if o.get("company_id")]
+            company_lines.classify(session, org_id, kept, reader, task_id)
+        except costs.BudgetExceeded:
+            raise
+        except Exception as exc:  # never lose the list for want of its descriptions
+            activity.error("Company lines could not be read: the list stands without them", exc, org_id=org_id, job_id=job.id)
     report = {"found": found_n, "kept": len(out) + len(upgrade), "much_bigger": bigger, "refused": refused, "pages": pages,
-              "rounds": rounds, "usd": round(usd, 4), "lines": lines, "role": role,
+              "rounds": rounds, "usd": round(usd, 4), "lines": lines, "role": role, "role_line": role_line,
               "pools": [{"name": t["name"], "why": t["why"], "kept": sum(1 for o in out if o.get("pool") == t["name"]),
                          "reused": reused.get(t["name"], 0)} for t in talent]}
     activity.step(f"Competitor research for {company.name}: {report['kept']} kept of {found_n} found in {rounds} rounds; "
@@ -496,7 +527,8 @@ def _peers(session: Session, org_id: uuid.UUID, job: Job, of: Company | None, ca
     return out
 
 
-def build(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, caller, actor: str, task_id=None, researcher=None) -> dict[str, Any]:
+def build(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, caller, actor: str, task_id=None, researcher=None,
+          reader=None) -> dict[str, Any]:
     """Stages 1 and 2: the talent DNA and the tiered target list, as a new plan version (paid, under $0.50)."""
     job = autosource._job(session, org_id, job_id)
     p = autosource.plan(session, org_id, job_id, actor)
@@ -542,7 +574,8 @@ def build(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, caller, actor:
     if company is not None and researcher is not None:  # step D: the client's competitors, researched (Grok, web)
         better: dict[str, list[str]] = {}
         found, research = competitors(session, org_id, job, company, caller, researcher, have, countries, task_id,
-                                      known=[t["name"] for t in targets if t.get("name") and not t.get("removed")], upgrade=better)
+                                      known=[t["name"] for t in targets if t.get("name") and not t.get("removed")], upgrade=better,
+                                      reader=reader)
         for t in targets:  # a listed company the research names is a competitor now (unless a person placed it)
             if t.get("company_id") in better and t.get("tier") in AUTO_TIERS:
                 t.update(tier="competitor", group=GROUP_OF_TIER["competitor"], why=better[t["company_id"]], source="research")
@@ -576,6 +609,8 @@ def build(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, caller, actor:
                 and words & set(re.findall(r"[a-z]+", title.lower()))):
             variants.append(title)
     changes: dict[str, Any] = {"targets": targets, "role_variants": variants[:5], "countries": countries}
+    if research and research.get("role_line"):  # the role's own line of business orders its search
+        changes["lens"] = {**(p.lens or {}), "role_line": research["role_line"]}
     if dna is not None:
         changes["dna"] = dna
     new = autosource.update_plan(session, org_id, job_id, actor, **changes)
@@ -891,15 +926,23 @@ def next_searches(session: Session, job: Job, p: SourcingPlan, releasing: set[st
     state = company_state(session, job.id, p)
     open_groups = set(p.open_tiers or ["A", "B"])
     order = {t: i for i, t in enumerate(("named", "manual", "feeder", "competitor", "release", "known", "peer", "snowball", "adjacent", "feeder_large"))}
+    from maindscout.api import company_lines
+
     countries_set = set(p.countries or [])
-    here = {t["company_id"]: people_in(session.get(Company, uuid.UUID(t["company_id"])), countries_set) or 0
-            for t in p.targets if t.get("company_id")}
-    # Within a tier, the companies with the most people in the role's countries first: a small presence is searched
-    # last, never cut by a number (2026-10-26).
+    lens = p.lens or {}
+    here: dict[str, int] = {}
+    near: dict[str, int] = {}
+    for t in p.targets:
+        if t.get("company_id"):
+            c = session.get(Company, uuid.UUID(t["company_id"]))
+            here[t["company_id"]] = people_in(c, countries_set) or 0
+            near[t["company_id"]] = company_lines.closeness(company_lines.of_company(session, c.id), lens.get("role_line")) if c else 0
+    # Within a tier: the companies closest to the role's own line first (the same market, the same positioning), then
+    # those with the most people in the role's countries. Ordering only: nobody is cut by it (2026-10-26).
     targets = sorted((t for t in p.targets if not t.get("removed") and group_of(t) in open_groups and t.get("company_id")
                       and not limits.get(t["company_id"])),
                      key=lambda t: (not t.get("pinned"), t["company_id"] not in releasing, group_of(t), order.get(t.get("tier"), 9),
-                                    -here.get(t["company_id"], 0)))
+                                    -near.get(t["company_id"], 0), -here.get(t["company_id"], 0)))
     now = _now()
     queue: list[tuple[dict[str, Any], Company | None, list[str], bool]] = []
     out: list[dict[str, Any]] = []
@@ -917,6 +960,8 @@ def next_searches(session: Session, job: Job, p: SourcingPlan, releasing: set[st
             continue  # the hiring profile says not from here
         company = session.get(Company, uuid.UUID(t["company_id"]))
         mine = t.get("tier") in ("named", "manual")  # a company the owner or hiring manager named is always searched
+        if lens.get("focus") and not (mine or t.get("pinned")) and not company_lines.in_focus(session, company, lens["focus"]):
+            continue  # the owner narrowed the search ("luxury apparel"): only companies it describes
         # A company the research found is luxury by that research: Exa's own words ("super sports cars") never overrule
         # it (Lamborghini, Pagani and McLaren were left out as "not a luxury company", 2026-10-23).
         if not t.get("pinned") and not fit(session, company, countries, avoid_kinds, lux and t.get("tier") not in RESEARCHED,

@@ -1007,6 +1007,9 @@ class SourcingPlan(Base):
     dna: Mapped[dict | None] = mapped_column(JSONB)  # the hiring company's talent DNA (phase 1b, stage 1)
     rules: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)  # batch, exhaustion and widening thresholds
     open_tiers: Mapped[list] = mapped_column(JSONB, nullable=False, default=lambda: ["A", "B"])  # A | B | C | market
+    # The role's own line of business ({industry, market, positioning, customers}: orders the search) and an optional
+    # focus the owner chose ({words, stems}: narrows it), 2026-10-26.
+    lens: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     created_by: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = _created()
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

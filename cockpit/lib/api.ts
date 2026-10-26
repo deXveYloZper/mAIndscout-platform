@@ -368,7 +368,10 @@ export type TargetProgress = { searches: number; results: number; known: number;
 export type SourcingTarget = { name: string; company_id: string; tier: string; why: string[]; source: string;
   people_on_desk: number; pinned: boolean; removed: boolean; country: string | null; website?: string; off_limits?: string | null;
   release?: ReleaseSignal | null; group: "A" | "B" | "C"; progress?: TargetProgress | null; profile?: CompanyProfile | null;
-  fit?: { searched: boolean; why: string | null } };
+  fit?: { searched: boolean; why: string | null }; lines?: CompanyLine[] };
+
+/** One line of business of a company, along its dimensions (2026-10-26). */
+export type CompanyLine = { line: string; industry: string; market: string; positioning: string; customers: string };
 
 export type TalentDna = { at: string; people: number; cost_usd: number;
   company: { id: string; name: string; employees: number | null; team_countries: { country: string; pct: number | null }[] | null };
@@ -426,7 +429,8 @@ export type SourcingPage = {
   job_id: string; title: string; state: string;
   plan: { version: number; mode: SourcingMode; target: number; monthly_budget_usd: number; role_variants: string[]; countries: string[];
     targets: SourcingTarget[]; changed_by: string; changed_at: string | null; dna: TalentDna | null;
-    rules: Record<string, number>; open_tiers: string[] };
+    rules: Record<string, number>; open_tiers: string[];
+    lens?: { role_line?: (Partial<CompanyLine> & { line?: string }) | null; focus?: { words: string; stems: string[] } | null } };
   hiring: { name: string; stage?: string | null; domains?: string[]; kind?: string | null; team?: string; hq?: string } | null;
   budget: { role_spent_usd: number; role_budget_usd: number; desk_spent_usd: number; desk_budget_usd: number };
   strong_waiting: number; web_ready: boolean; running: boolean; building: boolean; widening: Widening | null;

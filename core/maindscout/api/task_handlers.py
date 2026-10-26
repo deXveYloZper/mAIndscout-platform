@@ -152,7 +152,8 @@ def sourcing_strategy(session: Session, task: Task) -> dict[str, Any]:
     else:
         try:
             out = strategy.build(session, task.org_id, uuid.UUID(task.payload["job_id"]), caller,
-                                 task.payload.get("actor") or "system", task_id=task.id, researcher=_researcher())
+                                 task.payload.get("actor") or "system", task_id=task.id, researcher=_researcher(),
+                                 reader=_chat_client())
         except autosource.SourcingEngineError as error:
             out = {"status": "skipped", "reason": str(error)}
     if task.payload.get("then_search"):  # "Search now" on a role whose list was never built: the search follows

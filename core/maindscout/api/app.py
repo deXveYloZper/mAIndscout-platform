@@ -742,6 +742,25 @@ def change_sourcing_plan(job_id: uuid.UUID, body: PlanBody, org_id: uuid.UUID = 
     return out
 
 
+class FocusBody(BaseModel):
+    words: str | None = None
+
+
+@app.put("/v1/jobs/{job_id}/sourcing/focus")
+def change_sourcing_focus(job_id: uuid.UUID, body: FocusBody, org_id: uuid.UUID = Depends(get_org),
+                          session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Narrow the search to companies the words describe ("luxury apparel"), or widen it again (no words)."""
+    from maindscout.api import autosource
+
+    try:
+        autosource.set_focus(session, org_id, job_id, body.words, actor)
+    except autosource.SourcingEngineError as error:
+        raise HTTPException(422, str(error)) from error
+    out = autosource.page(session, org_id, job_id, actor)
+    session.commit()
+    return out
+
+
 class TargetBody(BaseModel):
     name: str
 

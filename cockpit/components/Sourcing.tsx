@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { Pin, PinOff, Radar, Undo2, X } from "lucide-react";
-import { addSourcingTarget, buildStrategy, changeSourcingTarget, checkDeeper, draftLinkedIn, runSourcingNow, setSourcingMode,
-  setSourcingPlan, widenSourcing } from "@/app/actions";
+import { addSourcingTarget, buildStrategy, changeSourcingTarget, checkDeeper, draftLinkedIn, runSourcingNow, setSourcingFocus,
+  setSourcingMode, setSourcingPlan, widenSourcing, widenSourcingFocus } from "@/app/actions";
 import { Refresh } from "@/components/CallsClient";
 import { QuickLinks, Triage } from "@/components/Outreach";
-import { AddTarget, OneClick, PlanSettings, PlanWords } from "@/components/SourcingForms";
+import { AddTarget, FocusForm, OneClick, PlanSettings, PlanWords } from "@/components/SourcingForms";
 import type { CardKeys, CompanyProfile, EvidenceCheck, SourcingMode, SourcingPage, SourcingStats, SourcingTarget, Suggestion, TalentDna,
   Widening } from "@/lib/api";
 import { MODE_LABEL, reasonWords } from "@/lib/format";
@@ -380,6 +380,39 @@ function WideningPanel({ jobId, w }: { jobId: string; w: Widening }) {
   );
 }
 
+/** "luxury fine jewellery (consumers)": a company's line in a few words. */
+function lineWords(l: { market?: string | null; positioning?: string | null; customers?: string | null; industry?: string | null }): string {
+  const level = l.positioning && l.positioning !== "unknown" ? `${l.positioning} ` : "";
+  const who = l.customers && l.customers !== "unknown" ? ` (${l.customers})` : "";
+  return `${level}${l.market || l.industry || ""}${who}`;
+}
+
+/** The role's own line (it orders the search) and the owner's focus (it narrows it), with the way back. */
+function LensPanel({ jobId, lens }: { jobId: string; lens: SourcingPage["plan"]["lens"] }) {
+  const line = lens?.role_line;
+  const focus = lens?.focus;
+  return (
+    <div className="research">
+      {line && (line.market || line.industry) && (
+        <p className="sub"><strong>This role&apos;s line of business:</strong> {line.line ? `${line.line}: ` : ""}{lineWords(line)}.
+          {" "}Companies closest to it are searched first; nobody is left out for it.</p>
+      )}
+      {focus ? (
+        <div className="row">
+          <span className="sub"><strong>Focused on</strong> &ldquo;{focus.words}&rdquo;: only companies it describes are searched (named
+            and pinned ones always).</span>
+          <OneClick action={widenSourcingFocus.bind(null, jobId)} label="Widen again" busy="Widening…" />
+        </div>
+      ) : (
+        <>
+          <p className="hint">Searches start wide, at the level the role asks for. To reach a more specific person, focus the search:</p>
+          <FocusForm action={setSourcingFocus.bind(null, jobId, false)} />
+        </>
+      )}
+    </div>
+  );
+}
+
 function TargetRow({ jobId, t }: { jobId: string; t: SourcingTarget }) {
   const pr = t.progress;
   return (
@@ -393,6 +426,7 @@ function TargetRow({ jobId, t }: { jobId: string; t: SourcingTarget }) {
         {pr && (pr.exhausted ? <span className="chip small">exhausted</span> : null)}
         {t.fit && !t.fit.searched && <span className="blocktag" title={t.pinned ? "Pinned: searched anyway" : "Not searched"}>{t.pinned ? "searched though " : "not searched: "}{t.fit.why}</span>}
         {t.profile && <p className="hint">{facts(t.profile)}</p>}
+        {(t.lines?.length ?? 0) > 0 && <p className="hint">{t.lines!.map(lineWords).join(" · ")}</p>}
         {t.why.filter((w) => w !== TARGET_TIER[t.tier]).length > 0 && <p className="hint">{t.why.filter((w) => w !== TARGET_TIER[t.tier]).join(" · ")}</p>}
         {pr && <p className="hint">{pr.searches} {pr.searches === 1 ? "search" : "searches"} · {pr.results} found · {pr.known} already known · {pr.relevant} relevant</p>}
         {t.release && t.tier !== "release" && (
@@ -470,6 +504,8 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
       {s.widening && <WideningPanel jobId={jobId} w={s.widening} />}
 
       <Workflow jobId={jobId} s={s} since={since} />
+
+      {(live.length > 0 || p.lens?.focus) && <section className="panel"><LensPanel jobId={jobId} lens={p.lens} /></section>}
 
       <Dna jobId={jobId} dna={p.dna} building={s.building} ready={s.web_ready} note={s.strategy_note} built={live.length > 0}
            research={s.competitor_research} />

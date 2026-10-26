@@ -118,3 +118,30 @@ of its staff) had been left out by the old 5% share.
 
 **The people we know there, for free:** a role's pool step also puts on it anyone on the desk who works or worked in
 the last 3 years at one of its listed companies (read people are matched on their profile; unread ones are read).
+
+## Lines of business, along their dimensions (2026-10-26)
+The owner: "how deep does the tags go, is it just general or does it also go deeper into more specific domains?" and
+"we shouldn't start our searches from the deepest, but do have an option if we want to reach more specific person".
+Each company is described by its lines of business (`CompanyLineClaim`, public tier, one per line), each along four
+dimensions: industry (the fixed list careers are counted in), market (what it sells, as specific as its profile
+allows: "apparel", "source-to-pay software", "AI procurement automation"), positioning (luxury, premium, mainstream,
+budget; enterprise, mid-market, small business) and customers. One model call per 25 companies (about $0.009), no web
+search, read only from the company's profile (and, for a hiring company, the lines its research found); every line
+quotes the words that support it, or is dropped. `python -m maindscout company-lines [--job ID] [--all]`.
+
+**They add, order and explain, never leave a company out by default:**
+- a role's talent pools carry the same dimensions, and reuse every known company whose lines fit, for free;
+- the talent map says which line of the client the role serves (a Ferrari fashion-line role: luxury apparel, not
+  sports cars), kept on the plan's lens; within a tier the companies closest to it are searched first;
+- a role starts wide, at the level it asks for; **narrowing is the owner's choice**: a focus ("luxury apparel") on the
+  Sourcing tab searches only companies it describes (named, pinned and hand-added ones always), shown on the plan and
+  undone with "Widen again";
+- the company page shows "Where it sits in the market".
+
+The two tests (2026-10-26): Procure AI's 35 competitors split into real sub-markets (AI procurement automation and
+agents; source-to-pay and procure-to-pay suites; procurement and spend intelligence; procurement consultancies), 17
+had no profile to read. A dry run for a hypothetical Ferrari fashion-line role ($0.20, no job, nobody searched): the
+role's line read as luxury apparel and accessories; its pools put fashion first (52 known fashion houses, 43 jewellery
+and watch houses, 28 beauty houses free from what we know; a new pool for Italian luxury menswear and sportswear); one
+deeper round found Marni, The Attico, Sunnei, Fabiana Filippi, Valstar; and Ferrari now carries its fashion line
+(luxury apparel, accessories and personal luxury goods) beside its cars and racing.

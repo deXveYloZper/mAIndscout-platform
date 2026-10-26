@@ -915,6 +915,23 @@ export async function runSourcingNow(jobId: string, _: FormState): Promise<FormS
   };
 }
 
+export async function setSourcingFocus(jobId: string, widen: boolean, _: FormState, form: FormData): Promise<FormState> {
+  const words = widen ? null : String(form.get("words") || "").trim();
+  if (!widen && !words) return { error: "Write what to focus on, e.g. luxury apparel." };
+  try {
+    await api(`/v1/jobs/${jobId}/sourcing/focus`, { method: "PUT", body: JSON.stringify({ words }),
+      headers: { "Content-Type": "application/json" } });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return { message: widen ? "Widened: every company on the list is searched again." : `Focused on “${words}”.` };
+}
+
+export async function widenSourcingFocus(jobId: string, state: FormState): Promise<FormState> {
+  return setSourcingFocus(jobId, true, state, new FormData());
+}
+
 /** A page that crashed in the browser says so in the activity log (owner, 2026-10-22). Never throws. */
 export async function reportClientError(report: { message: string; stack?: string; url?: string; digest?: string }): Promise<void> {
   try {

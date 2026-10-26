@@ -97,7 +97,7 @@ def update_plan(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: s
     """A new version with the changes: mode, target, monthly_budget_usd, role_variants, countries, targets."""
     old = plan(session, org_id, job_id, actor)
     fields = {k: getattr(old, k) for k in ("mode", "target", "monthly_budget_usd", "targets", "role_variants", "countries",
-                                           "dna", "rules", "open_tiers")}
+                                           "dna", "rules", "open_tiers", "lens")}
     for key, value in changes.items():
         if key not in fields:
             raise SourcingEngineError(f"Unknown plan field {key!r}")
@@ -127,11 +127,31 @@ def update_plan(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: s
     if not 1 <= rules.get("batch", RULES["batch"]) <= 20 or not 0 <= rules.get("known_share", RULES["known_share"]) <= 1:
         raise SourcingEngineError("batch must be 1-20 companies and known_share 0-1")
     fields["rules"] = rules
+    fields["lens"] = {k: v for k, v in dict(fields["lens"] or {}).items() if k in ("role_line", "focus") and v}
     old.superseded_at = _now()
     row = SourcingPlan(org_id=org_id, job_id=job_id, version=old.version + 1, created_by=actor, **fields)
     session.add(row)
     session.flush()
     return row
+
+
+def set_focus(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, words: str | None, actor: str) -> SourcingPlan:
+    """Narrow the role's search to companies every word of the focus describes ("luxury apparel"), or widen it again
+    (no words). Named, pinned and hand-added companies are always searched. Shown on the plan (owner, 2026-10-26)."""
+    from maindscout import activity
+    from maindscout.api.company_lines import stems
+
+    p = plan(session, org_id, job_id, actor)
+    text = " ".join((words or "").split())[:80]
+    lens = {k: v for k, v in (p.lens or {}).items() if k != "focus"}
+    if text:
+        if not stems(text):
+            raise SourcingEngineError("a focus needs a word that describes companies (e.g. luxury apparel)")
+        lens["focus"] = {"words": text, "stems": sorted(stems(text))}
+    new = update_plan(session, org_id, job_id, actor, lens=lens or {"focus": None})
+    activity.step(f"Search focused on “{text}”: only companies it describes are searched (named and pinned ones always)"
+                  if text else "Search widened again: every company on the list", org_id=org_id, job_id=job_id, actor=actor)
+    return new
 
 
 def add_target(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, name: str, actor: str) -> SourcingPlan:
@@ -780,15 +800,21 @@ def _page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "
     profiles_by_id = {str(c.id): c for c in session.scalars(select(Company).where(
         Company.id.in_([uuid.UUID(t["company_id"]) for t in p.targets if t.get("company_id")] or [None])))}
     strategy.prefetch_closed(session, list(profiles_by_id.values()))  # one query for every target, not one each
+    from maindscout.api import company_lines
+
     targets = [{**t, "group": strategy.group_of(t), "off_limits": limits.get(t.get("company_id") or ""),
                 "release": signals.get(t.get("company_id") or ""),
                 "progress": {k: v for k, v in (state.get(t.get("company_id") or "") or {}).items() if k not in ("texts", "recent")} or None,
                 "fit": ({"searched": False, "why": "the hiring profile says not to recruit from here"}
                         if (t.get("company_id") or "") in avoid_ids else
+                        {"searched": False, "why": f"outside the focus “{(p.lens or {})['focus']['words']}” (widen to search it)"}
+                        if (p.lens or {}).get("focus") and t.get("tier") not in ("named", "manual") and not t.get("pinned")
+                        and not company_lines.in_focus(session, profiles_by_id.get(t.get("company_id") or ""), p.lens["focus"]) else
                         strategy.fit(session, profiles_by_id.get(t.get("company_id") or ""), set(p.countries or []), avoid_kinds,
                                      lux and t.get("tier") not in strategy.RESEARCHED,
                                      None if t.get("tier") in ("named", "manual") else client_staff, "C" in (p.open_tiers or []))),
-                "profile": company_profiles.summary(profiles_by_id.get(t.get("company_id") or ""))}
+                "profile": company_profiles.summary(profiles_by_id.get(t.get("company_id") or "")),
+                "lines": company_lines.of_company(session, uuid.UUID(t["company_id"]))[:2] if t.get("company_id") else []}
                for t in p.targets]
     hits = {h.candidate_id: h for h in session.scalars(select(SourcingHit).where(SourcingHit.job_id == job.id))}
     from maindscout.api import memo
@@ -886,7 +912,7 @@ def _page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "
         "job_id": str(job.id), "title": job.title, "state": job.state,
         "plan": {"version": p.version, "mode": p.mode, "target": p.target, "monthly_budget_usd": float(p.monthly_budget_usd),
                  "role_variants": p.role_variants, "countries": p.countries, "targets": targets,
-                 "dna": p.dna, "rules": strategy.rules(p), "open_tiers": p.open_tiers,
+                 "dna": p.dna, "rules": strategy.rules(p), "open_tiers": p.open_tiers, "lens": p.lens or {},
                  "changed_by": p.created_by, "changed_at": p.created_at.isoformat() if p.created_at else None},
         "hiring": hiring.company_summary(session, session.get(Company, job.hiring_company_id) if job.hiring_company_id else None),
         "budget": {"role_spent_usd": round(costs.sourcing_spent(session, org_id, job.id), 4),

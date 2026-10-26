@@ -83,18 +83,36 @@ def _names_it(name: str, quote: str) -> bool:
 # The talent map (owner, 2026-10-23: "our understanding of Ferrari, apart from its competitors but also pool of
 # companies we should find, is thin ... Luxury is Luxury"): first the pools of companies where the people for this
 # role work, across industries; then each pool is researched in rounds of its own.
+def _facets() -> dict[str, Any]:
+    from maindscout.intelligence.company_lines import CUSTOMERS, POSITIONING
+    from maindscout.domain.profile import DOMAINS
+
+    return {"industry": {"type": "string", "enum": DOMAINS},
+            "market": {"type": "string", "description": "what its companies sell, as specific as fits the pool; '' for any"},
+            "positioning": {"type": "string", "enum": POSITIONING},
+            "customers": {"type": "string", "enum": CUSTOMERS}}
+
+
 POOLS_SCHEMA: dict[str, Any] = {
-    "type": "object", "additionalProperties": False, "required": ["business_lines", "pools"],
+    "type": "object", "additionalProperties": False, "required": ["business_lines", "role_line", "pools"],
     "properties": {
         "business_lines": {"type": "array", "items": {"type": "string"},
                            "description": "every line of business the company has today, each in a few words"},
+        "role_line": {"type": "object", "additionalProperties": False,
+                      "required": ["line", "industry", "market", "positioning", "customers"],
+                      "properties": {"line": {"type": "string", "description": "the line of business this role serves "
+                                                                               "('the whole company' when it serves all)"},
+                                     **_facets()}},
         "pools": {"type": "array", "items": {
-            "type": "object", "additionalProperties": False, "required": ["name", "why", "examples"],
+            "type": "object", "additionalProperties": False,
+            "required": ["name", "why", "examples", "industry", "market", "positioning", "customers"],
             "properties": {
                 "name": {"type": "string", "description": "the pool in a few words, e.g. 'luxury jewellery and watches'"},
                 "why": {"type": "string", "description": "why people for this role are found there"},
-                "examples": {"type": "array", "items": {"type": "string"}, "description": "three to six real company names"}}}}}}
+                "examples": {"type": "array", "items": {"type": "string"}, "description": "three to six real company names"},
+                **_facets()}}}}}
 
+POOLS_PROMPT_VERSION = "2026-10-26.1"
 POOLS_SYSTEM = (
     "You plan where a recruiter should look for people for a role. First establish every line of business the hiring "
     "company has today, including recent ones (a carmaker that also sells fashion and lifestyle goods). Then list the "
@@ -103,8 +121,10 @@ POOLS_SYSTEM = (
     "work. Positioning carries across industries: for a luxury brand, luxury in every industry is a pool (luxury cars, "
     "luxury fashion and leather goods, luxury jewellery and watches, luxury beauty and fragrance, luxury hospitality, "
     "luxury e-commerce and retail); for a deep-tech start-up, deep-tech companies of every kind. Six to ten pools, most "
-    "relevant first, each with why and three to six real example companies. Search the web to know the company well. "
-    "Never research or name any person.")
+    "relevant first, each with why and three to six real example companies, and the industry, market, positioning and "
+    "customers its companies share (a pool as broad as the role allows: the market only as narrow as the role needs). "
+    "Say which line of business the role serves, with the same four. Search the web to know the company well. Never "
+    "research or name any person.")
 
 
 @dataclass
@@ -112,6 +132,17 @@ class Pools:
     lines: list[str] = field(default_factory=list)
     pools: list[dict[str, Any]] = field(default_factory=list)
     cost: dict[str, Any] = field(default_factory=dict)
+    role_line: dict[str, Any] | None = None  # the line of business the role serves, with its four dimensions
+
+
+def _clean_facets(raw: dict[str, Any]) -> dict[str, Any]:
+    from maindscout.domain.profile import DOMAINS
+    from maindscout.intelligence.company_lines import CUSTOMERS, POSITIONING
+
+    return {"industry": raw.get("industry") if raw.get("industry") in DOMAINS else None,
+            "market": (raw.get("market") or "").strip().lower()[:80] or None,
+            "positioning": raw.get("positioning") if raw.get("positioning") in POSITIONING else None,
+            "customers": raw.get("customers") if raw.get("customers") in CUSTOMERS else None}
 
 
 def pools(client_name: str, about: str, countries: list[str], client: SearchClient, role: str | None = None,
@@ -132,8 +163,10 @@ def pools(client_name: str, about: str, countries: list[str], client: SearchClie
         name = (raw.get("name") or "").strip()
         if name:
             found.append({"name": name[:80], "why": (raw.get("why") or "").strip()[:200],
-                          "examples": [str(e)[:60] for e in (raw.get("examples") or [])][:6]})
-    return Pools([str(x)[:80] for x in data.get("business_lines") or []][:12], found, cost)
+                          "examples": [str(e)[:60] for e in (raw.get("examples") or [])][:6], **_clean_facets(raw)})
+    line = data.get("role_line") or None
+    role_line = {"line": (line.get("line") or "").strip()[:80], **_clean_facets(line)} if isinstance(line, dict) else None
+    return Pools([str(x)[:240] for x in data.get("business_lines") or []][:12], found, cost, role_line)
 
 
 def pool_angle(pool: dict[str, Any], deeper: bool) -> str:
@@ -170,7 +203,7 @@ def read(client_name: str, about: str, countries: list[str], client: SearchClien
         user += "\n" + angle
     skip = {k.lower() for k in known or []}
     data, visited, cost = client.search_json(SYSTEM, user, SCHEMA, "competitors")
-    out = CompetitorsOutcome(visited=visited, cost=cost, lines=[str(x)[:80] for x in data.get("business_lines") or []][:12])
+    out = CompetitorsOutcome(visited=visited, cost=cost, lines=[str(x)[:240] for x in data.get("business_lines") or []][:12])
     seen: set[str] = set()
     for raw in data.get("companies") or []:
         name = (raw.get("name") or "").strip()

@@ -72,6 +72,18 @@ export function AddTarget({ action }: { action: Act }) {
   );
 }
 
+/** Narrow the search to what some words describe ("luxury apparel"); never the default (owner, 2026-10-26). */
+export function FocusForm({ action }: { action: Act }) {
+  const [state, formAction, pending] = useActionState(action, {});
+  return (
+    <form action={formAction} className="row">
+      <input name="words" placeholder="focus on companies like… (e.g. luxury apparel)" aria-label="Focus the search on" className="grow" />
+      <button className="btn small" disabled={pending}>{pending ? "Focusing…" : "Focus"}</button>
+      <Said state={state} />
+    </form>
+  );
+}
+
 export function OneClick({ action, label, busy, primary }: { action: Act0; label: string; busy: string; primary?: boolean }) {
   const [state, formAction, pending] = useActionState(action, {});
   return (
