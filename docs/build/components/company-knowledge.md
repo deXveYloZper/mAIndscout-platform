@@ -145,3 +145,17 @@ role's line read as luxury apparel and accessories; its pools put fashion first 
 and watch houses, 28 beauty houses free from what we know; a new pool for Italian luxury menswear and sportswear); one
 deeper round found Marni, The Attico, Sunnei, Fabiana Filippi, Valstar; and Ferrari now carries its fashion line
 (luxury apparel, accessories and personal luxury goods) beside its cars and racing.
+
+Backfill, 2026-10-26: every company with a profile classified, 3,041 companies with 3,144 lines for $1.86; 723 lines
+were dropped for want of supporting words (about 700 companies have no line yet; 2,496 have no profile to read).
+
+## Vectors: measured on Ferrari, not built (2026-10-26)
+A local multilingual embedding model (paraphrase-multilingual-MiniLM-L12-v2 through fastembed, in its own Docker
+volume, never in the desk's image) scored Ferrari's 1,684 people by how well their own passages (summary, skills, one
+per job; company boilerplate left out) cover six lines of the role's core work. It does not pass as a ranking: the
+client's interviewee ranked 206th on her public profile (only titles, "CRM operations specialist") and would rank
+about 60th on her CV; the top places went to long, senior profiles (17 of the top 21 are 8 to 37 years into their
+careers, rightly out for a mid role). It does find the right evidence across languages ("Responsabile della
+formazione dei dipendenti in seguito al rilascio della piattaforma a nuovi mercati" for "training users and store
+staff on the CRM platform after its release"). Verdict: not a ranker; worth it later as a way to find and quote
+evidence in CVs and call notes, under a reader that judges the role's core work.
