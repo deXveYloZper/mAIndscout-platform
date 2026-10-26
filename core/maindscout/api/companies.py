@@ -251,6 +251,7 @@ def people_at(session: Session, org_id: uuid.UUID, company_id: uuid.UUID) -> lis
 
 def company_page(session: Session, org_id: uuid.UUID, company_id: uuid.UUID) -> dict[str, Any]:
     from maindscout.api import practices as company_practices
+    from maindscout.api import segments
 
     company = canonical(session, session.get(Company, company_id))
     if company is None:
@@ -284,6 +285,8 @@ def company_page(session: Session, org_id: uuid.UUID, company_id: uuid.UUID) -> 
             "research_status": company.research_status,
             "researched_at": company.researched_at.isoformat() if company.researched_at else None,
             "facts": research.facts(session, company),
+            # The segments of the market it belongs to, from talent-map research (shared by every role, 2026-10-26).
+            "segments": segments.summary(session, company.id),
             # What it uses in its own work, from its job adverts (employer evidence, owner 2026-10-17).
             "practices": company_practices.of_company(session, company),
             "practices_at": company.practices_at.isoformat() if company.practices_at else None,

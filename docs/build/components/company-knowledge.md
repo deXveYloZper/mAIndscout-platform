@@ -96,3 +96,25 @@ The tests that decided it are in [plan section 4b](../../next/PLAN.md):
 - Exa's profiles are estimates. Small, regional or shut-down companies are often missing or confused, so a name match alone is never accepted.
 - Employers without an Exa ID or LinkedIn link stay names until a CV or research identifies them.
 - The cross-check compares the facts listed above; headcounts (dated) are not compared.
+
+## Segments: market knowledge kept on the company (2026-10-26)
+The owner: "yes start with company tags". A company the talent-map research keeps is tagged with its pool's segment
+("luxury jewellery and watches", "luxury sports car manufacturers") as a public-tier fact (`CompanySegmentClaim`), with
+the research's page and quote as evidence; a direct competitor is tagged with the pool its line fits ("luxury sports
+cars" -> "luxury sports car manufacturers"). Segments are shared by every role and desk and never name the client or
+the role. A later role's talent map is told the known segments and reuses their names; a pool that is a known segment
+starts from its companies for free (with 8 or more, only the deeper research round runs, told what is known), and its
+research adds what we do not know yet, which joins the segment. The company page shows "Where it sits in the market".
+A luxury segment counts as luxury in the luxury check: Exa's own words never overrule it.
+
+Backfill from Ferrari's talent map: 106 tags in 6 segments (fashion and leather goods 29, beauty and fragrance 23,
+jewellery and watches 21, hospitality 18, sports cars 11, global luxury groups 4).
+
+**A team in the role's countries, without a threshold** (owner: "if we are looking for a startup that has only 20
+people, then, how does that work? ... rules we make are globally applicable for every search, for every role"): a
+company is left out only when Exa's list of its countries is complete (fewer than ten) and none is the role's; any
+people there make it searchable, and the number there orders the search, most first. Kering (670 people in Italy, 2%
+of its staff) had been left out by the old 5% share.
+
+**The people we know there, for free:** a role's pool step also puts on it anyone on the desk who works or worked in
+the last 3 years at one of its listed companies (read people are matched on their profile; unread ones are read).

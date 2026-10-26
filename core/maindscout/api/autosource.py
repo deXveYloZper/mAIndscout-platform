@@ -436,14 +436,23 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
     # recent title that says its specialist work or a job at one of its companies, are put on it and read now.
     from maindscout.api import profiles as profiles_mod
 
-    unread = unread_wanted(session, org_id, job, p)
-    for cid in unread:
+    from maindscout.db.models import CareerProfile
+
+    wanted = unread_wanted(session, org_id, job, p)
+    already_read = set(session.scalars(select(CareerProfile.candidate_id).where(CareerProfile.candidate_id.in_(wanted or [None]))))
+    read_now = 0
+    for cid in wanted:
         added, strong = put_on(cid, "pool", None, new_to_desk=False)
         report["pool"]["added"] += added
+        report["pool"]["strong"] += strong
+        if not added or cid in already_read:
+            continue  # already read: matched on its career profile, no new reading
         reason = session.scalar(select(CandidateJob.triage_reason).where(CandidateJob.job_id == job.id, CandidateJob.candidate_id == cid))
-        if added and not (reason or "").startswith("match:unlikely:not read:"):
+        if not (reason or "").startswith("match:unlikely:not read:"):
             profiles_mod.queue(session, org_id, cid)
-    report["pool"]["unread_read_now"] = len(unread)
+            read_now += 1
+    report["pool"]["known_at_companies"] = len(wanted)
+    report["pool"]["unread_read_now"] = read_now
 
     # 2. The web, when there is an Exa client: only searches not made in the last 30 days.
     if caller is None:
@@ -663,9 +672,9 @@ UNREAD_LOOK = 300  # unread pool people looked at per run
 
 
 def unread_wanted(session: Session, org_id: uuid.UUID, job: Job, p: SourcingPlan) -> list[uuid.UUID]:
-    """People in the pool with no career reading yet (another role passed on them unread) whom this role may want: a
-    title in the last 3 years that says its specialist work, or a job, now or in the last 3 years, at one of its listed
-    companies. Not yet on the role."""
+    """People in the pool this role may want, not yet on it: anyone with a job, now or in the last 3 years, at one of
+    its listed companies (the company knowledge of earlier roles, reused for free: owner, 2026-10-26), and, among those
+    never read (another role passed on them unread), a title in the last 3 years that says its specialist work."""
     from datetime import timedelta
 
     from maindscout.api.process import client_context
@@ -677,16 +686,17 @@ def unread_wanted(session: Session, org_id: uuid.UUID, job: Job, p: SourcingPlan
     if not spec and not targets:
         return []
     since = _now().date() - timedelta(days=3 * 365)
-    read = select(CareerProfile.candidate_id).where(CareerProfile.org_id == org_id)
+    read = set(session.scalars(select(CareerProfile.candidate_id).where(CareerProfile.org_id == org_id)))
     on_role = select(CandidateJob.candidate_id).where(CandidateJob.job_id == job.id)
     out: dict[uuid.UUID, None] = {}
     for c in session.scalars(select(Claim).join(Candidate, Candidate.id == Claim.subject_id).where(
             Claim.org_id == org_id, Claim.claim_type == "CareerStepClaim", Claim.status.in_(("proposed", "approved")),
             Candidate.archived_at.is_(None), Candidate.merged_into_id.is_(None), Candidate.do_not_contact_at.is_(None),
-            Claim.subject_id.not_in(read), Claim.subject_id.not_in(on_role),
+            Claim.subject_id.not_in(on_role),
             (Claim.valid_to.is_(None)) | (Claim.valid_to >= since)).limit(UNREAD_LOOK * 4)):
         pl = c.approved_view or c.payload
-        if specialism.title_says(spec, pl.get("title_raw")) or (pl.get("company") or {}).get("company_id") in targets:
+        at_target = (pl.get("company") or {}).get("company_id") in targets
+        if at_target or (c.subject_id not in read and specialism.title_says(spec, pl.get("title_raw"))):
             out[c.subject_id] = None
         if len(out) >= UNREAD_LOOK:
             break

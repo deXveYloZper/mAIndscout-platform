@@ -114,12 +114,18 @@ class Pools:
     cost: dict[str, Any] = field(default_factory=dict)
 
 
-def pools(client_name: str, about: str, countries: list[str], client: SearchClient, role: str | None = None) -> Pools:
-    """The client's lines of business and the role's talent pools (one web search call)."""
+def pools(client_name: str, about: str, countries: list[str], client: SearchClient, role: str | None = None,
+          known: list[tuple[str, int]] | None = None) -> Pools:
+    """The client's lines of business and the role's talent pools (one web search call). `known`: the segments the
+    desk already knows, with how many companies each: a pool that is one of them takes its exact name, so the
+    companies already found for it are reused (owner, 2026-10-26)."""
     where = ", ".join(countries) or "its markets"
     user = (f"Company: {client_name}\nWhat we know about it: {about or 'nothing more'}\n"
             + (f"The role we are filling: {role}\n" if role else "")
             + f"The people must live in: {where}.")
+    if known:
+        user += ("\nPools we already know (when one of yours is the same pool, use its exact name; add new pools "
+                 "freely): " + "; ".join(f"{name} ({n} companies)" for name, n in known[:40]))
     data, _visited, cost = client.search_json(POOLS_SYSTEM, user, POOLS_SCHEMA, "talent_pools")
     found = []
     for raw in (data.get("pools") or [])[:10]:

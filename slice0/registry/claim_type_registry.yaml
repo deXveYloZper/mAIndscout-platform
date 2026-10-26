@@ -148,6 +148,19 @@ types:
     default_review: policy_eligible
     payload_schema: schemas/company_location_claim.schema.json
 
+  CompanySegmentClaim:
+    class: observed
+    subject_types: [company]
+    natural_key: "company_id + segment"
+    volatility: stable
+    default_review: policy_eligible
+    payload_schema: schemas/company_segment_claim.schema.json
+    notes: >
+      2026-10-26 (owner: "start with company tags"). A segment of the market the company belongs to ("luxury watches",
+      "luxury jewellery and watches", "luxury sports car manufacturers"), found by a role's talent-map research, with
+      the page and quote that name it as evidence. Public tier, shared by every role and desk: never names the client
+      or the role it was found for. A later role's talent map starts from the companies already in a segment.
+
   CompanyPracticeClaim:
     class: observed
     subject_types: [company]

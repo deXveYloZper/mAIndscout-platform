@@ -521,7 +521,7 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
         return Match("unlikely", "do_not_submit", f"match:unlikely:{wrong[0].detail.split(';')[0]}", rows, fired)
     # 6b. Too many years for the role's level (owner, 2026-10-23: "mid level with 2-5 is fine, 6 years if it is
     # excellent match ... mid level with 7 years of experience is a no").
-    years, band = career_years(stints), YEARS_BAND.get((client or {}).get("level") or "")
+    years, band = career_years(stints), years_band(client or {})
     if band and years is not None and years >= band[1] + 2:
         detail = f"{years:g} years of work, for a {client['level']} role ({band[0]}-{band[1]} years; {band[1] + 1} with an excellent match)"
         fire("too_senior", detail)
@@ -585,7 +585,7 @@ def not_worth_reading(stints: list[Stint], client: dict[str, Any]) -> str | None
     recent = [s for s in stints if s.end is None or (today - s.end).days <= 3 * 365]
     if spec and stints and not any(specialism_mod.title_says(spec, s.title) for s in recent):
         return f"no title in the last 3 years says {specialism_mod.broad_word(spec)} work"
-    band = YEARS_BAND.get(client.get("level") or "")
+    band = years_band(client)
     starts = [s.start for s in stints if s.start and not _INTERN_TITLE.search(s.title or "")]
     if band and starts:
         years = int((today - min(starts)).days // 365.25)
@@ -601,6 +601,16 @@ def same_side(want: str | None, main: str | None) -> bool:
     if want == main or group_of(want) == group_of(main):
         return True
     return any(want in side and main in side for side in SIDES.values())
+
+
+def years_band(client: dict[str, Any]) -> tuple[int, int] | None:
+    """The years that fit the role's level, never below what its ad asks: a mid role's 2-5, but 5-7 when the ad asks
+    for at least 5 years (a rule for every role, not one ad: owner, 2026-10-26)."""
+    band = YEARS_BAND.get(client.get("level") or "")
+    if band is None:
+        return None
+    asked = client.get("min_years")
+    return (max(band[0], int(asked)), max(band[1], int(asked) + 2)) if asked else band
 
 
 def career_years(stints: list[Stint]) -> float | None:

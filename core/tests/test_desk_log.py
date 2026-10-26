@@ -268,3 +268,12 @@ def test_an_unread_person_in_the_pool_is_found_and_read_by_a_role_that_wants_the
     _crm_role(session, job)
     p = autosource.plan(session, job.org_id, job.id)
     assert cid in autosource.unread_wanted(session, job.org_id, job, p), "unread, and the title says CRM work"
+
+
+def test_the_years_band_never_sits_below_what_the_ad_asks():
+    from maindscout.domain import matching
+
+    assert matching.years_band({"level": "mid"}) == (2, 5)
+    assert matching.years_band({"level": "mid", "min_years": 3}) == (3, 5), "Ferrari's 3+: the owner's 2-5 stands"
+    assert matching.years_band({"level": "mid", "min_years": 5}) == (5, 7), "an ad asking 5+ is not a window of one year"
+    assert matching.years_band({"level": "senior", "min_years": 8}) is None

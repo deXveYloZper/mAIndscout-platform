@@ -23,6 +23,7 @@ type CompanyPage = {
   profile: CompanyProfile | null;
   research_attempt: { status: string; at: string | null; why: "budget" | "model" | "other" | null; error: string | null } | null;
   facts: Fact[];
+  segments?: { segment: string; sources: number; first: { url: string | null; quote: string | null } | null }[];
   practices?: { id: string; token: string; raw_label: string; kind: string; area: string; status: string; seen: string | null;
     quote: string | null; url: string | null }[];
   practices_at?: string | null;
@@ -164,6 +165,25 @@ export default async function Company({ params }: { params: Promise<{ id: string
             );
           })}
         </ul>
+      )}
+
+      {(c.segments?.length ?? 0) > 0 && (
+        <>
+          <h2>Where it sits in the market</h2>
+          <p className="hint">Segments found by talent-map research for earlier roles. A new role that needs this segment starts
+            from these companies, and from the people we know who worked here.</p>
+          <ul className="facts">
+            {c.segments!.map((g) => (
+              <li key={g.segment}>
+                <span className="label">Segment</span> {g.segment}
+                {g.first?.url && (
+                  <span className="src">From a web page{g.sources > 1 ? ` (and ${g.sources - 1} more)` : ""}:{" "}
+                    <a href={g.first.url} target="_blank" rel="noreferrer">{g.first.url}</a>{g.first.quote && <> · <q>{g.first.quote}</q></>}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       {(c.practices?.length ?? 0) > 0 && (

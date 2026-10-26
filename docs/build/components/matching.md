@@ -152,3 +152,7 @@ no moves on the three other roles; the owner's labels 4/4.
 match-eval on Ferrari: strong 9 to 12 (7 of the 9 out as too senior or IT side; in: CRM and clienteling specialists at
 Prada, Valentino, Max Mara, Brunello Cucinelli, 3-5 years), possible 210 to 19 (181 too senior), the owner's two labels
 0/2 to 2/2 (Arianna Orsini strong, Alessandro Pregno possible); the three other roles unchanged, Bonaventura's labels 4/4.
+
+## The years band never sits below the ad (2026-10-26)
+A role's years band is its level's (a mid role's 2-5), but never below what the ad asks: an ad asking at least 5 years
+for a mid role gets 5-7, not a window of one year. match-eval: no moves on the four roles, labels 4/4 and 2/2.

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maindscout.local/schemas/company_segment_claim.schema.json",
+  "title": "CompanySegmentClaim payload",
+  "description": "A segment of the market the company belongs to (e.g. luxury watches, luxury sports car manufacturers), found by talent-map research. One claim per company and segment.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "segment"
+  ],
+  "properties": {
+    "segment": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 80
+    }
+  }
+}

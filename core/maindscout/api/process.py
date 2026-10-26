@@ -387,7 +387,10 @@ def client_context(session: Session, job: Job) -> dict[str, Any]:
     spec = specialism.of_role([job.title, words] + [p.get("normalized_token") or "" for p in reqs
                                                     if p.get("category") == "skill" and p.get("strength") in ("must", "deal_breaker")])
     return {"staff": int(staff) if staff else None, "level": level, "generalist": bool(GENERALIST.search(every)), "wanted": words,
-            "specialism": spec}
+            "specialism": spec,
+            # the years the ad asks for, at least (its role or seniority requirement)
+            "min_years": max((float(p["min_years"]) for p in reqs if p.get("strength") in ("must", "deal_breaker")
+                              and p.get("category") in ("role", "seniority") and p.get("min_years")), default=None)}
 
 
 def _match_now(session: Session, org_id, candidate_id, job: Job, rows=None, coarse: triage.Triage | None = None,
