@@ -389,7 +389,7 @@ def main() -> None:
             for pair in session.scalars(select(CandidateJob)):
                 changed += retriage_pair(session, pair, {"act": "rematch"}, "system") is not None
             session.commit()
-            print(f"bands changed: {changed}")
+            print(f"ratings re-recorded (a band, reason or row changed): {changed}")
     elif args.cmd == "match-eval":
         from maindscout.evals.matching import main as match_eval
 
