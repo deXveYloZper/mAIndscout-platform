@@ -25,7 +25,7 @@ The owner's next build: sourcing beyond inbound, with Exa ([plan](../../next/PLA
 ## How
 - **Search** (`exa.search`): `POST https://api.exa.ai/search` with `category`, up to 25 results (a run asks for 10), and the page text (up to 12,000 characters). The country is passed as Exa's location hint: results lean towards it but nothing is excluded, so the coverage gate still decides.
   - A search costs about $0.007; Exa's own figure is recorded per call.
-  - Network trouble and 429 / 5xx answers are retried twice. A bad request or key (400 / 401 / 402 / 403) fails for good.
+  - Network trouble (a dropped connection too, 2026-10-27) and 429 / 5xx answers are retried twice. A bad request or key (400 / 401 / 402 / 403) fails for good.
   - Searches name roles, companies and places, never a person.
 - **Parse** (`exa.parse`): keeps the address, title, text, date and only six fields of the structured profile: name, first and last name, location, work history, education history. A photo is never read, and a recording never keeps its address (`exa.slim`).
 - **Read** (`webprofile.read`): every value is located in the page text and quoted only from the person's own lines:

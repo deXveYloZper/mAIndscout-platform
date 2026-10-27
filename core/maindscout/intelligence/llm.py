@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import time
 import urllib.error
@@ -12,6 +13,9 @@ from typing import Any, Protocol
 XAI_URL = "https://api.x.ai/v1/chat/completions"
 DEFAULT_MODEL = "grok-4.20-0309-non-reasoning"
 TICKS_PER_USD = 10_000_000_000  # xAI reports cost in 1e-10 USD
+# Worth another attempt, like a timeout: the service unreachable, or the connection dropped mid-answer ("Remote end
+# closed connection without response", 2026-10-27, which used to fail the whole task)
+NETWORK_ERRORS = (urllib.error.URLError, TimeoutError, ConnectionError, http.client.HTTPException)
 
 
 class LLMError(RuntimeError):
@@ -70,7 +74,7 @@ class XaiClient:
                 last = error
                 if error.code not in (429, 500, 502, 503, 504):
                     raise LLMError(f"xAI returned HTTP {error.code}") from error
-            except (urllib.error.URLError, TimeoutError) as error:
+            except NETWORK_ERRORS as error:
                 last = error
             time.sleep(2**attempt)
         else:
