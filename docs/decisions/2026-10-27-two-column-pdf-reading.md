@@ -39,5 +39,5 @@ working on PDF reading once the column reading passed.
    the machine's earlier proposals it does not find again.
 
 ## Not done
-Three columns, columns under a full-width header, and Word files. Scans stay flagged and unread (a vision model is
-still locked).
+Three columns, columns under a full-width header (flagged for a person to read, not read in columns), and Word
+files. Scans stay flagged and unread (a vision model is still locked).
