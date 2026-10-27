@@ -34,6 +34,10 @@ years band is the matching rules' mark; the reader never changes a band.)
   list titles and skills only), so it can only order the rest. The interviewee's public profile is titles only; the desk's title rules found her, not
   this reader.
 
+- One reader error left: a customer-service profile came second on vague phrases ("understand my counterpart's
+  needs", "become a point of reference for him"). Owner, 2026-10-27: "very vague and we should not include such
+  things". A phrase about a personal quality or attitude is never evidence, like a title.
+
 **Next, the owner's call:** the core-work and not-this-work lines as part of the role brief, proposed by the model and
 confirmed by the recruiter; the reader on CVs, call notes and the public profiles that describe work, ordering within
 a band and showing its quotes; on the desk's model (about $0.002 a person).
