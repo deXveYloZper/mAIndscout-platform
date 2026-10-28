@@ -900,13 +900,10 @@ def company_state(session: Session, job_id: uuid.UUID, p: SourcingPlan) -> dict[
         s["recent"].append(live.get(q.id, 0))
         s["last_run_at"] = q.last_run_at
     by_id = {t.get("company_id"): t for t in p.targets}
+    known = {str(c.id): c for c in session.scalars(select(Company).where(Company.id.in_(list({q.company_id for q in rows}) or [None])))}
     for cid, s in out.items():
         t = by_id.get(cid) or {}
-        c = None
-        try:
-            c = session.get(Company, uuid.UUID(cid))
-        except ValueError:
-            pass
+        c = known.get(cid)
         name = t.get("name") or (c.name if c else "")
         wanted = {f"{v} at {name}".lower() for v in variants_for(p, c, broad)}
         all_done = wanted <= set(s["texts"])
@@ -1074,6 +1071,8 @@ def _must_have_numbers(session: Session, org_id: uuid.UUID, job: Job) -> list[di
 def widening(session: Session, org_id: uuid.UUID, job: Job, p: SourcingPlan) -> dict[str, Any] | None:
     """A widening proposal with numbers, or None. It appears when the open tiers are exhausted, the role is short of
     its target, and recent searches bring few relevant people. The owner decides."""
+    if autosource.strong_waiting(session, job.id) >= p.target:
+        return None
     r = rules(p)
     limits = autosource.off_limits(session, org_id)
     open_groups = set(p.open_tiers or ["A", "B"])
@@ -1083,8 +1082,6 @@ def widening(session: Session, org_id: uuid.UUID, job: Job, p: SourcingPlan) -> 
             and not limits.get(t["company_id"])
             and (t.get("pinned") or fit(session, session.get(Company, uuid.UUID(t["company_id"])), countries, None,
                                          luxury(session, job))["searched"])]
-    if autosource.strong_waiting(session, job.id) >= p.target:
-        return None
     if not live:
         options = [{"option": "open_tier", "value": g, "text": f"Open tier {g}: {n} companies"}
                    for g in GROUPS if g not in open_groups

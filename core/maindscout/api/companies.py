@@ -230,6 +230,30 @@ def _merged_ids(session: Session, company: Company) -> list[str]:
     return [str(i) for i in ids]
 
 
+def prefetch_ids(session: Session, companies_: list[Company]) -> None:
+    """Inside a page's memo: `_ids_for` of every company given, one query per level of merging for all of them instead
+    of one per company (a role's map lists some 170)."""
+    from maindscout.api import memo
+
+    if session.info.get("memo") is None or not companies_:
+        return
+    children: dict[uuid.UUID, list[uuid.UUID]] = {}
+    seen = {c.id for c in companies_}
+    frontier = list(seen)
+    while frontier:
+        rows = session.execute(select(Company.id, Company.merged_into_id).where(Company.merged_into_id.in_(frontier))).all()
+        frontier = [child for child, _ in rows if child not in seen]
+        seen.update(frontier)
+        for child, parent in rows:
+            children.setdefault(parent, []).append(child)
+    for company in companies_:
+        ids, frontier = {company.id}, [company.id]
+        while frontier:
+            frontier = [c for i in frontier for c in children.get(i, []) if c not in ids]
+            ids.update(frontier)
+        memo.put(session, ("company_ids", company.id), [str(i) for i in ids])
+
+
 def people_at(session: Session, org_id: uuid.UUID, company_id: uuid.UUID) -> list[dict[str, Any]]:
     """Who this desk knows at a company: people with a live career step there, with title and period."""
     company = canonical(session, session.get(Company, company_id))

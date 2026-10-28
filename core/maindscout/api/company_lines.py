@@ -47,6 +47,28 @@ def of_company(session: Session, company_id: uuid.UUID) -> list[dict[str, Any]]:
     return memo.cached(session, ("company_lines", company_id), read)
 
 
+def prefetch(session: Session, companies_: list[Company]) -> None:
+    """Inside a page's memo: `of_company` of every company given, in one query for all of them (a role's map lists some
+    170 companies; two queries each took a second on Ferrari's CRM role, 2026-10-28). A company whose lines share a time
+    (read at once: 81 of 3,041 that day) is left to its own read, which alone says which of them comes first, as before."""
+    from maindscout.api import memo
+    from maindscout.api.companies import _ids_for, canonical, prefetch_ids
+
+    if session.info.get("memo") is None or not companies_:
+        return
+    roots = {c.id: canonical(session, c) for c in companies_}
+    prefetch_ids(session, [r for r in roots.values() if r is not None])
+    owner = {uuid.UUID(i): r.id for r in roots.values() if r is not None for i in _ids_for(session, r)}
+    found: dict[uuid.UUID, list[Claim]] = {}
+    for c in session.scalars(select(Claim).where(Claim.org_id == PUBLIC_ORG_ID, Claim.subject_id.in_(list(owner) or [None]),
+                                                 Claim.claim_type == CLAIM, Claim.status.in_(LIVE)).order_by(Claim.created_at)):
+        found.setdefault(owner[c.subject_id], []).append(c)
+    for company_id, root in roots.items():
+        lines = found.get(root.id, []) if root is not None else []
+        if len({c.created_at for c in lines}) == len(lines):  # each at its own time: in time order, as its own read gives
+            memo.put(session, ("company_lines", company_id), [dict(c.approved_view or c.payload) for c in lines])
+
+
 def classified(session: Session, company_id: uuid.UUID) -> bool:
     return session.scalar(select(func.count()).select_from(Claim).where(
         Claim.org_id == PUBLIC_ORG_ID, Claim.subject_id == company_id, Claim.claim_type == CLAIM)) > 0

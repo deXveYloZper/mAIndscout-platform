@@ -26,7 +26,8 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
+from sqlalchemy.orm.attributes import set_committed_value
 
 from maindscout.api import costs
 from maindscout.db.models import (
@@ -805,6 +806,7 @@ def _page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "
     strategy.prefetch_closed(session, list(profiles_by_id.values()))  # one query for every target, not one each
     from maindscout.api import company_lines
 
+    company_lines.prefetch(session, list(profiles_by_id.values()))  # the same: their lines, not two queries each
     targets = [{**t, "group": strategy.group_of(t), "off_limits": limits.get(t.get("company_id") or ""),
                 "release": signals.get(t.get("company_id") or ""),
                 "progress": {k: v for k, v in (state.get(t.get("company_id") or "") or {}).items() if k not in ("texts", "recent")} or None,
@@ -822,21 +824,29 @@ def _page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "
     hits = {h.candidate_id: h for h in session.scalars(select(SourcingHit).where(SourcingHit.job_id == job.id))}
     from maindscout.api import memo
 
-    memo.prefetch_places_and_steps(session, org_id, list(hits))  # one query, not three per person
+    # Their match (2.7 KB each) is read further down, for the people the lists can show only.
     pairs = [x for x in session.scalars(select(CandidateJob).where(CandidateJob.job_id == job.id,
-                                                                   CandidateJob.candidate_id.in_(list(hits) or [None])))]
+                                                                   CandidateJob.candidate_id.in_(list(hits) or [None]))
+                                        .options(defer(CandidateJob.match)))]
     stopped = set(session.scalars(select(Candidate.id).where(Candidate.id.in_(list(hits) or [None]),
                                                              Candidate.do_not_contact_at.is_not(None))))
     countries = set(p.countries or [])
     # Phase 1c: the owner's workflow. Suggestions to review (nobody decided yet), then the people the owner chose to
     # reach out to, maybe later, contacted, replied, call booked. The machine's band is only a hint until then.
+    # Only those the lists can show are looked at closely: a suggestion that is neither strong nor possible, or no longer
+    # waiting, is left out before any of its facts are read (61 people of 1,684 on Ferrari's CRM role, 2026-10-28).
+    looked = [x for x in pairs if x.candidate_id not in stopped and (
+        outreach.stage(x) != "to_review" or (x.pair_state in WAITING and x.triage_band in ("priority", "review_later")))]
+    memo.prefetch_places_and_steps(session, org_id, [x.candidate_id for x in looked])  # one query, not three per person
+    memo.prefetch_employers(session, org_id, [x.candidate_id for x in looked])  # and one for where they work
+    by_pair = {x.id: x for x in looked}
+    for pair_id, match in session.execute(select(CandidateJob.id, CandidateJob.match).where(
+            CandidateJob.id.in_(list(by_pair) or [None]))):
+        set_committed_value(by_pair[pair_id], "match", match)
     by_stage: dict[str, list[CandidateJob]] = {}
-    for x in pairs:
-        if x.candidate_id in stopped:
-            continue
+    for x in looked:
         st = outreach.stage(x)
-        if st == "to_review" and (x.pair_state not in WAITING or x.triage_band not in ("priority", "review_later")
-                                  or strategy.outside_countries(session, org_id, x.candidate_id, countries)
+        if st == "to_review" and (strategy.outside_countries(session, org_id, x.candidate_id, countries)
                                   or current_employers(session, org_id, x.candidate_id) & avoid_ids):
             continue
         by_stage.setdefault(st, []).append(x)
