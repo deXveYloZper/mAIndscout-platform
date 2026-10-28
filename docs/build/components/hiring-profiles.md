@@ -67,7 +67,7 @@ Plan section 4.5 and phase I4: matching (I5) needs to know what the hiring manag
     replaced the field-by-field "Add a requirement" form and the separate notes box (owner, 2026-10-20: "why we cant
     just write and our desk understand it?"); `POST /v1/jobs/{id}/requirements` stays in the API.
   - **Context:** where the job is, the posting's dates, then your notes and what you told the desk, folded.
-- **Never personality, culture or "fit":** such items are dropped whatever the model says (owner's rule, 2026-10-03).
+- **Never personality, culture or "fit":** such items are dropped whatever the model says (owner's rule, 2026-10-03). The ad reader's trait filter (`extract.drop_traits`) catches the qualities an ad lists as if they were requirements — passion, commitment, core values, results orientation, attention to detail, "under pressure", interpersonal and communication skills, a hands-on or problem-solving approach, team player, work ethic — and keeps a named skill ("Salesforce knowledge") or a real ask ("Availability to travel extensively"); widened 2026-10-28 after six such lines had become Ferrari's must-haves and flowed into its brief, work lines and call brief (ads read from then on).
 - **One requirement per subject.** A job has one role and one employment requirement. If the intake states a different value or strength than the ad, the intake's reading replaces the ad's (the ad's is kept as superseded). What a person approved is never replaced by a machine reading.
 - **Stored as `JobRequirementClaim`s.**
   - Read by the model: proposed. Evidence is the ad's text span (origin employer) or the intake note's span (origin relayed, `locator.intake_id` with character offsets).

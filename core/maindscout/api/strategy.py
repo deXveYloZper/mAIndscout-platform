@@ -39,7 +39,10 @@ GROUP_OF_TIER = {"named": "A", "manual": "A", "feeder": "A", "competitor": "A", 
                  "adjacent": "C", "release": "C", "feeder_large": "C", "large_peer": "C"}
 GROUPS = ("A", "B", "C")
 RULES = {"batch": 5, "exhausted_after": 2, "known_share": 0.8, "low_yield": 0.2, "recheck_days": 90, "yield_window": 15,
-         "max_results": 50}
+         "max_results": 50,
+         # The search that learns from its own results (2026-10-28, measured: a title that found nobody strong in
+         # `retire_after` searches retires; a company that gave `deep_from` strong people gets its next title first).
+         "adaptive": 1, "retire_after": 6, "deep_from": 2}
 MARKET_RESULTS = 25
 NOT_THE_ROLE = re.compile(r"\b(sales|account|ceo|cfo|coo|founder|co-founder|recruit|talent|hr|people|marketing|finance|"
                           r"legal|office|operations|intern|student)\b", re.I)
@@ -816,10 +819,51 @@ def outside_countries(session: Session, org_id: uuid.UUID, candidate_id: uuid.UU
 def results_for(company: Company | None, rules_: dict[str, Any]) -> int:
     """How many profiles one search at a company asks for: about a quarter of its staff, 10 to `max_results` (50).
     Replies take time, so a deeper list per search helps; a small company is never padded with look-alikes (a test
-    on 2026-10-13: all 25 results of "software engineer at Omnea", 219 staff, really worked there)."""
+    on 2026-10-13: all 25 results of "software engineer at Omnea", 219 staff, really worked there). A smaller first
+    search was measured and dropped (2026-10-28): the richest companies give most of their strong people in one deep
+    search."""
     employees = ((company.exa_profile or {}).get("employees") if company is not None else None) or 0
     top = int(rules_.get("max_results", RULES["max_results"]))
     return 25 if not employees else max(10, min(top, employees // 4))
+
+
+def adaptive(rules_: dict[str, Any]) -> bool:
+    return bool(rules_.get("adaptive"))
+
+
+def title_yield(session: Session, job_id: uuid.UUID, variants: list[str]) -> dict[str, tuple[int, int]]:
+    """title -> (company searches run with it, strong people they found as rated now), for this role."""
+    live = relevant_now(session, job_id)
+    out = {v: [0, 0] for v in variants}
+    lowered = [(v, v.lower()) for v in variants]
+    for q in session.scalars(select(SourcingQuery).where(SourcingQuery.job_id == job_id, SourcingQuery.channel == "exa_people",
+                                                         SourcingQuery.company_id.is_not(None))):
+        text = (q.text or "").lower()
+        for v, low in lowered:
+            if text.startswith(f"{low} at "):
+                out[v][0] += q.runs or 0
+                out[v][1] += live.get(q.id, 0)
+                break
+    return {v: (n, k) for v, (n, k) in out.items()}
+
+
+def ordered_variants(session: Session, job: Job, p: SourcingPlan) -> list[str]:
+    """Adaptive: the role's titles in the order of what each has found (strong people per search), the ad's own title
+    (the first) always kept; a title that ran `retire_after` searches and found nobody strong is retired (replayed over
+    207 real searches, 2026-10-28: 51 skipped, $1.21 of $6.06 saved, nobody lost). Not adaptive: the plan's order."""
+    r = rules(p)
+    variants = list(p.role_variants or [])
+    if not adaptive(r) or not variants:
+        return variants
+    yields = title_yield(session, job.id, variants)
+    keep = [variants[0]]
+    for v in variants[1:]:
+        n, k = yields.get(v, (0, 0))
+        if n >= int(r["retire_after"]) and k == 0:
+            continue
+        keep.append(v)
+    rate = {v: (yields.get(v, (0, 0))[1] / yields.get(v, (0, 0))[0]) if yields.get(v, (0, 0))[0] else 0.0 for v in keep}
+    return [keep[0]] + sorted(keep[1:], key=lambda v: (-rate[v], keep.index(v)))
 
 
 def search_cost(results: int) -> float:
@@ -849,11 +893,12 @@ def broad_word(session: Session, job: Job) -> str | None:
     return None
 
 
-def variants_for(p: SourcingPlan, company: Company | None, broad: str | None = None) -> list[str]:
+def variants_for(p: SourcingPlan, company: Company | None, broad: str | None = None,
+                 variants: list[str] | None = None) -> list[str]:
     """The searches at one company. A small one (up to 150 people) gets one broad search for the role's kind of work
     ("marketing at FRANZI": owner, 2026-10-21, after "brand manager at FRANZI" found nobody new); bigger ones the
-    role's titles."""
-    out = list(p.role_variants or [])[:3]
+    role's titles (`variants`: in the order the adaptive search chose, else the plan's)."""
+    out = list(variants if variants is not None else (p.role_variants or []))[:3]
     employees = ((company.exa_profile or {}).get("employees") if company is not None else None) or 0
     if broad and 0 < employees <= SMALL:
         return [broad]
@@ -886,6 +931,7 @@ def company_state(session: Session, job_id: uuid.UUID, p: SourcingPlan) -> dict[
     out: dict[str, dict[str, Any]] = {}
     job = session.get(Job, job_id)
     broad = broad_word(session, job) if job is not None else None
+    ordered = ordered_variants(session, job, p) if job is not None else None
     rows = list(session.scalars(select(SourcingQuery).where(SourcingQuery.job_id == job_id, SourcingQuery.company_id.is_not(None),
                                                             SourcingQuery.channel == "exa_people").order_by(SourcingQuery.last_run_at)))
     live = relevant_now(session, job_id)
@@ -905,7 +951,7 @@ def company_state(session: Session, job_id: uuid.UUID, p: SourcingPlan) -> dict[
         t = by_id.get(cid) or {}
         c = known.get(cid)
         name = t.get("name") or (c.name if c else "")
-        wanted = {f"{v} at {name}".lower() for v in variants_for(p, c, broad)}
+        wanted = {f"{v} at {name}".lower() for v in variants_for(p, c, broad, ordered)}
         all_done = wanted <= set(s["texts"])
         quiet = len(s["recent"]) >= r["exhausted_after"] and sum(s["recent"][-r["exhausted_after"]:]) == 0
         mostly_known = s["results"] >= 5 and s["known"] / max(s["results"], 1) >= r["known_share"]
@@ -951,6 +997,7 @@ def next_searches(session: Session, job: Job, p: SourcingPlan, releasing: set[st
 
     staff, wide = client_context(session, job)["staff"], "C" in open_groups
     broad = broad_word(session, job)
+    ordered = ordered_variants(session, job, p)
     for t in targets:
         s = state.get(t["company_id"])
         if t["company_id"] in avoid_ids:
@@ -969,7 +1016,7 @@ def next_searches(session: Session, job: Job, p: SourcingPlan, releasing: set[st
             if last and now - last < timedelta(days=r["recheck_days"]) and t["company_id"] not in releasing:
                 continue
         pending = []
-        for v in variants_for(p, company, broad):
+        for v in variants_for(p, company, broad, ordered):
             text = f"{v} at {t['name']}"
             done = (s or {}).get("texts", {}).get(text.lower())
             if done and now - datetime.fromisoformat(done) < autosource.QUERY_COOLDOWN:
@@ -978,6 +1025,21 @@ def next_searches(session: Session, job: Job, p: SourcingPlan, releasing: set[st
         if not pending:
             continue
         queue.append((t, company, pending, not (s or {}).get("texts")))
+    if adaptive(r):
+        # Deep where it gives, wide elsewhere (2026-10-28): a company whose searches found strong people gets its next
+        # title first (up to half the run), then every company never searched gets its first, then the rest; one
+        # search per company per run, so each run's results shape the next.
+        limit = autosource.MAX_WEB_QUERIES_PER_RUN
+        rel = lambda q: (state.get(q[0]["company_id"]) or {}).get("relevant", 0)  # noqa: E731
+        deep = sorted((q for q in queue if not q[3] and rel(q) >= int(r["deep_from"])), key=lambda q: -rel(q))
+        fresh = [q for q in queue if q[3]]
+        rest = [q for q in queue if not q[3] and rel(q) < int(r["deep_from"])]
+        picked = deep[: limit // 2] + fresh + deep[limit // 2:] + rest
+        for t, company, pending, _ in picked[:limit]:
+            out.append({"text": pending[0], "target": t["name"], "company_id": t["company_id"], "tier": t.get("tier"),
+                        "group": group_of(t), "country": t.get("country") or (p.countries[0] if p.countries else None),
+                        "results": results_for(company, r)})
+        queue = []  # nothing more to add below
     # Wide before deep (2026-10-23: the budget went on four titles at a few houses and 13 researched competitors were
     # never reached): while some company has never been searched, each gets its first search, one per company; the
     # other titles follow once every company has had one.
@@ -1027,9 +1089,11 @@ def snowball(session: Session, org_id: uuid.UUID, job: Job, caller, report: dict
         have.add(str(c.id))
         added.append(c.name)
     state = company_state(session, job.id, p)
+    r = rules(p)
+    enough = int(r["deep_from"]) if adaptive(r) else 3  # a company that gives gets its own peer search (adaptive: sooner)
     for t in targets:
         s = state.get(t.get("company_id") or "")
-        if not s or s["relevant"] < 3 or t.get("similar_done") or autosource._budget_left(session, org_id, job, p):
+        if not s or s["relevant"] < enough or t.get("similar_done") or autosource._budget_left(session, org_id, job, p):
             continue
         c = session.get(Company, uuid.UUID(t["company_id"]))
         new = _peers(session, org_id, job, c, caller, have, f"like {c.name}, which produced {s['relevant']} strong suggestions", 5, task_id)

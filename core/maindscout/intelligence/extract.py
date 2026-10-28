@@ -654,7 +654,15 @@ _NOT_A_NAME = re.compile(r"\b(experience|experienced|ability|able|skills?|knowle
 # qualities (no skill name), never for a named skill ("data-driven marketing" stays).
 _TRAITS = re.compile(r"(?<![\w-])(calm|decisive|constructive|curious|driven|passionate|enthusiastic|energetic|motivated|"
                      r"self-starter|self-motivated|resilient|humble|empathetic|friendly|charismatic|confident|proactive|"
-                     r"positive attitude|can-do)(?![\w-])", re.I)
+                     r"positive attitude|can-do|"
+                     # Values and ways of working an ad lists as requirements (a CRM ad's "Passion for innovation",
+                     # "Commitment to … core values", "Strong results orientation and attention to detail", "Able to
+                     # operate under pressure", "Excellent interpersonal and communication skills" all became
+                     # must-haves, 2026-10-28): nothing a profile can show, never a criterion.
+                     r"passion(?:ate)?|commitment|core values|integrity|excellence|results[- ]orient\w*|attention to detail|"
+                     r"under pressure|interpersonal|communication skills|problem[- ]solving (?:approach|skills|mindset|attitude)|"
+                     r"hands-on (?:approach|mindset|attitude)|detail[- ]oriented|team player|work ethic|growth mindset|"
+                     r"continuous improvement)(?![\w-])", re.I)
 
 
 def drop_traits(reqs: list[StagedClaim], run: "_Run") -> list[StagedClaim]:

@@ -133,7 +133,7 @@ Three roles rebuilt from an empty desk showed four kinds of wrong target; each i
 ## Known limits
 - Not yet built for a real role; the talent DNA was tried by hand on Procure Ai (13 people, $0.041).
 - For a small hiring company the feeder list is thin. The pattern (kinds, sizes, fields) is what guides the owner; it is shown, not yet used to filter tier B automatically.
-- "Relevant" is the band when found, so a later re-match does not change a company's past counts.
+- "Relevant" on a query row is the band when found; the batches, exhaustion and title order read the bands as rated now (`relevant_now`).
 
 ## Competitors researched on the web (step D, 2026-10-21)
 The owner: "the LLM deep search into competitors and similar companies is a must ... we should not even bother to
@@ -195,3 +195,26 @@ countries, still leaves a company out.
 **Wide before deep.** While a company on the list has never been searched, each gets its first search, one per company,
 up to 8 per run; other titles follow once all had one (13 of Ferrari's 37 competitors had never been reached when its
 budget ran out, after four titles at each of the first houses).
+
+## The search learns from its own results (2026-10-28)
+Measured first, then built ([decision](../../decisions/2026-10-28-search-that-learns.md): an A/B of the old loop
+against the new on copies of the desk, three roles, $1.20 of searches each, and a replay over the desk's 207 recorded
+searches). Plan rule `adaptive` (1 by default, 0 keeps the loop as it was), with `retire_after` (6) and `deep_from` (2).
+- **Titles in the order of what they found** (`ordered_variants`, `title_yield`): the ad's own title first, always;
+  the others by strong people per company search (as rated now, not as found); a title that ran `retire_after`
+  company searches and found nobody strong is not searched again. Replayed over the desk's history: 51 of 207
+  searches skipped, $1.21 of $6.06 saved, nobody strong lost (Ferrari's ad title found 21 strong in 52 searches; its
+  three other titles 0 in 57).
+- **Deep where it gives, wide elsewhere** (`next_searches`): a company whose searches found `deep_from` strong people
+  gets its next title before any other company's second (up to half the run's 8), then every company never searched
+  gets its first, then the rest; one search per company per run, so each run's results shape the next. Its peer
+  search (`snowball`) comes at `deep_from` strong, not three. In the A/B: the same people as the old loop
+  (Procure AI 11 vs 10, Bonaventura 18 vs 19, Ferrari 13 vs 14; 37 of 43 the same), at the same spend.
+- **Measured and dropped:** a smaller first search per company (25 results, 50 only once it gave): it lost strong
+  people at the richest companies (Aeffe gave 7 from one search of 48, 4 from 25). A second search phrased from the
+  role's confirmed work or its ideally-haves, at companies whose titles found nobody: 18 searches, $0.70, 0 strong;
+  half the results were people the titles had found. Not measured, not built: the owner's pass reasons shaping the
+  search (needs decisions nobody has made).
+
+Tests: `core/tests/test_adaptive_search.py` (titles ordered and retired, never used by `next_searches` once retired;
+deep where it gives; the peer search at two; off → the plan's order and wide first, as before).
