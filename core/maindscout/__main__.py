@@ -11,6 +11,7 @@
     python -m maindscout coverage-check      apply the coverage rule to everyone already on the desk (free)
     python -m maindscout profiles-rebuild [--reclassify]  rebuild career profiles (reclassify: read step labels again, paid)
     python -m maindscout rematch             match every person on every job again (free)
+    python -m maindscout activity [--job ID] [--kind K] [--since MIN] [--full]   what the desk did, in plain words
     python -m maindscout match-eval [--job ID ...] [--labels FILE]   what the current rules would change, before
                                              they go live, against the owner's decisions (free; writes nothing)
     python -m maindscout demo-seed [--count 60]  add synthetic demo people ("Demo · ", @example.invalid) for testing
@@ -246,6 +247,16 @@ def main() -> None:
     p_prof = sub.add_parser("profiles-rebuild")
     p_prof.add_argument("--reclassify", action="store_true")
     sub.add_parser("rematch")
+    p_lines = sub.add_parser("company-lines")
+    p_lines.add_argument("--job", action="append", default=None, help="the companies on these roles' lists (and the client)")
+    p_lines.add_argument("--all", action="store_true", help="every company with a profile not yet classified")
+    p_lines.add_argument("--limit", type=int, default=5000)
+    p_act = sub.add_parser("activity")
+    p_act.add_argument("--job", default=None)
+    p_act.add_argument("--kind", default=None, help="button,task,search,model,step,error")
+    p_act.add_argument("--since", type=int, default=120, help="minutes back")
+    p_act.add_argument("--limit", type=int, default=200)
+    p_act.add_argument("--full", action="store_true", help="also print each line's detail (prompts, answers, traces)")
     p_meval = sub.add_parser("match-eval")
     p_meval.add_argument("--job", action="append", default=None)
     p_meval.add_argument("--labels", type=Path, default=None)
@@ -356,6 +367,51 @@ def main() -> None:
             print(profiles.rebuild_all(session, args.reclassify))
             session.commit()
         print("queued: the workers (serve, or `worker`) build them")
+    elif args.cmd == "company-lines":
+        import uuid as _uuid
+
+        from maindscout import activity
+        from maindscout.api import autosource, company_lines
+        from maindscout.api.task_handlers import _chat_client
+        from maindscout.db.models import PUBLIC_ORG_ID, Company, Job
+
+        with make_session_factory(make_engine())() as session:
+            org_id = session.scalar(select(Org.id).where(Org.id != PUBLIC_ORG_ID).order_by(Org.created_at).limit(1))
+            if args.job:
+                todo: list = []
+                for j in args.job:
+                    job = session.get(Job, _uuid.UUID(j))
+                    p = autosource.current_plan(session, job.id)
+                    ids = [t["company_id"] for t in (p.targets if p else []) if t.get("company_id") and not t.get("removed")]
+                    todo += [session.get(Company, _uuid.UUID(i)) for i in ids]
+                    if job.hiring_company_id:
+                        todo.append(session.get(Company, job.hiring_company_id))
+            else:
+                todo = list(session.scalars(select(Company).where(Company.merged_into_id.is_(None), Company.exa_profile.is_not(None))
+                                            .order_by(Company.created_at).limit(args.limit)))
+            todo = list({c.id: c for c in todo if c is not None}.values())
+            stats = company_lines.classify(session, org_id, todo, _chat_client())
+            session.commit()
+            print(stats)
+            activity.step(f"Company lines read for {stats['companies']} companies: {stats['lines']} lines, "
+                          f"{stats['rejected']} without words to support them", stats, org_id=org_id)
+    elif args.cmd == "activity":
+        import json
+        from datetime import datetime, timedelta, timezone
+
+        from maindscout.db.models import DeskLog
+
+        with make_session_factory(make_engine())() as session:
+            stmt = select(DeskLog).where(DeskLog.at > datetime.now(timezone.utc) - timedelta(minutes=args.since))
+            if args.job:
+                stmt = stmt.where(DeskLog.job_id == args.job)
+            if args.kind:
+                stmt = stmt.where(DeskLog.kind.in_(args.kind.split(",")))
+            for r in reversed(list(session.scalars(stmt.order_by(DeskLog.at.desc()).limit(args.limit)))):
+                mark = {"error": "!!", "warn": "! "}.get(r.level, "  ")
+                print(f"{mark}{r.at.astimezone():%H:%M:%S} {r.kind:6} {r.summary}" + (f"  [{r.actor}]" if r.actor else ""))
+                if args.full and r.detail:
+                    print("        " + json.dumps(r.detail, ensure_ascii=False, indent=1).replace("\n", "\n        "))
     elif args.cmd == "rematch":
         from maindscout.api.process import retriage_pair
         from maindscout.db.models import CandidateJob
@@ -365,7 +421,7 @@ def main() -> None:
             for pair in session.scalars(select(CandidateJob)):
                 changed += retriage_pair(session, pair, {"act": "rematch"}, "system") is not None
             session.commit()
-            print(f"bands changed: {changed}")
+            print(f"ratings re-recorded (a band, reason or row changed): {changed}")
     elif args.cmd == "match-eval":
         from maindscout.evals.matching import main as match_eval
 

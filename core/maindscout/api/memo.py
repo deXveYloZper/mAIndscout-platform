@@ -64,3 +64,27 @@ def prefetch_places_and_steps(session: Session, org_id, ids: list) -> None:
         out[c.subject_id].append(c)
     for i, claims in out.items():
         put(session, ("facts", i), claims)
+
+
+def prefetch_employers(session: Session, org_id, ids: list) -> None:
+    """After `prefetch_places_and_steps`: the companies of everyone's current jobs in one query, held for the page, so
+    each read of one by id (`session.get`: where they work for the country check, the card's employer) asks nothing."""
+    import uuid
+
+    from sqlalchemy import select
+
+    from maindscout.db.models import Company
+
+    if session.info.get("memo") is None or not ids:
+        return
+    wanted = set()
+    for i in ids:
+        for c in places_and_steps(session, org_id, i):
+            if c.claim_type != "CareerStepClaim" or c.valid_to is not None:
+                continue
+            for p in (c.payload, c.approved_view or {}):  # the country check reads the payload, the card the approved view
+                try:
+                    wanted.add(uuid.UUID((p.get("company") or {}).get("company_id") or ""))
+                except ValueError:
+                    pass
+    put(session, ("employers",), list(session.scalars(select(Company).where(Company.id.in_(list(wanted) or [None])))))

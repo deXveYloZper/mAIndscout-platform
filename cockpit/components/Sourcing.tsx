@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { Pin, PinOff, Radar, Undo2, X } from "lucide-react";
-import { addSourcingTarget, buildStrategy, changeSourcingTarget, checkDeeper, draftLinkedIn, runSourcingNow, setSourcingMode,
-  setSourcingPlan, widenSourcing } from "@/app/actions";
+import { addSourcingTarget, buildStrategy, changeSourcingTarget, checkDeeper, draftLinkedIn, runSourcingNow, setSourcingFocus,
+  setSourcingMode, setSourcingPlan, widenSourcing, widenSourcingFocus } from "@/app/actions";
 import { Refresh } from "@/components/CallsClient";
 import { QuickLinks, Triage } from "@/components/Outreach";
-import { AddTarget, OneClick, PlanSettings, PlanWords } from "@/components/SourcingForms";
+import { AddTarget, FocusForm, OneClick, PlanSettings, PlanWords } from "@/components/SourcingForms";
+import { WorkDetails, WorkTag } from "@/components/WorkReading";
 import type { CardKeys, CompanyProfile, EvidenceCheck, SourcingMode, SourcingPage, SourcingStats, SourcingTarget, Suggestion, TalentDna,
   Widening } from "@/lib/api";
 import { MODE_LABEL, reasonWords } from "@/lib/format";
@@ -173,6 +174,7 @@ function SuggestionCard({ jobId, s, since }: { jobId: string; s: Suggestion; sin
         </div>
         <MainLine s={s} />
         {s.why && s.why.length > 0 && <p className="why">{s.why.join(" · ")}</p>}
+        <WorkTag w={s.work} />
         {open && !strong && s.short_of && s.short_of.length > 0 && <p className="shortof"><span className="linetag">short of</span>{s.short_of.join(" · ")}</p>}
         {open && s.settle?.map((x, i) => <p key={i} className="settle"><span className="linetag" title="Only the call can settle it">to settle on the call</span>{x}</p>)}
         {track && <p className="reason">{track}</p>}
@@ -196,6 +198,7 @@ function SuggestionCard({ jobId, s, since }: { jobId: string; s: Suggestion; sin
                 ))}
               </p>
             )}
+            <WorkDetails w={s.work} />
             <EvidenceLine jobId={jobId} s={s} deciding={deciding} />
             <p className="hint"><Link href={`/jobs/${jobId}/people/${s.candidate_id}`}>Every requirement, with its evidence</Link></p>
           </div>
@@ -307,9 +310,10 @@ function Note({ note }: { note: SourcingPage["strategy_note"] }) {
 function ResearchLine({ r }: { r: NonNullable<SourcingPage["competitor_research"]> }) {
   return (
     <div className="research">
-      <p className="sub"><strong>Competitor research</strong> (web, {r.pages} pages, {usd(r.usd)}): {r.found} found · {r.kept} on the
-        map as tier A{r.much_bigger.length ? ` · ${r.much_bigger.length} left out as far bigger (never searched)` : ""}
-        {r.refused.length ? ` · ${r.refused.length} refused (no page naming them)` : ""}</p>
+      <p className="sub"><strong>Competitor research</strong> (web, {r.rounds ? `${r.rounds} rounds, ` : ""}{r.pages} pages, {usd(r.usd)}):
+        {" "}{r.found} found · {r.kept} on the map as tier A{r.much_bigger.length ? ` · ${r.much_bigger.length} left out as far bigger (never searched)` : ""}
+        {r.refused.length ? ` · ${r.refused.length} refused (nothing confirms them)` : ""}</p>
+      {r.lines && r.lines.length > 0 && <p className="hint">The client&apos;s lines of business, as found: {r.lines.join(" · ")}</p>}
       {r.much_bigger.length > 0 && <p className="hint">Far bigger: {r.much_bigger.join(", ")}</p>}
     </div>
   );
@@ -379,6 +383,39 @@ function WideningPanel({ jobId, w }: { jobId: string; w: Widening }) {
   );
 }
 
+/** "luxury fine jewellery (consumers)": a company's line in a few words. */
+function lineWords(l: { market?: string | null; positioning?: string | null; customers?: string | null; industry?: string | null }): string {
+  const level = l.positioning && l.positioning !== "unknown" ? `${l.positioning} ` : "";
+  const who = l.customers && l.customers !== "unknown" ? ` (${l.customers})` : "";
+  return `${level}${l.market || l.industry || ""}${who}`;
+}
+
+/** The role's own line (it orders the search) and the owner's focus (it narrows it), with the way back. */
+function LensPanel({ jobId, lens }: { jobId: string; lens: SourcingPage["plan"]["lens"] }) {
+  const line = lens?.role_line;
+  const focus = lens?.focus;
+  return (
+    <div className="research">
+      {line && (line.market || line.industry) && (
+        <p className="sub"><strong>This role&apos;s line of business:</strong> {line.line ? `${line.line}: ` : ""}{lineWords(line)}.
+          {" "}Companies closest to it are searched first; nobody is left out for it.</p>
+      )}
+      {focus ? (
+        <div className="row">
+          <span className="sub"><strong>Focused on</strong> &ldquo;{focus.words}&rdquo;: only companies it describes are searched (named
+            and pinned ones always).</span>
+          <OneClick action={widenSourcingFocus.bind(null, jobId)} label="Widen again" busy="Widening…" />
+        </div>
+      ) : (
+        <>
+          <p className="hint">Searches start wide, at the level the role asks for. To reach a more specific person, focus the search:</p>
+          <FocusForm action={setSourcingFocus.bind(null, jobId, false)} />
+        </>
+      )}
+    </div>
+  );
+}
+
 function TargetRow({ jobId, t }: { jobId: string; t: SourcingTarget }) {
   const pr = t.progress;
   return (
@@ -392,6 +429,7 @@ function TargetRow({ jobId, t }: { jobId: string; t: SourcingTarget }) {
         {pr && (pr.exhausted ? <span className="chip small">exhausted</span> : null)}
         {t.fit && !t.fit.searched && <span className="blocktag" title={t.pinned ? "Pinned: searched anyway" : "Not searched"}>{t.pinned ? "searched though " : "not searched: "}{t.fit.why}</span>}
         {t.profile && <p className="hint">{facts(t.profile)}</p>}
+        {(t.lines?.length ?? 0) > 0 && <p className="hint">{t.lines!.map(lineWords).join(" · ")}</p>}
         {t.why.filter((w) => w !== TARGET_TIER[t.tier]).length > 0 && <p className="hint">{t.why.filter((w) => w !== TARGET_TIER[t.tier]).join(" · ")}</p>}
         {pr && <p className="hint">{pr.searches} {pr.searches === 1 ? "search" : "searches"} · {pr.results} found · {pr.known} already known · {pr.relevant} relevant</p>}
         {t.release && t.tier !== "release" && (
@@ -420,14 +458,16 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
   const since = lastRun?.status !== "running" ? lastRun?.started_at ?? null : null;
   return (
     <>
-      {(s.running || s.building || s.suggestions.some((x) => x.evidence?.status === "queued" || x.evidence?.status === "running"))
-        && <Refresh every={3000} upTo={300000} />}
+      {(s.running || s.building || s.suggestions.some((x) => x.evidence?.status === "queued" || x.evidence?.status === "running"
+        || x.work?.status === "queued" || x.work?.status === "running"))
+        && <Refresh every={5000} upTo={1800000} />}
       <section className="panel">
         <div className="row spread">
-          <h3><Radar aria-hidden="true" className="h-icon" />Sourcing: {MODE_LABEL[p.mode]}</h3>
+          <h3><Radar aria-hidden="true" className="h-icon" />Sourcing</h3>
           <div className="row">
+            <span className="hint">Scheduled searches: {p.mode === "paused" ? "none" : MODE_LABEL[p.mode].toLowerCase()} ·</span>
             {(["daily", "weekly", "continuous", "paused"] as SourcingMode[]).filter((m) => m !== p.mode).map((m) => (
-              <OneClick key={m} action={setSourcingMode.bind(null, jobId, m)} label={MODE_LABEL[m]} busy="Saving…" />
+              <OneClick key={m} action={setSourcingMode.bind(null, jobId, m)} label={m === "paused" ? "Stop scheduling" : MODE_LABEL[m]} busy="Saving…" />
             ))}
           </div>
         </div>
@@ -435,17 +475,20 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
           {s.strong_waiting} of {p.target} strong suggestions waiting (to review or to contact) ·
           this month {usd(s.budget.role_spent_usd)} of {usd(s.budget.role_budget_usd)} for this role
           (desk {usd(s.budget.desk_spent_usd)} of {usd(s.budget.desk_budget_usd)})
-          {p.mode === "paused" ? " · paused: choose how often it searches" : ""}
+          {p.mode === "paused" && !s.running && !s.building ? " · searches only when you press Search now, or choose a schedule" : ""}
         </p>
         {!s.web_ready && <p className="warn">Web search is not set up (no Exa key in core/.env): runs search the desk&apos;s own pool only.</p>}
         <div className="row">
-          {s.running ? <span className="sub live" role="status"><span className="dot" aria-hidden="true" />
+          {s.building && !s.running ? <span className="sub live" role="status"><span className="dot" aria-hidden="true" />
+            Building the company list (the client&apos;s competitors, a few minutes); a search you started follows by itself…</span>
+            : s.running ? <span className="sub live" role="status"><span className="dot" aria-hidden="true" />
             {s.search_round ? `Searching on until ${p.target} strong are waiting: batch ${s.search_round.round} of up to 8${s.search_round.waiting
               ? ", waiting for the last batch's career readings" : ""}…`
               : "Searching… new people appear here as soon as the search ends (usually under a minute)"}</span>
             : <OneClick action={runSourcingNow.bind(null, jobId)} label="Search now" busy="Starting…" primary />}
           {lastRun && <span className="hint">Last run {when(lastRun.started_at)}: {lastRun.stop_reason === "target" && lastRun.found === 0
             ? "did not search, the target was already reached" : STOP[lastRun.stop_reason ?? ""] ?? lastRun.status}</span>}
+          <Link className="hint" href={`/activity?job=${jobId}`}>What the desk did</Link>
         </div>
         {s.strong_waiting >= p.target && (
           <p className="warn">Searching waits while {s.strong_waiting} strong suggestions are waiting to be contacted (the target is {p.target}):
@@ -465,6 +508,8 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
       {s.widening && <WideningPanel jobId={jobId} w={s.widening} />}
 
       <Workflow jobId={jobId} s={s} since={since} />
+
+      {(live.length > 0 || p.lens?.focus) && <section className="panel"><LensPanel jobId={jobId} lens={p.lens} /></section>}
 
       <Dna jobId={jobId} dna={p.dna} building={s.building} ready={s.web_ready} note={s.strategy_note} built={live.length > 0}
            research={s.competitor_research} />

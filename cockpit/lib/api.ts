@@ -118,7 +118,24 @@ export type PersonOnJob = {
   gaps?: { evidence: number; likely?: number; missing: number; conflict: number; question: number };
   state?: string;
   coverage?: { applicable: number; official: number; needed: number; met: boolean; words: string };
+  work?: WorkReading | null;
 };
+
+/** One line of a role's work (the core-work reader, owner 2026-10-27): something the hire will do, or a look-alike job
+    that is not this work. Only lines a person confirmed or typed are used. */
+export type WorkLine = { id: string; kind: "work" | "not"; words: string; central: boolean | null; status: "proposed" | "approved";
+  by: string | null };
+
+export type WorkLines = { lines: WorkLine[]; version: string | null; read_at: string | null;
+  people: { people: number; read: number; waiting: number; stale: number; not_read: number; skipped: number } };
+
+/** What a person's own words show of a role's confirmed work, each line with their exact words. It orders people within
+    a band and never rates anyone. */
+export type WorkReading = { status: "queued" | "running" | "done" | "failed" | "skipped" | "stale";
+  group: "shows" | "nothing" | "looks_like" | null;
+  work: { line: string; central: boolean; verdict: "shown" | "partly"; quote: string }[];
+  not: { line: string; verdict: "main" | "some"; quote: string }[];
+  lines: number | null; source: "cv" | "web_profile" | null; reason: string | null; at: string | null; error: string | null };
 
 export type JobPage = JobSummary & {
   source_document_id: string | null;
@@ -134,6 +151,7 @@ export type JobPage = JobSummary & {
   requirement_groups?: Record<string, [RequirementGroup, string]>;
   role_brief?: BriefLine[];
   role_brief_read_at?: string | null;
+  work_lines?: WorkLines;
   stages: Record<string, number>;
   hiring: {
     company: { id: string; name: string; kind?: string | null; stage?: string | null; team?: string | null; founded?: string | null;
@@ -368,7 +386,10 @@ export type TargetProgress = { searches: number; results: number; known: number;
 export type SourcingTarget = { name: string; company_id: string; tier: string; why: string[]; source: string;
   people_on_desk: number; pinned: boolean; removed: boolean; country: string | null; website?: string; off_limits?: string | null;
   release?: ReleaseSignal | null; group: "A" | "B" | "C"; progress?: TargetProgress | null; profile?: CompanyProfile | null;
-  fit?: { searched: boolean; why: string | null } };
+  fit?: { searched: boolean; why: string | null }; lines?: CompanyLine[] };
+
+/** One line of business of a company, along its dimensions (2026-10-26). */
+export type CompanyLine = { line: string; industry: string; market: string; positioning: string; customers: string };
 
 export type TalentDna = { at: string; people: number; cost_usd: number;
   company: { id: string; name: string; employees: number | null; team_countries: { country: string; pct: number | null }[] | null };
@@ -409,7 +430,8 @@ export type Suggestion = { candidate_id: string; name: string | null; band: Band
   found_by: { channel: string; target: string | null; tier: string | null; query: string | null; at: string | null; new_to_desk: boolean;
     at_target?: "now" | "before" | null };
   evidence?: EvidenceCheck | null; checkable?: boolean;
-  plus?: { requirement: string; verdict: string }[] };
+  plus?: { requirement: string; verdict: string }[];
+  work?: WorkReading | null };
 
 /** What a card's buttons and quick links need of a suggestion, and no more: a list of a hundred cards does not copy
     every card's facts into the page again for its client parts (2026-10-20: the marketing tab was 1.25 MB). */
@@ -426,14 +448,15 @@ export type SourcingPage = {
   job_id: string; title: string; state: string;
   plan: { version: number; mode: SourcingMode; target: number; monthly_budget_usd: number; role_variants: string[]; countries: string[];
     targets: SourcingTarget[]; changed_by: string; changed_at: string | null; dna: TalentDna | null;
-    rules: Record<string, number>; open_tiers: string[] };
+    rules: Record<string, number>; open_tiers: string[];
+    lens?: { role_line?: (Partial<CompanyLine> & { line?: string }) | null; focus?: { words: string; stems: string[] } | null } };
   hiring: { name: string; stage?: string | null; domains?: string[]; kind?: string | null; team?: string; hq?: string } | null;
   budget: { role_spent_usd: number; role_budget_usd: number; desk_spent_usd: number; desk_budget_usd: number };
   strong_waiting: number; web_ready: boolean; running: boolean; building: boolean; widening: Widening | null;
   strategy_note: { level: "error" | "info"; text: string; at: string | null } | null;
   /** Step D: the competitor research (Grok, web) of the last strategy build, and a search going on by itself. */
   competitor_research?: { found: number; kept: number; much_bigger: string[]; refused: { company: string; reason: string }[];
-    pages: number; usd: number } | null;
+    pages: number; usd: number; rounds?: number; lines?: string[]; role?: string } | null;
   search_round?: { round: number; waiting: boolean } | null;
   runs: SourcingRunView[]; suggestions: Suggestion[]; suggestions_total: number;
   lists: Record<Exclude<OutreachStage, "to_review">, Suggestion[]>; counts: Record<OutreachStage, number>; follow_ups_due: number;
@@ -445,3 +468,7 @@ export type FunnelCounts = { found: number; new_to_desk: number; relevant: numbe
 
 export type SourcingStats = { job_id: string | null; since: string | null; group: string; totals: FunnelCounts;
   groups: (FunnelCounts & { key: string; label: string })[]; flags: { level: "warn" | "info" | "good"; key: string; text: string }[] };
+
+export type LogLine = { id: string; at: string; kind: "button" | "task" | "search" | "model" | "error" | "step";
+  level: "info" | "warn" | "error"; summary: string; detail: Record<string, unknown>; actor: string | null; task_id: string | null;
+  job_id: string | null; job: string | null };

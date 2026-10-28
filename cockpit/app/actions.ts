@@ -365,6 +365,67 @@ export async function readRoleBrief(jobId: string): Promise<FormState> {
   }
 }
 
+/** The role's work, line by line, and its look-alikes (the core-work reader, owner 2026-10-27): read again by the desk
+    (about a fifth of a cent); the lines you confirmed or typed stay. */
+export async function readWorkLines(jobId: string): Promise<FormState> {
+  try {
+    const r = await apiJson<{ lines?: number; skipped?: string }>(`/v1/jobs/${jobId}/work-lines`, {});
+    revalidatePath(`/jobs/${jobId}`);
+    if (r.skipped) return { error: `Not read: ${r.skipped}.` };
+    return { message: `Read ${r.lines} lines.` };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Confirm the desk's lines: everyone strong or possible is then read against them in the background. */
+export async function confirmWorkLines(jobId: string, ids: string[]): Promise<FormState> {
+  try {
+    const r = await apiJson<{ confirmed: number; queued: number }>(`/v1/jobs/${jobId}/work-lines/confirm`, { ids });
+    revalidatePath(`/jobs/${jobId}`);
+    return { message: `Confirmed ${r.confirmed}.${r.queued ? ` Reading ${r.queued} ${r.queued === 1 ? "person" : "people"} against them.` : ""}` };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** A line of the work in your own words (confirmed at once), or a look-alike job that is not this work. */
+export async function addWorkLine(jobId: string, kind: "work" | "not", _: FormState, form: FormData): Promise<FormState> {
+  const words = String(form.get("words") ?? "").trim();
+  if (!words) return { error: "Write the line first." };
+  try {
+    await apiJson(`/v1/jobs/${jobId}/work-lines/add`, { kind, words, central: form.get("central") === "on" });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return { message: "Added." };
+}
+
+/** A line in your own words, replacing the desk's (or your earlier) wording. */
+export async function editWorkLine(claimId: string, jobId: string, _: FormState, form: FormData): Promise<FormState> {
+  const words = String(form.get("words") ?? "").trim();
+  if (!words) return { error: "Write the line first." };
+  try {
+    await apiJson(`/v1/work-lines/${claimId}/edit`, { words, central: form.get("central") === "on" });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return {};
+}
+
+/** After the lines changed: read again everyone whose reading is against earlier lines. */
+export async function readPeopleAgain(jobId: string): Promise<FormState> {
+  try {
+    const r = await apiJson<{ queued: number }>(`/v1/jobs/${jobId}/work-readings`, {});
+    revalidatePath(`/jobs/${jobId}`);
+    return { message: r.queued ? `Reading ${r.queued} ${r.queued === 1 ? "person" : "people"} again.` : "Everyone is read against these lines." };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
 /** The uploader's answer to one of the brief's questions: read like notes from the hiring manager, then the brief again. */
 export async function answerBriefQuestion(jobId: string, facet: string, _: FormState, form: FormData): Promise<FormState> {
   const answer = String(form.get("answer") ?? "").trim();
@@ -901,13 +962,44 @@ export async function changeSourcingTarget(jobId: string, companyId: string, cha
 }
 
 export async function runSourcingNow(jobId: string, _: FormState): Promise<FormState> {
+  let status = "";
   try {
-    await apiJson(`/v1/jobs/${jobId}/sourcing/run`, {});
+    status = (await apiJson<{ status: string }>(`/v1/jobs/${jobId}/sourcing/run`, {})).status;
   } catch (e) {
     return fail(e);
   }
   revalidatePath(`/jobs/${jobId}`);
-  return { message: "Searching: your own desk first, then the web within the budgets. This page updates by itself." };
+  return {
+    message: status === "building"
+      ? "This role's company list was never built: building it first (the client's competitors, a few minutes), then the search starts by itself."
+      : "Searching: your own desk first, then the web within the budgets. This page updates by itself.",
+  };
+}
+
+export async function setSourcingFocus(jobId: string, widen: boolean, _: FormState, form: FormData): Promise<FormState> {
+  const words = widen ? null : String(form.get("words") || "").trim();
+  if (!widen && !words) return { error: "Write what to focus on, e.g. luxury apparel." };
+  try {
+    await api(`/v1/jobs/${jobId}/sourcing/focus`, { method: "PUT", body: JSON.stringify({ words }),
+      headers: { "Content-Type": "application/json" } });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  return { message: widen ? "Widened: every company on the list is searched again." : `Focused on “${words}”.` };
+}
+
+export async function widenSourcingFocus(jobId: string, state: FormState): Promise<FormState> {
+  return setSourcingFocus(jobId, true, state, new FormData());
+}
+
+/** A page that crashed in the browser says so in the activity log (owner, 2026-10-22). Never throws. */
+export async function reportClientError(report: { message: string; stack?: string; url?: string; digest?: string }): Promise<void> {
+  try {
+    await apiJson("/v1/activity/client-error", report);
+  } catch {
+    // signed out, or the API is down: nothing more to do
+  }
 }
 
 export async function buildStrategy(jobId: string, _: FormState): Promise<FormState> {

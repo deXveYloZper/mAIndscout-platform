@@ -104,21 +104,34 @@ def initial(session: Session, job: Job) -> dict[str, Any]:
             shared = wanted & _words((claim.approved_view or claim.payload).get("domains") or [])
             if shared and str(claim.subject_id) not in seen:
                 rows.append((claim.subject_id, sorted(shared)))
+        from maindscout.api.process import client_context
+        from maindscout.api.strategy import much_bigger
+
+        client_staff = client_context(session, job)["staff"]
         scored = []
         for company_id, shared in rows:
             company = companies.canonical(session, session.get(Company, company_id))
-            if company is None or str(company.id) in seen:
-                continue
+            if company is None or str(company.id) in seen or much_bigger(company, client_staff):
+                continue  # 20x the client's size is no peer (step C)
             seen.add(str(company.id))
             n = len(companies.people_at(session, org_id, company.id))
             scored.append((n, len(shared), company, shared))
-        scored.sort(key=lambda r: (-r[0], -r[1], r[2].name.lower()))
+        # The most shared industry first; how many of our people worked there only breaks a tie. Ranking by our own
+        # people first made a new role's list the last role's (the luxury pool for Ferrari's CRM role, 2026-10-22).
+        scored.sort(key=lambda r: (-r[1], -r[0], r[2].name.lower()))
         for n, _, company, shared in scored[:20]:
             why = [f"same industry: {', '.join(shared[:3])}"] + ([f"{n} of our people worked there"] if n else [])
             targets.append(_target(company, "known" if n else "peer", why, "desk_research", n))
 
+    from maindscout.api.process import client_context
+    from maindscout.domain import specialism
+
     title = clean_title(job.title)
-    variants = [title] + [t for t in FAMILY_TITLES.get(filters.family or "", []) if t.lower() != title.lower()]
+    # A specialist role searches its specialism's titles, not its broad family's ("CRM specialist", not "account
+    # manager" for a CRM role read as customer success; owner, 2026-10-22).
+    spec = client_context(session, job)["specialism"]
+    usual = specialism.titles(spec) or FAMILY_TITLES.get(filters.family or "", [])
+    variants = [title] + [t for t in usual if t.lower() != title.lower()]
     countries = list(job.open_countries or []) or ([hiring_company.hq_country] if hiring_company and hiring_company.hq_country else [])
     return {"targets": targets, "role_variants": variants[:4], "countries": countries[:5],
             "hiring": {"company": summary.get("name"), "stage": summary.get("stage"), "domains": summary.get("domains") or [],

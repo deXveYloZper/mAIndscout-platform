@@ -19,6 +19,9 @@ The intelligence track adds many model and search calls per CV (plan section 4.8
 - **Erasure:** cost rows keep their numbers (accounting) but lose their link to the person and their documents; verify checks no link remains.
 - **Sourcing has its own budget** (next build, phase 1). Purposes starting `sourcing_` (`sourcing_exa_people`, `sourcing_company_search`, `sourcing_exa_news`, `sourcing_company_profile`, `sourcing_talent_dna`) are left out of the monthly model budget, so a busy search month never stops the desk reading CVs. They are checked against the role's and the desk's sourcing budgets instead (`costs.sourcing_spent`, [sourcing engine](sourcing-engine.md)). `GET /v1/costs` adds `sourcing_usd` and `sourcing_budget_usd`. The Costs page shows them as one line and labels the sourcing rows.
 - **`sourcing_strategy`** builds a role's strategy in the background (one per role at a time, no retries).
+- **`work_reading`** (2026-10-28) reads one strong or possible person's own words against the role's confirmed work
+  lines (one per person and role, deduplicated; quiet in the activity log; purposes `work_lines` and `work_reading`,
+  inside the monthly model budget, a spent budget skips the reading) ([core-work reader](core-work-reader.md)).
 - **The sourcing clock** queues `sourcing_run` tasks (one per role at a time, no retries) every 10 minutes for plans that are due; `SOURCING_AUTO=false` turns it off.
 
 ## Depends on

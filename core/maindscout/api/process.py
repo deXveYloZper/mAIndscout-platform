@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from maindscout.api import documents, erasure, writer
@@ -117,6 +117,8 @@ def natural_key(subject_id, claim_type: str, p: dict, valid_from: str | None = N
         return f"{sid}|pref|{p['facet']}"
     if claim_type == "RoleScopeClaim":
         return f"{sid}|scope|{p['facet']}"  # the same key the brief reader writes (api/role_brief.py)
+    if claim_type == "WorkLineClaim":
+        return f"{sid}|work|{p['kind']}|{_norm_name(p['words'])[:160]}"  # the same key the lines reader writes
     raise ValueError(f"No natural key for {claim_type}")
 
 
@@ -287,7 +289,10 @@ def _flag_careers(session: Session, org_id, candidate_id, run: IntelligenceRun, 
                     {"company": claim.payload["company"]["raw_name"], "question": "same stint, or two?"},
                     [("option", claim.id), ("option", other.id)],
                 )
-                decisions.append(decision.id)
+                from maindscout.api import settle
+
+                if not settle.settle(session, decision):  # one job written twice: joined by the desk (2026-10-22)
+                    decisions.append(decision.id)
     # Different companies, genuinely overlapping employment: a flag on both, never a merge.
     partners: dict[str, list[str]] = {}
     for a, b in stints.concurrent_pairs([_step(c) for c in careers]):
@@ -378,7 +383,16 @@ def client_context(session: Session, job: Job) -> dict[str, Any]:
     # describes the scope; it does not ask for a CRM specialist (Michela Bassani, 2026-10-21).
     words = " ".join(p.get("text_raw") or "" for p in reqs if p.get("strength") in ("must", "deal_breaker", "strong_plus"))
     every = " ".join([p.get("text_raw") or "" for p in reqs if p.get("strength") != "anti"] + [b.get("words") or "" for b in brief.values()])
-    return {"staff": int(staff) if staff else None, "level": level, "generalist": bool(GENERALIST.search(every)), "wanted": words}
+    from maindscout.domain import specialism
+
+    # The title and what it asks for (a CRM in a marketer's nice-to-have list is scope, not a specialist role)
+    spec = specialism.of_role([job.title, words] + [p.get("normalized_token") or "" for p in reqs
+                                                    if p.get("category") == "skill" and p.get("strength") in ("must", "deal_breaker")])
+    return {"staff": int(staff) if staff else None, "level": level, "generalist": bool(GENERALIST.search(every)), "wanted": words,
+            "specialism": spec,
+            # the years the ad asks for, at least (its role or seniority requirement)
+            "min_years": max((float(p["min_years"]) for p in reqs if p.get("strength") in ("must", "deal_breaker")
+                              and p.get("category") in ("role", "seniority") and p.get("min_years")), default=None)}
 
 
 def _match_now(session: Session, org_id, candidate_id, job: Job, rows=None, coarse: triage.Triage | None = None,
@@ -405,7 +419,21 @@ def _match_now(session: Session, org_id, candidate_id, job: Job, rows=None, coar
                           (coarse.band, coarse.reason), answers_for(session, org_id, candidate_id),
                           blocked=block.reason if block is not None else None,
                           preferences=preference_rows(session, job, inputs[1], [r["payload"] for r in reqs]),
-                          client=client_context(session, job))
+                          client=match_context(session, job, candidate_id))
+
+
+def match_context(session: Session, job: Job, candidate_id) -> dict[str, Any]:
+    """The role's context for matching one person: the client (client_context) and whether a CV is on file for them."""
+    return {**client_context(session, job), "has_cv": _has_cv(session, candidate_id)}
+
+
+def _has_cv(session: Session, candidate_id) -> bool:
+    """Is anything more than a public profile on file for them (a CV they or we uploaded)?"""
+    from maindscout.db.models import DocumentSubject
+
+    return session.scalar(select(func.count()).select_from(DocumentSubject).join(Document, Document.id == DocumentSubject.document_id)
+                          .where(DocumentSubject.subject_type == "candidate", DocumentSubject.subject_id == candidate_id,
+                                 Document.doc_type == "cv")) > 0
 
 
 def job_side(session: Session, job: Job, requirements: list[dict]):
@@ -492,10 +520,11 @@ def retriage_pair(session: Session, pair: CandidateJob, cause: dict, actor: str 
     coarse = _triage_now(session, pair.org_id, pair.candidate_id, job, inputs)
     m = _match_now(session, pair.org_id, pair.candidate_id, job, rows, coarse, inputs)
     pair.match_tier, pair.match = m.tier, m.as_dict()  # kept up to date even when a person set the band
-    from maindscout.api import evidence
+    from maindscout.api import evidence, work_reading
 
     if pair.band_overridden_by:
         evidence.maybe_queue(session, pair, pair.triage_band)  # the owner chose them: a strong match too
+        work_reading.maybe_queue(session, pair, pair.triage_band)
         session.flush()
         return None
     if m.band is None:  # unclear: the coarse band stands
@@ -506,6 +535,7 @@ def retriage_pair(session: Session, pair: CandidateJob, cause: dict, actor: str 
         # Nothing could be read (an image of a page): no evidence is not evidence of a miss. A person opens the file.
         result = triage.Triage("review_later", "cv_unreadable")
     evidence.maybe_queue(session, pair, result.band)  # a strong match found on the web: look at their public work
+    work_reading.maybe_queue(session, pair, result.band)  # strong or possible: their own words against the role's work
     if (pair.triage_band, pair.triage_reason) == (result.band, result.reason):
         session.flush()
         return None

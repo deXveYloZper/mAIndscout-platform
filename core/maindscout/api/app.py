@@ -35,6 +35,40 @@ from maindscout.storage import BlobStore, LocalBlobStore
 MAX_UPLOAD = 20 * 1024 * 1024
 
 app = FastAPI(title="mAIndscout platform API", version="0.1.0")
+
+
+@app.middleware("http")
+async def activity_log(request: Request, call_next):
+    """Every action a page sends (a button), and every error, as a line in the activity log (owner, 2026-10-22)."""
+    import time
+
+    from starlette.concurrency import run_in_threadpool
+
+    from maindscout import activity
+    from maindscout.api import buttons
+
+    action = buttons.describe(request.method, request.url.path) if request.method in ("POST", "PUT", "PATCH", "DELETE") else None
+    job_id = buttons.job_of(request.url.path)
+    started = time.monotonic()
+    with activity.about(job_id=job_id):
+        try:
+            response = await call_next(request)
+        except Exception as exc:
+            who = getattr(request.state, "principal", None)
+            await run_in_threadpool(activity.error, f"Server error on {request.method} {request.url.path}: {type(exc).__name__}",
+                                    exc, {"action": action}, org_id=getattr(who, "org_id", None),
+                                    actor=getattr(who, "email", None), job_id=job_id)
+            raise
+    ms = int((time.monotonic() - started) * 1000)
+    who = getattr(request.state, "principal", None)
+    if action or response.status_code >= 500:
+        level = "error" if response.status_code >= 500 else "warn" if response.status_code >= 400 else "info"
+        await run_in_threadpool(
+            activity.note, "error" if level == "error" else "button",
+            f"{action or request.method + ' ' + request.url.path}{'' if response.status_code < 400 else f' (refused: {response.status_code})'}",
+            {"route": f"{request.method} {request.url.path}", "status": response.status_code, "ms": ms}, level,
+            org_id=getattr(who, "org_id", None), actor=getattr(who, "email", None), job_id=job_id)
+    return response
 app.add_middleware(
     CORSMiddleware,
     allow_origins=(env("COCKPIT_ORIGINS", "http://localhost:3001") or "").split(","),
@@ -83,10 +117,12 @@ def _principal(session: Session, authorization: str | None, x_org_id: str | None
     return p
 
 
-def get_principal_any(authorization: str | None = Header(default=None), x_org_id: str | None = Header(default=None),
-                      session: Session = Depends(get_session)) -> auth.Principal:
+def get_principal_any(request: Request, authorization: str | None = Header(default=None),
+                      x_org_id: str | None = Header(default=None), session: Session = Depends(get_session)) -> auth.Principal:
     """Signed in, even if an owner still has to set up two-step codes (for the account routes only)."""
-    return _principal(session, authorization, x_org_id)
+    p = _principal(session, authorization, x_org_id)
+    request.state.principal = p  # for the activity log: who pressed the button
+    return p
 
 
 def get_principal(p: auth.Principal = Depends(get_principal_any)) -> auth.Principal:
@@ -530,6 +566,53 @@ def candidate_claims(candidate_id: uuid.UUID, status: str | None = Query(None), 
     return [c for c in claims if not status or c["status"] == status]
 
 
+@app.get("/v1/activity")
+def get_activity(job_id: uuid.UUID | None = Query(None), kind: str | None = Query(None), level: str | None = Query(None),
+                 q: str | None = Query(None), limit: int = Query(200, ge=1, le=1000), before: datetime | None = Query(None),
+                 org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """The activity log, newest first: buttons, tasks, searches, model calls, steps and errors (owner, 2026-10-22)."""
+    from maindscout.db.models import DeskLog, Job
+
+    stmt = select(DeskLog).where(DeskLog.org_id == org_id)
+    if job_id:
+        stmt = stmt.where(DeskLog.job_id == job_id)
+    if kind:
+        stmt = stmt.where(DeskLog.kind.in_(kind.split(",")))
+    if level:
+        stmt = stmt.where(DeskLog.level.in_(level.split(",")))
+    if q:
+        stmt = stmt.where(DeskLog.summary.ilike(f"%{q}%"))
+    if before:
+        stmt = stmt.where(DeskLog.at < before)
+    rows = list(session.scalars(stmt.order_by(DeskLog.at.desc()).limit(limit)))
+    titles = dict(session.execute(select(Job.id, Job.title).where(Job.id.in_({r.job_id for r in rows if r.job_id} or {None}))).all())
+    return [{"id": str(r.id), "at": r.at.isoformat(), "kind": r.kind, "level": r.level, "summary": r.summary,
+             "detail": r.detail, "actor": r.actor, "task_id": str(r.task_id) if r.task_id else None,
+             "job_id": str(r.job_id) if r.job_id else None, "job": titles.get(r.job_id)} for r in rows]
+
+
+class ClientErrorBody(BaseModel):
+    message: str
+    stack: str | None = None
+    url: str | None = None
+    digest: str | None = None
+
+
+@app.post("/v1/activity/client-error")
+def client_error(body: ClientErrorBody, p: auth.Principal = Depends(get_principal)):
+    """A page that crashed in the browser says so, so the error can be read later (owner, 2026-10-22)."""
+    import re
+
+    from maindscout import activity
+
+    path = urllib.parse.urlparse(body.url or "").path
+    m = re.match(r"^/jobs/([0-9a-fA-F-]{36})", path)
+    activity.note("error", f"The page crashed in the browser: {body.message[:200]}",
+                  {"url": body.url, "stack": activity.cut(body.stack or "", 12000), "digest": body.digest}, "error",
+                  org_id=p.org_id, actor=p.email, job_id=m.group(1) if m else None)
+    return {"ok": True}
+
+
 @app.get("/v1/inbox")
 def get_inbox(job_id: uuid.UUID | None = Query(None), band: str | None = Query(None),
               org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
@@ -659,6 +742,25 @@ def change_sourcing_plan(job_id: uuid.UUID, body: PlanBody, org_id: uuid.UUID = 
     return out
 
 
+class FocusBody(BaseModel):
+    words: str | None = None
+
+
+@app.put("/v1/jobs/{job_id}/sourcing/focus")
+def change_sourcing_focus(job_id: uuid.UUID, body: FocusBody, org_id: uuid.UUID = Depends(get_org),
+                          session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Narrow the search to companies the words describe ("luxury apparel"), or widen it again (no words)."""
+    from maindscout.api import autosource
+
+    try:
+        autosource.set_focus(session, org_id, job_id, body.words, actor)
+    except autosource.SourcingEngineError as error:
+        raise HTTPException(422, str(error)) from error
+    out = autosource.page(session, org_id, job_id, actor)
+    session.commit()
+    return out
+
+
 class TargetBody(BaseModel):
     name: str
 
@@ -696,10 +798,21 @@ def run_sourcing_now(job_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), se
     """Search now (in the background): the pool, then the web within the budgets."""
     from maindscout.api import autosource
 
+    from maindscout import activity
+
     job = autosource._job(session, org_id, job_id)
     if job.state != "open":
         raise HTTPException(422, "Only an open role is sourced")
     autosource.plan(session, org_id, job_id, actor)
+    if not autosource.list_built(session, job_id) and task_handlers.exa_factory() is not None:
+        # Never searched from a starting list nobody built: the client's competitors first (owner, 2026-10-22: the
+        # Ferrari role searched the last role's fashion houses because its list was never built).
+        task = tasks.enqueue(session, org_id, "sourcing_strategy", {"job_id": str(job_id), "actor": actor, "then_search": True},
+                             priority=60, dedupe_key=f"strategy:{job_id}", max_attempts=1)
+        session.commit()
+        activity.step("Search now: this role's company list was never built, so it is built first (competitor research, "
+                      "about $0.45), then the search starts", org_id=org_id, job_id=job_id, actor=actor)
+        return {"task_id": str(task.id), "status": "building"}
     task = tasks.enqueue(session, org_id, "sourcing_run", {"job_id": str(job_id), "trigger": "manual", "actor": actor},
                          priority=60, dedupe_key=f"sourcing:{job_id}", max_attempts=1)
     session.commit()
@@ -1067,12 +1180,13 @@ def read_role_brief(job_id: uuid.UUID, reread_notes: bool = False, org_id: uuid.
                     session: Session = Depends(get_session), llm: LLMClient = Depends(get_llm)):
     """Read the role brief (what the hire will really do, from the ad, the notes and research; about a cent), and with
     `reread_notes` read the notes again first with today's reader."""
-    from maindscout.api import hiring, role_brief
+    from maindscout.api import hiring, role_brief, work_lines
 
     notes = hiring.reread_intakes(session, org_id, job_id, llm) if reread_notes else None
     result = role_brief.read(session, org_id, job_id, llm)
+    work = work_lines.read_unless_confirmed(session, org_id, job_id, llm) if "skipped" not in result else None
     session.commit()
-    return {**result, "notes": notes, "brief": role_brief.view(session, job_id)}
+    return {**result, "notes": notes, "brief": role_brief.view(session, job_id), "work_lines": work}
 
 
 class BriefAnswerBody(BaseModel):
@@ -1084,9 +1198,10 @@ class BriefAnswerBody(BaseModel):
 def answer_role_brief(job_id: uuid.UUID, body: BriefAnswerBody, org_id: uuid.UUID = Depends(get_org),
                       session: Session = Depends(get_session), actor: str = Depends(get_actor), llm: LLMClient = Depends(get_llm)):
     """Answer one of the brief's questions: read like notes from the hiring manager, then the brief again (two cents)."""
-    from maindscout.api import role_brief
+    from maindscout.api import role_brief, work_lines
 
     result = role_brief.answer(session, org_id, job_id, body.facet, body.answer, actor, llm)
+    work_lines.read_unless_confirmed(session, org_id, job_id, llm)
     session.commit()
     return {**result, "brief": role_brief.view(session, job_id)}
 
@@ -1099,11 +1214,82 @@ class TellBody(BaseModel):
 def tell_desk(job_id: uuid.UUID, body: TellBody, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
               actor: str = Depends(get_actor), llm: LLMClient = Depends(get_llm)):
     """Anything about the role in your own words: read like notes, then the brief again."""
-    from maindscout.api import role_brief
+    from maindscout.api import role_brief, work_lines
 
     result = role_brief.tell(session, org_id, job_id, body.text, actor, llm)
+    if result.get("lines"):  # the brief was read again: so are the work lines, while none is confirmed
+        work_lines.read_unless_confirmed(session, org_id, job_id, llm)
     session.commit()
     return result
+
+
+# --- the core-work reader (owner, 2026-10-27: "yes build the reader") ------------------------------------------------
+
+
+@app.post("/v1/jobs/{job_id}/work-lines")
+def read_work_lines(job_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                    llm: LLMClient = Depends(get_llm)):
+    """Read the role's work, line by line, and its look-alikes (about a fifth of a cent). A line a person confirmed
+    or typed stays; the desk's other proposals are replaced."""
+    from maindscout.api import work_lines
+
+    result = work_lines.read(session, org_id, job_id, llm)
+    session.commit()
+    return {**result, "work_lines": work_lines.view(session, job_id)}
+
+
+class WorkConfirmBody(BaseModel):
+    ids: list[str] | None = None
+
+
+@app.post("/v1/jobs/{job_id}/work-lines/confirm")
+def confirm_work_lines(job_id: uuid.UUID, body: WorkConfirmBody, org_id: uuid.UUID = Depends(get_org),
+                       session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Confirm the desk's lines (all, or the ids given); everyone strong or possible is then read against them in the
+    background. Nobody is re-rated."""
+    from maindscout.api import work_lines
+
+    result = work_lines.confirm(session, org_id, job_id, body.ids, actor)
+    session.commit()
+    return result
+
+
+class WorkLineBody(BaseModel):
+    kind: str = "work"
+    words: str
+    central: bool | None = None
+
+
+@app.post("/v1/jobs/{job_id}/work-lines/add")
+def add_work_line(job_id: uuid.UUID, body: WorkLineBody, org_id: uuid.UUID = Depends(get_org),
+                  session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """A line in your own words: one thing the hire will do, or a look-alike job that is not this work."""
+    from maindscout.api import work_lines
+
+    claim = work_lines.add(session, org_id, job_id, body.kind, body.words, body.central, actor)
+    session.commit()
+    return {"id": str(claim.id), **(claim.approved_view or claim.payload)}
+
+
+@app.post("/v1/work-lines/{claim_id}/edit")
+def edit_work_line(claim_id: uuid.UUID, body: WorkLineBody, org_id: uuid.UUID = Depends(get_org),
+                   session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """A line in your own words, replacing the desk's (or your earlier) wording."""
+    from maindscout.api import work_lines
+
+    claim = work_lines.edit(session, org_id, claim_id, body.words, body.central, actor)
+    session.commit()
+    return {"id": str(claim.id), **(claim.approved_view or claim.payload)}
+
+
+@app.post("/v1/jobs/{job_id}/work-readings")
+def read_people_again(job_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """After the lines changed: read again everyone strong or possible whose reading is against earlier lines."""
+    from maindscout.api import work_reading
+
+    queued = work_reading.read_again(session, org_id, job_id)
+    session.commit()
+    return {"queued": queued}
 
 
 class EditBody(BaseModel):

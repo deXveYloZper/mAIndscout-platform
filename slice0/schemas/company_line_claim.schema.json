@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maindscout.local/schemas/company_line_claim.schema.json",
+  "title": "CompanyLineClaim payload",
+  "description": "One line of business of a company: its industry, market, positioning and customers.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "line",
+    "industry",
+    "market",
+    "positioning",
+    "customers"
+  ],
+  "properties": {
+    "line": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 80
+    },
+    "industry": {
+      "type": "string",
+      "enum": [
+        "fintech",
+        "payments",
+        "banking",
+        "insurance",
+        "crypto / web3",
+        "e-commerce",
+        "retail",
+        "telecommunications",
+        "media / entertainment",
+        "gaming / gambling",
+        "healthcare",
+        "pharma / biotech",
+        "energy / utilities",
+        "environment / water",
+        "climate / sustainability",
+        "aerospace / defence",
+        "space / earth observation",
+        "automotive / mobility",
+        "logistics / supply chain",
+        "procurement",
+        "construction / property",
+        "public sector",
+        "education",
+        "travel / hospitality",
+        "marketing / advertising",
+        "it services / consulting",
+        "enterprise software",
+        "cybersecurity",
+        "ai / data",
+        "agriculture / food",
+        "manufacturing / industrial",
+        "hr / recruiting",
+        "legal",
+        "research / academia",
+        "non-profit",
+        "luxury / fashion / beauty",
+        "other"
+      ]
+    },
+    "market": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 80
+    },
+    "positioning": {
+      "type": "string",
+      "enum": [
+        "luxury",
+        "premium",
+        "mainstream",
+        "budget",
+        "enterprise",
+        "mid-market",
+        "small business",
+        "unknown"
+      ]
+    },
+    "customers": {
+      "type": "string",
+      "enum": [
+        "consumers",
+        "businesses",
+        "both",
+        "public sector",
+        "unknown"
+      ]
+    }
+  }
+}

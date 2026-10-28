@@ -65,8 +65,20 @@ export function AddTarget({ action }: { action: Act }) {
   const [state, formAction, pending] = useActionState(action, {});
   return (
     <form action={formAction} className="row">
-      <input name="name" placeholder="add a company to search, e.g. Isar Aerospace" aria-label="Company to add" className="grow" />
+      <input name="name" placeholder="a company to search" aria-label="Company to add" className="grow" />
       <button className="btn small" disabled={pending}>{pending ? "Adding…" : "Add"}</button>
+      <Said state={state} />
+    </form>
+  );
+}
+
+/** Narrow the search to what some words describe ("luxury apparel"); never the default (owner, 2026-10-26). */
+export function FocusForm({ action }: { action: Act }) {
+  const [state, formAction, pending] = useActionState(action, {});
+  return (
+    <form action={formAction} className="row">
+      <input name="words" placeholder="focus on companies like… (e.g. luxury apparel)" aria-label="Focus the search on" className="grow" />
+      <button className="btn small" disabled={pending}>{pending ? "Focusing…" : "Focus"}</button>
       <Said state={state} />
     </form>
   );

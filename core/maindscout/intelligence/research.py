@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
-from maindscout.intelligence.llm import DEFAULT_MODEL, TICKS_PER_USD, LLMError, load_env_key
+from maindscout.intelligence.llm import DEFAULT_MODEL, NETWORK_ERRORS, TICKS_PER_USD, LLMError, load_env_key
 
 RESEARCH_PROMPT_VERSION = "2026-10-03.3"
 RESPONSES_URL = "https://api.x.ai/v1/responses"
@@ -124,7 +124,7 @@ class XaiSearchClient:
                 last = error
                 if error.code not in (429, 500, 502, 503, 504):
                     raise LLMError(f"xAI returned HTTP {error.code}") from error
-            except (urllib.error.URLError, TimeoutError) as error:
+            except NETWORK_ERRORS as error:
                 last = error
             time.sleep(3 * (attempt + 1))
         if payload is None:

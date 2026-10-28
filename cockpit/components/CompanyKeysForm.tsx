@@ -9,7 +9,7 @@ export function CompanyKeysForm({ action, website, linkedin }: { action: (s: For
   const [state, formAction, pending] = useActionState(action, {});
   return (
     <form action={formAction} className="row">
-      <input name="website" defaultValue={website ?? ""} placeholder="website, e.g. buonaventura.it" aria-label="Company website" />
+      <input name="website" defaultValue={website ?? ""} placeholder="the company's website" aria-label="Company website" />
       <input name="linkedin" defaultValue={linkedin ? `linkedin.com/company/${linkedin}` : ""} placeholder="linkedin.com/company/…"
         aria-label="Company LinkedIn page" />
       <button className="btn small" disabled={pending}>{pending ? "Saving…" : "Save"}</button>

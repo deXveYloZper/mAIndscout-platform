@@ -82,6 +82,20 @@ types:
       each line names its basis, a quoted one has its quote as evidence, a reading of ours may carry one question
       for whoever uploaded the job. Proposed until a person approves or corrects it; never personality or names.
 
+  WorkLineClaim:
+    class: inferred
+    subject_types: [job]
+    natural_key: "job_id + kind + words"
+    volatility: volatile
+    default_review: individual
+    payload_schema: schemas/work_line_claim.schema.json
+    notes: >
+      2026-10-27 (owner: "yes build the reader, test on Ferrari and Bonaventura"). One line of the role's work for the
+      core-work reader: one thing the hire will actually do (marked central when it makes the job what it is), or one
+      job that shares the role's words but is a different job ("not this work"). Proposed by the desk from the role's
+      own material; only lines a person confirmed or typed are used. They order people within a band and never
+      change a rating, so confirming one re-rates nobody.
+
   SameAsClaim:
     class: inferred
     subject_types: [candidate, company]
@@ -147,6 +161,33 @@ types:
     volatility: volatile
     default_review: policy_eligible
     payload_schema: schemas/company_location_claim.schema.json
+
+  CompanySegmentClaim:
+    class: observed
+    subject_types: [company]
+    natural_key: "company_id + segment"
+    volatility: stable
+    default_review: policy_eligible
+    payload_schema: schemas/company_segment_claim.schema.json
+    notes: >
+      2026-10-26 (owner: "start with company tags"). A segment of the market the company belongs to ("luxury watches",
+      "luxury jewellery and watches", "luxury sports car manufacturers"), found by a role's talent-map research, with
+      the page and quote that name it as evidence. Public tier, shared by every role and desk: never names the client
+      or the role it was found for. A later role's talent map starts from the companies already in a segment.
+
+  CompanyLineClaim:
+    class: observed
+    subject_types: [company]
+    natural_key: "company_id + industry + market"
+    volatility: stable
+    default_review: policy_eligible
+    payload_schema: schemas/company_line_claim.schema.json
+    notes: >
+      2026-10-26 (owner: "how deep does the tags go"). One line of business of the company, along a few dimensions:
+      its industry (the fixed list), its market (what it sells, as specific as the source allows), its positioning
+      (luxury, premium, mainstream, budget; enterprise, mid-market, small business) and its customers, with the exact
+      words that support it as evidence. Public tier. They add, order and explain; they never leave a company out by
+      themselves (a role narrows to them only when the owner chooses a focus).
 
   CompanyPracticeClaim:
     class: observed

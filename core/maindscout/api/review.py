@@ -57,8 +57,13 @@ def _seal(decision: Decision, resolution: dict[str, Any], actor: str) -> None:
     decision.resolution = {**resolution, "by": actor, "at": _now().isoformat()}
 
 
+NOT_RATED = {"WorkLineClaim"}  # facts that order people within a band and rate nobody: a change re-rates no one
+
+
 def retriage_after(session: Session, claim: Claim, act: str, actor: str) -> None:
     """A human changed a fact: bands that may depend on it are recomputed, and each change is recorded."""
+    if claim.claim_type in NOT_RATED:
+        return
     cause = {"act": act, "claim_id": str(claim.id), "claim_type": claim.claim_type}
     from maindscout.api import coverage
 
@@ -322,6 +327,9 @@ def resolve_decision(session: Session, org_id: uuid.UUID, decision_id: uuid.UUID
             for ev in session.scalars(select(Evidence).where(Evidence.claim_id == newer.id)):
                 ev.claim_id = older.id
             newer.status, newer.superseded_by = "superseded", older.id
+            starts = [d for d in (older.valid_from, newer.valid_from) if d is not None]
+            older.valid_from = min(starts) if starts else None  # one job: its whole span (2026-10-22)
+            older.valid_to = None if None in (older.valid_to, newer.valid_to) else max(older.valid_to, newer.valid_to)
             writer.set_flags(session, older, {k: v for k, v in older.flags.items() if k != "possible_duplicate_stint"})
         elif action == "two":
             for claim in (left, right):

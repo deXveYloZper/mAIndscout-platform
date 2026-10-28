@@ -73,7 +73,7 @@ export default async function Person({ params, searchParams }: { params: Promise
               </ActForm>
             ))}
             <ActForm action={tagPerson.bind(null, person.id, path)} className="row tagadd">
-              <input name="tag" aria-label="Add a tag (talent pool)" placeholder="+ tag, e.g. insar-pool" size={18} />
+              <input name="tag" aria-label="Add a tag (talent pool)" placeholder="+ tag" size={18} />
               <button className="btn small ghost">Tag</button>
             </ActForm>
           </div>

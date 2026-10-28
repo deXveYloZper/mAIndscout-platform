@@ -76,6 +76,9 @@ The owner, 2026-10-19:
 - **On the page** (step E): the hiring profile opens with the brief, each line with its source ("the ad", "your
   notes", "research", "our reading", or "you" for a line a person decided) and its quote; then the questions, each
   with an answer box. "Read the brief" reads it when there is none yet, "Read again" after new notes.
+- **The work, line by line** (2026-10-28): reading the brief (the button, an answer, "tell the desk") also reads the
+  role's work lines and look-alikes while none is confirmed, shown under the brief for the
+  [core-work reader](core-work-reader.md).
 
 ## First readings (2026-10-19, $0.008 for both)
 - **AI Product Engineer (Procure AI):**
@@ -95,7 +98,8 @@ The owner, 2026-10-19:
 
 ## Used by
 The hiring profile ([cockpit](cockpit.md)). Step C uses its listed values (team, hands-on, level) in the level fit and
-the move check, after match-eval.
+the move check, after match-eval. The [core-work reader](core-work-reader.md) reads its lines with the ad and the
+requirements.
 
 ## Tests
 `core/tests/test_cards.py`: an answer is read like notes and the question goes; an empty answer costs nothing; the

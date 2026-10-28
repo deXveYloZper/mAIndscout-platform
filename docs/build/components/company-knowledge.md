@@ -96,3 +96,66 @@ The tests that decided it are in [plan section 4b](../../next/PLAN.md):
 - Exa's profiles are estimates. Small, regional or shut-down companies are often missing or confused, so a name match alone is never accepted.
 - Employers without an Exa ID or LinkedIn link stay names until a CV or research identifies them.
 - The cross-check compares the facts listed above; headcounts (dated) are not compared.
+
+## Segments: market knowledge kept on the company (2026-10-26)
+The owner: "yes start with company tags". A company the talent-map research keeps is tagged with its pool's segment
+("luxury jewellery and watches", "luxury sports car manufacturers") as a public-tier fact (`CompanySegmentClaim`), with
+the research's page and quote as evidence; a direct competitor is tagged with the pool its line fits ("luxury sports
+cars" -> "luxury sports car manufacturers"). Segments are shared by every role and desk and never name the client or
+the role. A later role's talent map is told the known segments and reuses their names; a pool that is a known segment
+starts from its companies for free (with 8 or more, only the deeper research round runs, told what is known), and its
+research adds what we do not know yet, which joins the segment. The company page shows "Where it sits in the market".
+A luxury segment counts as luxury in the luxury check: Exa's own words never overrule it.
+
+Backfill from Ferrari's talent map: 106 tags in 6 segments (fashion and leather goods 29, beauty and fragrance 23,
+jewellery and watches 21, hospitality 18, sports cars 11, global luxury groups 4).
+
+**A team in the role's countries, without a threshold** (owner: "if we are looking for a startup that has only 20
+people, then, how does that work? ... rules we make are globally applicable for every search, for every role"): a
+company is left out only when Exa's list of its countries is complete (fewer than ten) and none is the role's; any
+people there make it searchable, and the number there orders the search, most first. Kering (670 people in Italy, 2%
+of its staff) had been left out by the old 5% share.
+
+**The people we know there, for free:** a role's pool step also puts on it anyone on the desk who works or worked in
+the last 3 years at one of its listed companies (read people are matched on their profile; unread ones are read).
+
+## Lines of business, along their dimensions (2026-10-26)
+The owner: "how deep does the tags go, is it just general or does it also go deeper into more specific domains?" and
+"we shouldn't start our searches from the deepest, but do have an option if we want to reach more specific person".
+Each company is described by its lines of business (`CompanyLineClaim`, public tier, one per line), each along four
+dimensions: industry (the fixed list careers are counted in), market (what it sells, as specific as its profile
+allows: "apparel", "source-to-pay software", "AI procurement automation"), positioning (luxury, premium, mainstream,
+budget; enterprise, mid-market, small business) and customers. One model call per 25 companies (about $0.009), no web
+search, read only from the company's profile (and, for a hiring company, the lines its research found); every line
+quotes the words that support it, or is dropped. `python -m maindscout company-lines [--job ID] [--all]`.
+
+**They add, order and explain, never leave a company out by default:**
+- a role's talent pools carry the same dimensions, and reuse every known company whose lines fit, for free;
+- the talent map says which line of the client the role serves (a Ferrari fashion-line role: luxury apparel, not
+  sports cars), kept on the plan's lens; within a tier the companies closest to it are searched first;
+- a role starts wide, at the level it asks for; **narrowing is the owner's choice**: a focus ("luxury apparel") on the
+  Sourcing tab searches only companies it describes (named, pinned and hand-added ones always), shown on the plan and
+  undone with "Widen again";
+- the company page shows "Where it sits in the market".
+
+The two tests (2026-10-26): Procure AI's 35 competitors split into real sub-markets (AI procurement automation and
+agents; source-to-pay and procure-to-pay suites; procurement and spend intelligence; procurement consultancies), 17
+had no profile to read. A dry run for a hypothetical Ferrari fashion-line role ($0.20, no job, nobody searched): the
+role's line read as luxury apparel and accessories; its pools put fashion first (52 known fashion houses, 43 jewellery
+and watch houses, 28 beauty houses free from what we know; a new pool for Italian luxury menswear and sportswear); one
+deeper round found Marni, The Attico, Sunnei, Fabiana Filippi, Valstar; and Ferrari now carries its fashion line
+(luxury apparel, accessories and personal luxury goods) beside its cars and racing.
+
+Backfill, 2026-10-26: every company with a profile classified, 3,041 companies with 3,144 lines for $1.86; 723 lines
+were dropped for want of supporting words (about 700 companies have no line yet; 2,496 have no profile to read).
+
+## Vectors: measured on Ferrari, not built (2026-10-26)
+A local multilingual embedding model (paraphrase-multilingual-MiniLM-L12-v2 through fastembed, in its own Docker
+volume, never in the desk's image) scored Ferrari's 1,684 people by how well their own passages (summary, skills, one
+per job; company boilerplate left out) cover six lines of the role's core work. It does not pass as a ranking: the
+client's interviewee ranked 206th on her public profile (only titles, "CRM operations specialist") and would rank
+about 60th on her CV; the top places went to long, senior profiles (17 of the top 21 are 8 to 37 years into their
+careers, rightly out for a mid role). It does find the right evidence across languages ("Responsabile della
+formazione dei dipendenti in seguito al rilascio della piattaforma a nuovi mercati" for "training users and store
+staff on the CRM platform after its release"). Verdict: not a ranker; worth it later as a way to find and quote
+evidence in CVs and call notes, under a reader that judges the role's core work.

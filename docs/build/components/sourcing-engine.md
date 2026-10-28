@@ -72,7 +72,9 @@ How the build follows those rules (the CV path for found profiles, separate budg
 - **Searches name roles, companies and places, never a person.**
 
 **Since 2026-10-19:** suggestions to review are ordered strong first, then by how many of the role's strong-plus items
-they meet, then newest; each card shows those items as tags (met, partly, missing, to ask).
+they meet, then newest; each card shows those items as tags (met, partly, missing, to ask). **Since 2026-10-28**, once
+the role has confirmed work lines, the [core-work reader](core-work-reader.md) comes before the strong-plus count:
+within a band, those whose own words show the work first, those whose main work is a look-alike last.
 
 **Since 2026-10-17** ([decision](../../decisions/2026-10-17-evidence-for-strong-matches.md)): after the searches, each target company searched gets its job adverts read in the background ([employer evidence](employer-evidence.md)), and a person the run finds on the web who is a strong match gets an [evidence check](evidence-checks.md). The suggestion card shows the check, with "Check deeper" for the others.
 
@@ -146,3 +148,17 @@ searches are left, or after 8 batches. A scheduled run does not continue. Wider 
 still wait for the owner's word.
 A run covers one batch of companies; the next round follows a run that finished its batch ("searched") or hit its
 search limit, never one that reached its target, its budget, or had nothing left to search.
+
+## Not read when clearly out (2026-10-26)
+The owner: "this would make sense" (readings cost about as much as the searches, and 1,603 of Ferrari's 1,632 ruled-out
+people had each been read first). Someone found on the web, with no CV, is not read for a role when their public
+profile alone shows they are clearly out: no title in the last 3 years says a specialist role's work, or their first
+real job (internships left out) puts them two or more years past the role's band. Their pair says
+"not read: … (public profile)"; they stay in the pool, unread. Measured first on Ferrari: every strong person still read;
+the two "to review" people it would have missed were client development and customer experience titles, now CRM words.
+
+A later role reads them when it may want them: its run first looks at unread people in the pool whose title in the last
+3 years says its specialist work, or who work or worked recently at one of its listed companies, and reads those
+(`unread_wanted`). An ad's own words decide a specialist role strictly ("customer experience" in a marketer's
+must-haves is no CRM role); a person's title is read more widely (client development, engagement and experience are
+CRM work in luxury).

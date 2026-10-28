@@ -24,6 +24,11 @@ _NULLABLE_STR = {"type": ["string", "null"]}
 _QUOTE = {"type": "string"}
 
 
+# Dates about the ad itself (written, posted, updated), never a process date (2026-10-22).
+_ABOUT_THE_AD = re.compile(r"(job )?description date|date of (the )?(job )?description|posted|posting date|published|"
+                           r"publication date|date of (issue|publication)|last (updated|modified)|revision|created on|version date", re.I)
+
+
 def _obj(props: dict[str, Any]) -> dict[str, Any]:
     return {"type": "object", "additionalProperties": False, "required": list(props), "properties": props}
 
@@ -501,7 +506,9 @@ def extract_jd(text: str, artifact_id: uuid.UUID, client: LLMClient, as_of: date
                 continue
             payload["min_years"] = years
         if item["category"] == "education" and item.get("education_level"):
-            payload["education_level"] = item["education_level"]
+            from maindscout.api.hiring import least_degree  # "not necessarily a master's": any degree
+
+            payload["education_level"] = least_degree(f"{item['text']} {item['quote']}", item["education_level"])
         if item["category"] == "language" and item.get("language"):
             if item["language"].lower() not in item["quote"].lower():
                 run.reject(key, "language is not written in the quote")
@@ -533,6 +540,11 @@ def extract_jd(text: str, artifact_id: uuid.UUID, client: LLMClient, as_of: date
     for item in data.get("process_dates", []):
         key = run.key("process")
         if not run.span_for(item["quote"], key):
+            continue
+        if _ABOUT_THE_AD.search(f"{item.get('label') or ''} {item['quote']}"):
+            # When the ad was written or posted is not a step of the hiring process: an old "Job Description Date"
+            # said a fresh Ferrari role's dates had passed (2026-10-22).
+            run.reject(key, "a date about the ad itself, not its process")
             continue
         try:
             parsed = date.fromisoformat(item["date"])

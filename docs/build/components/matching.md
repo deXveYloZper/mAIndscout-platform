@@ -127,3 +127,32 @@ partial, and a field read as "other" (unknown) never counts. match-eval: those 5
 - Rules are written in code as an ordered list. Changing them is a reviewed code change; calibration from recruiter decisions comes in I7.
 - Background and industry use what research and classification know; unknown is "Ask", never a gap.
 - A hand-set band is never moved; the match beside it may disagree, and that's shown.
+
+## A specialist role (2026-10-22, `match-2026-10-22.2`)
+- A person whose recent title says the role's specialist work (CRM, Salesforce, clienteling) works in its field,
+  whatever family their career was filed under (a CRM manager read as marketing, a Salesforce administrator as IT).
+- A must-have that decides the band (Salesforce) and is not on the public profile of someone found on the web, whose
+  title says the specialist work, is "possible: to confirm on the call", not ruled out: a profile seldom lists every
+  tool. With a CV on file, a missing must-have still decides.
+match-eval: Ferrari's CRM role from 3 strong and 51 possible to 5 strong and 153 possible (104 CRM managers, CRM
+specialists and clienteling leads at Prada, Miu Miu, Church's and others had been ruled out on "Salesforce" alone);
+no moves on the three other roles; the owner's labels 4/4.
+
+## Years for the role's level, and the side of the company (2026-10-23, `match-2026-10-23.1`)
+- **Years** (owner: "everyone above 6 years is senior ... mid level with 2-5 is fine, 6 years if it is excellent match,
+  mid level with 7 years of experience is a no"): full years since their first real job; for a mid role 2-5 fit, 6 is
+  strong only with an otherwise excellent match, 7 or more is unlikely. A junior role: 0-2 (3 if excellent). Senior roles
+  and above have no ceiling here.
+- **The side** (owner: "people from IT has really nothing to do for this role"): a specialist title (CRM, Salesforce)
+  counts as the role's field only on its side of the company (business: sales, marketing, client service, retail,
+  hospitality); a Salesforce administrator in IT for a business-side CRM role is related, never strong.
+- **A tool missing from a public profile** of someone whose title says the work is now a question for the call, and the
+  rest of the match decides (it had capped them at possible): the owner's recruiter found the client's interviewee by
+  her title ("CRM operations specialist" at Brunello Cucinelli) and asked for the CV.
+match-eval on Ferrari: strong 9 to 12 (7 of the 9 out as too senior or IT side; in: CRM and clienteling specialists at
+Prada, Valentino, Max Mara, Brunello Cucinelli, 3-5 years), possible 210 to 19 (181 too senior), the owner's two labels
+0/2 to 2/2 (Arianna Orsini strong, Alessandro Pregno possible); the three other roles unchanged, Bonaventura's labels 4/4.
+
+## The years band never sits below the ad (2026-10-26)
+A role's years band is its level's (a mid role's 2-5), but never below what the ad asks: an ad asking at least 5 years
+for a mid role gets 5-7, not a window of one year. match-eval: no moves on the four roles, labels 4/4 and 2/2.

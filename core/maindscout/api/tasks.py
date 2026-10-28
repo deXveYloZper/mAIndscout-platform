@@ -96,31 +96,64 @@ def run_one(factory, worker: str = "worker") -> bool:
         if task is None:
             return False
         task_id = task.id
+    from maindscout import activity
+
     with factory() as session:
         task = session.get(Task, task_id)
-        try:
-            result = execute(session, task)
-            task = session.get(Task, task_id)
-            task.status, task.result, task.finished_at, task.error = "done", result, datetime.now(timezone.utc), None
-            session.commit()
-        except Exception as error:  # the task failed: roll its work back, record why, maybe retry
-            paid = list(session.info.pop("paid", []))
-            session.rollback()
-            from maindscout.db.models import CostEntry
-
-            for row in paid:  # paid calls stay in the ledger even when the task's work is undone
-                session.add(CostEntry(**row))
-            task = session.get(Task, task_id)
-            task.error = f"{type(error).__name__}: {error}"[:2000]
-            log.warning("task %s %s failed: %s", task.kind, task.id, task.error)
-            log.debug(traceback.format_exc())
-            if task.attempts >= task.max_attempts or getattr(error, "permanent", False):
-                task.status, task.finished_at = "failed", datetime.now(timezone.utc)
-            else:
-                task.status = "queued"
-                task.run_after = datetime.now(timezone.utc) + timedelta(seconds=5 * 2 ** task.attempts)
-            session.commit()
+        payload = task.payload or {}
+        with activity.about(org_id=task.org_id, job_id=payload.get("job_id"), task_id=task.id, actor=payload.get("actor")):
+            _run(session, task, task_id, activity)
     return True
+
+
+def _run(session, task: Task, task_id, activity) -> None:
+    started = datetime.now(timezone.utc)
+    kind = task.kind
+    try:
+        result = execute(session, task)
+        task = session.get(Task, task_id)
+        task.status, task.result, task.finished_at, task.error = "done", result, datetime.now(timezone.utc), None
+        session.commit()
+        secs = (datetime.now(timezone.utc) - started).total_seconds()
+        if kind not in QUIET:
+            activity.note("task", f"{LABEL.get(kind, kind)}: done in {secs:.1f}s{_said(result)}",
+                          {"kind": kind, "result": result, "seconds": round(secs, 1)})
+    except Exception as error:  # the task failed: roll its work back, record why, maybe retry
+        paid = list(session.info.pop("paid", []))
+        session.rollback()
+        from maindscout.db.models import CostEntry
+
+        for row in paid:  # paid calls stay in the ledger even when the task's work is undone
+            session.add(CostEntry(**row))
+        task = session.get(Task, task_id)
+        task.error = f"{type(error).__name__}: {error}"[:2000]
+        log.warning("task %s %s failed: %s", task.kind, task.id, task.error)
+        log.debug(traceback.format_exc())
+        if task.attempts >= task.max_attempts or getattr(error, "permanent", False):
+            task.status, task.finished_at = "failed", datetime.now(timezone.utc)
+        else:
+            task.status = "queued"
+            task.run_after = datetime.now(timezone.utc) + timedelta(seconds=5 * 2 ** task.attempts)
+        session.commit()
+        activity.error(f"{LABEL.get(kind, kind)} failed{' (will retry)' if task.status == 'queued' else ''}: "
+                       f"{type(error).__name__}: {str(error)[:200]}", error, {"kind": kind, "attempt": task.attempts})
+
+
+# Plain names for the activity log; the many per-person readings are noted only when they fail.
+LABEL = {"sourcing_run": "Search", "sourcing_strategy": "Build the company list", "profile_job": "Read the hiring profile",
+         "profile_candidate": "Career reading", "profile_company": "Company profile", "research_company": "Company research",
+         "read_practices": "Read a company's job adverts", "evidence_check": "Deeper public check",
+         "read_transcript": "Read a call", "process_document": "Read an upload", "rematch_job": "Re-rate the role",
+         "mailbox_sync": "Mailbox check", "work_reading": "Read their work against the role"}
+# Their results hold a person's words or are routine: noted only when they fail.
+QUIET = {"profile_candidate", "profile_company", "evidence_check", "mailbox_sync", "work_reading"}
+
+
+def _said(result: Any) -> str:
+    if not isinstance(result, dict):
+        return ""
+    bits = [f"{k} {result[k]}" for k in ("status", "stop_reason", "reason", "found", "new", "strong", "round") if result.get(k) not in (None, "", [])]
+    return (" · " + ", ".join(str(b) for b in bits)) if bits else ""
 
 
 def drain(factory, limit: int = 1000) -> int:

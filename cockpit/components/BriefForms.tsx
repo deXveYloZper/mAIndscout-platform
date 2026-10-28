@@ -71,7 +71,7 @@ export function TellForm({ action, asked }: { action: Act; asked: boolean }) {
     <form action={formAction} className="tell">
       <label htmlFor="tell-text" className="sub">{asked ? "Or tell the desk anything else about the role" : "Tell the desk anything about the role"}</label>
       <textarea id="tell-text" name="text" rows={3}
-        placeholder="In your own words: a new must-have, a correction, what the hiring manager said. e.g. Japanese is a plus; 5 years is enough; no one from agencies." />
+        placeholder="In your own words: a new must-have, a correction, anything the hiring manager said." />
       <div className="row">
         <button className="btn small primary" disabled={pending}>{pending ? "Reading…" : "Add to the profile"}</button>
         {state.error && <span className="error" role="alert">{state.error}</span>}

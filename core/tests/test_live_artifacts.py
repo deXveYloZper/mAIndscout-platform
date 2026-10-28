@@ -20,7 +20,7 @@ from maindscout.storage import LocalBlobStore
 FOLDER = Path(os.environ.get("TEST_ARTIFACTS", Path.home() / "Downloads" / "test_artifacts"))
 FILES = sorted(FOLDER.glob("*.pdf")) if FOLDER.exists() else []
 # The job ads in the folder (the Bonaventura ad joined it on 2026-10-21 and was read as a CV until named here).
-JD_FILES = [f for f in FILES if any(w in f.name.lower() for w in ("catalyst", "careers at", "marketing_manager"))]
+JD_FILES = [f for f in FILES if any(w in f.name.lower() for w in ("catalyst", "careers at", "marketing_manager", "jd_"))]
 CV_FILES = [f for f in FILES if f not in JD_FILES]
 
 pytestmark = pytest.mark.skipif(
@@ -72,7 +72,15 @@ def test_each_cv_is_a_person_with_a_history_and_defensible_evidence(world, path)
         assert session.scalars(select(Decision).where(Decision.subject_id == result.subject_id)).all(), "a card for a person"
         return
     claims = list(session.scalars(select(Claim).where(Claim.subject_id == result.subject_id)))
-    assert {c.status for c in claims} == {"proposed"}, "nothing is believed before a human acts"
+    # Nothing is believed before a human acts; the one thing the desk does by itself is join one job written twice
+    # (the same title at the same company, back to back), and the joined step stays proposed.
+    joined = {c.id for c in claims if c.status == "superseded"}
+    assert {c.status for c in claims if c.id not in joined} == {"proposed"}, "nothing is believed before a human acts"
+    for c in claims:
+        if c.id in joined:
+            keep = session.get(Claim, c.superseded_by)
+            assert c.claim_type == keep.claim_type == "CareerStepClaim" and keep.status == "proposed"
+            assert c.payload.get("title_raw") == keep.payload.get("title_raw")
     assert any(c.claim_type == "CareerStepClaim" for c in claims)
     has_name = any(c.claim_type == "IdentityClaim" for c in claims)
     notes = session.scalars(select(Decision).where(Decision.subject_id == result.subject_id, Decision.type == "identity_note")).all()
@@ -105,7 +113,8 @@ def test_one_person_per_cv_never_a_wrong_merge_and_job_footers_are_not_people(wo
 def test_every_pair_has_a_band_and_a_reason_and_no_number(world):
     session = world["session"]
     pairs = session.scalars(select(CandidateJob)).all()
-    assert len(pairs) == len(session.scalars(select(Candidate)).all()) * len(JD_FILES)
+    roles = {r.job_id for r in world["jobs"].values() if r.job_id}  # the same ad twice ("- Copy.pdf") is one role
+    assert len(pairs) == len(session.scalars(select(Candidate)).all()) * len(roles)
     for pair in pairs:
         assert pair.triage_band in {"priority", "review_later", "do_not_submit"}
         assert pair.triage_reason and not any(ch.isdigit() and "%" in pair.triage_reason for ch in pair.triage_reason)
@@ -113,7 +122,7 @@ def test_every_pair_has_a_band_and_a_reason_and_no_number(world):
 
 def test_the_hiring_company_is_the_employer_not_the_careers_platform(world):
     session = world["session"]
-    for result in world["jobs"].values():
+    for result in (r for r in world["jobs"].values() if r.job_id):  # a copy of an ad already read makes no new role
         job = session.get(Job, result.job_id)
         assert job.hiring_company is None or "revolut" not in job.hiring_company.lower()
 

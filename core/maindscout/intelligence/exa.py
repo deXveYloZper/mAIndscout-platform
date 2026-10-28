@@ -24,6 +24,8 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from maindscout.intelligence.llm import NETWORK_ERRORS
+
 EXA_URL = "https://api.exa.ai/search"
 CONTENTS_URL = "https://api.exa.ai/contents"
 MAX_FETCH = 100  # Exa reads at most 100 pages per /contents call
@@ -110,7 +112,7 @@ class ExaClient:
                 failure = ExaError(f"Exa search failed ({error.code}): {detail}")
                 failure.permanent = error.code in (400, 401, 402, 403)  # a bad request or key will not fix itself
                 raise failure from error
-            except (urllib.error.URLError, TimeoutError) as error:
+            except NETWORK_ERRORS as error:
                 if attempt < 2:
                     time.sleep(2 * (attempt + 1))
                     continue

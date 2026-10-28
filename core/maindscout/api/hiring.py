@@ -84,7 +84,21 @@ def _payload(session: Session, item: engine.Item, source: str) -> dict[str, Any]
                 _research(session, company, "named on a role as a company to source from")
         p["companies"] = out
     p.update({k: v for k, v in f.items() if v is not None})
+    if p["category"] == "education":
+        p["education_level"] = least_degree(p["text_raw"], p.get("education_level"))
     return p
+
+
+# "A degree is a must, not necessarily a master's": any degree, a bachelor's or higher (owner, 2026-10-22; it had been
+# read as a master's). The level is a minimum, so "bachelor" lets a master's or a doctorate through too.
+_NOT_NEEDED = re.compile(r"\b(not n?ec?ess?ar\w*|doesn'?t (have|need) to be|does not (have|need) to be|no need for|not required|"
+                         r"not a must|needn'?t be|any)\b[^.;]{0,40}\b(master|msc|mba|ma\b|phd|doctorate)", re.I)
+
+
+def least_degree(text: str, level: str | None) -> str | None:
+    if level in ("master", "doctorate") and _NOT_NEEDED.search(text or ""):
+        return "bachelor"
+    return level
 
 
 def _write(session: Session, job: Job, items: list[engine.Item], source: str, evidence: dict[str, Any]) -> dict[str, int]:

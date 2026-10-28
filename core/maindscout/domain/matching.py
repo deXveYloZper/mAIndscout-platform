@@ -19,16 +19,20 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any, Callable
 
+from maindscout.domain import specialism as specialism_mod
 from maindscout.domain.profile import (FAMILY_LABEL, LEVEL_RANK, NOT_EXPERIENCE, Stint, employer_years, group_of, staff_words,
                                        years_at_size)
 
-ENGINE_VERSION = "match-2026-10-21.3"  # step C: the move check, the level against the role, a specialist for an all-round role
+ENGINE_VERSION = "match-2026-10-26.1"  # a specialist role (CRM): a title saying that work counts as the role's field
 MUST = ("must", "deal_breaker")
 
 # The desk's rules, as data: id -> what it says. The order of evaluation is the order of this list.
 RULES: list[dict[str, str]] = [
     {"id": "client_block", "text": "The client said no to this person: a wall at this client until a person lifts it."},
     {"id": "distinctive_must_missing", "text": "A must-have that decides the band has no evidence: do not submit."},
+    {"id": "not_read", "text": "Clearly out for this role from the public profile alone (no title says the specialist work, or far too many years): not read, kept in the pool."},
+    {"id": "too_senior", "text": "Many more years of work than the role's level: a no two years past its band, a reach one year past unless the match is excellent."},
+    {"id": "distinctive_must_unproven", "text": "A must-have that decides the band is not on a public profile, but their title says the role's specialist work: possible, ask on the call."},
     {"id": "not_wanted", "text": "The person meets a requirement the hiring manager does not want."},
     {"id": "wants_otherwise", "text": "The job is what the person said they will not consider (a must, said on a call): unlikely."},
     {"id": "prefers_otherwise", "text": "The job is not what the person said they would prefer: a note for the call, never a reason on its own."},
@@ -82,13 +86,28 @@ def _years(x: float) -> str:
     return f"{x:.1f}".rstrip("0").rstrip(".") + (" year" if round(x, 1) == 1 else " years")
 
 
-def _role(p: dict[str, Any], profile: dict[str, Any]) -> tuple[str, str]:
+def _role(p: dict[str, Any], profile: dict[str, Any], stints: list[Stint] | None = None,
+          specialism: str | None = None) -> tuple[str, str]:
     ry, sen = profile["dimensions"]["relevant_years"], profile["dimensions"]["seniority"]
     if ry["label"] == "unknown":
         return "ask", "the kind of work is not clear from the CV"
     want, main = p.get("role_family"), ry["main"]
     parts, verdicts = [], []
-    if want == main:
+    # A specialist role (CRM): a person whose recent title says that work does it, whatever family their career was
+    # filed under (a CRM manager read as marketing, a Salesforce administrator read as IT support), owner 2026-10-22.
+    said = next((s.title for s in sorted(stints or [], key=lambda s: s.end is not None)
+                 if s.employment not in NOT_EXPERIENCE and (s.end is None or (date.today() - s.end).days <= 3 * 365)
+                 and specialism_mod.title_says(specialism, s.title)), None)
+    if said and not same_side(want, main):
+        # The work, from another department: a Salesforce administrator in IT for a business-side CRM role that trains
+        # stores and markets (owner, 2026-10-23: "people from IT has really nothing to do for this role").
+        verdicts.append("partial")
+        parts.append(f"{specialism_mod.broad_word(specialism)} work from {FAMILY_LABEL.get(main, main)} ({said}), "
+                     f"not the {FAMILY_LABEL.get(want, want)} side")
+    elif said:
+        verdicts.append("strong")
+        parts.append(f"works in {specialism_mod.broad_word(specialism)} ({said})")
+    elif want == main:
         verdicts.append("strong")
         parts.append(f"works in {FAMILY_LABEL[main]}")
     elif want and group_of(want) == group_of(main) and group_of(want) != want:
@@ -386,7 +405,7 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
         if thin:
             v, d = "ask", "no career profile yet"
         elif cat == "role":
-            v, d = _role(p, profile)
+            v, d = _role(p, profile, stints, (client or {}).get("specialism"))
         elif cat == "employer":
             v, d = _employer(p, profile, stints, family)
         elif cat == "domain":
@@ -421,10 +440,28 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
     if blocked:
         fire("client_block", blocked)
         return Match("unlikely", "do_not_submit", f"match:unlikely:the client said no ({blocked})", rows, fired)
-    # 1. Today's rule: a distinctive must-have with no evidence decides the band.
+    # 1. Today's rule: a distinctive must-have with no evidence decides the band. Except for someone known only from a
+    # public profile whose recent title says the role's specialist work: a profile seldom lists every tool, so a CRM
+    # specialist at a luxury house without "Salesforce" on it is asked, not ruled out (Ferrari's CRM role, 2026-10-22:
+    # 190 such people had been dropped).
     if coarse[0] == "do_not_submit" and coarse[1].startswith("no_support_for_must_have"):
-        fire("distinctive_must_missing", coarse[1].split(":", 1)[-1])
-        return Match("unlikely", "do_not_submit", coarse[1], rows, fired)
+        spec = (client or {}).get("specialism")
+        said = next((s.title for s in stints if s.employment not in NOT_EXPERIENCE
+                     and (s.end is None or (date.today() - s.end).days <= 3 * 365) and specialism_mod.title_says(spec, s.title)), None)
+        main = (((profile or {}).get("dimensions") or {}).get("relevant_years") or {}).get("main")
+        want = next((r["payload"].get("role_family") for r in requirements if r["payload"].get("category") == "role"
+                     and r["payload"].get("strength") != "anti"), None)
+        if said and not (client or {}).get("has_cv", True) and same_side(want, main):
+            # The tool is a question for the call, and the rest of the match decides (owner, 2026-10-23: the recruiter
+            # saw "CRM operations specialist" at Brunello Cucinelli, asked for the CV, and the client interviewed her).
+            missing = coarse[1].split(":")[1] if ":" in coarse[1] else "a must-have"
+            fire("distinctive_must_unproven", f"{missing}: not on their public profile; their title says the work ({said})")
+            for v in rows:
+                if v.verdict == "gap" and v.strength in MUST and missing.lower() in (v.requirement + " " + v.detail).lower():
+                    v.verdict, v.detail = "ask", f"not on their public profile; their title says the work ({said}): confirm on the call"
+        else:
+            fire("distinctive_must_missing", coarse[1].split(":", 1)[-1])
+            return Match("unlikely", "do_not_submit", coarse[1], rows, fired)
     # 2. Not wanted.
     against = [v for v in rows if v.verdict == "against"]
     if against:
@@ -441,6 +478,12 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
     if hard:
         fire("wants_otherwise", "; ".join(f"{v.requirement}: {v.detail}" for v in hard))
         return Match("unlikely", "do_not_submit", f"match:unlikely:not what they want ({hard[0].requirement})", rows, fired)
+    if profile is None and not (client or {}).get("has_cv", True):
+        # Not worth a career reading for this role, from the public profile alone (owner, 2026-10-26: 1,603 of Ferrari's
+        # 1,632 ruled-out people had each been read first). They stay in the pool, unread, for another role.
+        if why := not_worth_reading(stints, client or {}):
+            fire("not_read", why)
+            return Match("unlikely", "do_not_submit", f"match:unlikely:not read: {why} (public profile)", rows, fired)
     if thin:
         fire("too_little_known", "no career profile yet" if profile is None else "the career profile is unclear")
         # Nobody is strong before their career reading (owner, 2026-10-21: "obviously, this is a real bug"): a coarse
@@ -476,6 +519,13 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
     if wrong:
         fire("wrong_field", wrong[0].detail.split(";")[0])
         return Match("unlikely", "do_not_submit", f"match:unlikely:{wrong[0].detail.split(';')[0]}", rows, fired)
+    # 6b. Too many years for the role's level (owner, 2026-10-23: "mid level with 2-5 is fine, 6 years if it is
+    # excellent match ... mid level with 7 years of experience is a no").
+    years, band = career_years(stints), years_band(client or {})
+    if band and years is not None and years >= band[1] + 2:
+        detail = f"{years:g} years of work, for a {client['level']} role ({band[0]}-{band[1]} years; {band[1] + 1} with an excellent match)"
+        fire("too_senior", detail)
+        return Match("unlikely", "do_not_submit", f"match:unlikely:too senior: {detail}", rows, fired)
     # 7. Must-have gaps.
     must_gaps = [v for v in rows if v.strength in MUST and v.verdict == "gap"]
     if len(must_gaps) >= 2:
@@ -497,6 +547,12 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
         for rule, detail in reaches:
             fire(rule, detail)
         return Match("possible", "review_later", f"match:possible:a reach: {reaches[0][1]}", rows, fired)
+    if (not plus or len(met) * 2 >= len(plus)) and band and years is not None and years >= band[1] + 1:
+        excellent = all(v.verdict == "strong" for v in rows if v.strength in MUST + ("strong_plus",) and v.kind != "mobility")
+        if not excellent:
+            detail = f"{years:g} years of work, one more than a {client['level']} role's {band[0]}-{band[1]}: strong only with an excellent match"
+            fire("too_senior", detail)
+            return Match("possible", "review_later", f"match:possible:a reach: {detail}", rows, fired)
     if not plus or len(met) * 2 >= len(plus):
         fire("strong_match", f"{len(met)} of {len(plus)} known strong-plus items met" if plus else "every must-have met or to ask")
         return Match("strong", "priority", f"match:strong:{len(met)} of {len(plus)} strong-plus met" if plus else "match:strong:must-haves met", rows, fired)
@@ -504,6 +560,66 @@ def match(requirements: list[dict[str, Any]], gap_rows: list, profile: dict[str,
 
 
 # --- step C: is the move realistic? (owner, 2026-10-19 and 2026-10-21) ------------------------------------------------
+
+# Years of work that fit a role's level (owner, 2026-10-23, for a mid role: "everyone above 6 years is senior ... mid
+# level with 2-5 is fine, 6 years if it is excellent match"): (from, to); one year more only with an excellent match,
+# two or more is a no. Senior roles and above have no ceiling here (the level check of step C covers them).
+YEARS_BAND = {"intern": (0, 1), "junior": (0, 2), "mid": (2, 5)}
+
+
+# The sides of a company, for a specialist title: CRM done in marketing, sales, client service or a boutique is the
+# business side; CRM done in IT, data or product is another department (owner, 2026-10-23).
+SIDES = {"business": {"sales", "marketing", "customer_success", "business_consulting", "retail", "hospitality"}}
+
+
+_INTERN_TITLE = re.compile(r"\b(intern|internship|stage|stagista|tirocin\w*|trainee|apprentice\w*|praktik\w*|working student|"
+                           r"werkstudent\w*|summer analyst)\b", re.I)
+
+
+def not_worth_reading(stints: list[Stint], client: dict[str, Any]) -> str | None:
+    """Why someone found on the web is clearly out for this role from their public profile alone (so they are not
+    read), or None: no title in the last 3 years says a specialist role's work, or their first real job (titles of
+    internships left out) already puts them two years past the role's band."""
+    today = date.today()
+    spec = client.get("specialism")
+    recent = [s for s in stints if s.end is None or (today - s.end).days <= 3 * 365]
+    if spec and stints and not any(specialism_mod.title_says(spec, s.title) for s in recent):
+        return f"no title in the last 3 years says {specialism_mod.broad_word(spec)} work"
+    band = years_band(client)
+    starts = [s.start for s in stints if s.start and not _INTERN_TITLE.search(s.title or "")]
+    if band and starts:
+        years = int((today - min(starts)).days // 365.25)
+        if years >= band[1] + 2:
+            return f"{years} years of work, for a {client.get('level')} role"
+    return None
+
+
+def same_side(want: str | None, main: str | None) -> bool:
+    """Is a person's kind of work on the role's side of the company? An unknown either way is not held against them."""
+    if not want or not main or "other" in (want, main):
+        return True
+    if want == main or group_of(want) == group_of(main):
+        return True
+    return any(want in side and main in side for side in SIDES.values())
+
+
+def years_band(client: dict[str, Any]) -> tuple[int, int] | None:
+    """The years that fit the role's level, never below what its ad asks: a mid role's 2-5, but 5-7 when the ad asks
+    for at least 5 years (a rule for every role, not one ad: owner, 2026-10-26)."""
+    band = YEARS_BAND.get(client.get("level") or "")
+    if band is None:
+        return None
+    asked = client.get("min_years")
+    return (max(band[0], int(asked)), max(band[1], int(asked) + 2)) if asked else band
+
+
+def career_years(stints: list[Stint]) -> float | None:
+    """Years since their first real job (internships, side work, board seats and volunteering not counted)."""
+    starts = [s.start for s in stints if s.start and s.employment not in NOT_EXPERIENCE]
+    if not starts:
+        return None
+    return int((date.today() - min(starts)).days // 365.25)  # full years: 5 years and 9 months is 5
+
 
 BIG_MOVE = 20  # an employer this many times the client's size: from 12,203 people to 62 is a reach; 1,027 to 93 is not
 NEAR = 5  # a company up to this many times the client's size counts as "near the client's size"

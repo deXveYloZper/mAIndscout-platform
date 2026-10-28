@@ -27,7 +27,8 @@ One command that runs every PDF in the test folder (`~/Downloads/test_artifacts`
     sends one).
   "A campaign stops at its cap" went with the campaigns (2026-10-19).
 - **Model recordings, refreshed 2026-10-20** (the owner's "re-record"). 18 of the 41 saved CV readings no longer
-  matched the reader's requests and were recorded again ($0.15); the rest still matched.
+  matched the reader's requests and were recorded again ($0.15); the rest still matched. On 2026-10-27 the eight
+  two-column CVs now read column by column ([ingestion](ingestion.md)) were recorded again ($0.05); all 45 tests pass.
   - `tests/test_live_artifacts.py` (45 tests) now runs free with `RUN_LIVE=1 LLM_REPLAY=replay`.
   - Its checks were brought up to the platform's rules, as this eval already had them:
     - copies of one CV are one person (the folder holds three pairs of copies), and two different names never share a

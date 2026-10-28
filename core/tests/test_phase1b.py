@@ -188,7 +188,7 @@ def test_companies_are_searched_in_batches_until_exhausted_then_widening_is_prop
         autosource.add_target(session, job.org_id, job.id, name, "owner@desk.test")
     p = autosource.current_plan(session, job.id)
     first = strategy.next_searches(session, job, p, set(), {})
-    assert len({q["company_id"] for q in first}) == 5, "a batch of five companies"
+    assert len({q["company_id"] for q in first}) == 7 and len(first) == 7, "wide first: one search at every company never searched"
     assert strategy.widening(session, job.org_id, job, p) is None, "nothing is exhausted yet"
 
     now = datetime.now(timezone.utc)

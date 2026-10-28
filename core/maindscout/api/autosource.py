@@ -26,7 +26,8 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
+from sqlalchemy.orm.attributes import set_committed_value
 
 from maindscout.api import costs
 from maindscout.db.models import (
@@ -97,7 +98,7 @@ def update_plan(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: s
     """A new version with the changes: mode, target, monthly_budget_usd, role_variants, countries, targets."""
     old = plan(session, org_id, job_id, actor)
     fields = {k: getattr(old, k) for k in ("mode", "target", "monthly_budget_usd", "targets", "role_variants", "countries",
-                                           "dna", "rules", "open_tiers")}
+                                           "dna", "rules", "open_tiers", "lens")}
     for key, value in changes.items():
         if key not in fields:
             raise SourcingEngineError(f"Unknown plan field {key!r}")
@@ -127,11 +128,31 @@ def update_plan(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: s
     if not 1 <= rules.get("batch", RULES["batch"]) <= 20 or not 0 <= rules.get("known_share", RULES["known_share"]) <= 1:
         raise SourcingEngineError("batch must be 1-20 companies and known_share 0-1")
     fields["rules"] = rules
+    fields["lens"] = {k: v for k, v in dict(fields["lens"] or {}).items() if k in ("role_line", "focus") and v}
     old.superseded_at = _now()
     row = SourcingPlan(org_id=org_id, job_id=job_id, version=old.version + 1, created_by=actor, **fields)
     session.add(row)
     session.flush()
     return row
+
+
+def set_focus(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, words: str | None, actor: str) -> SourcingPlan:
+    """Narrow the role's search to companies every word of the focus describes ("luxury apparel"), or widen it again
+    (no words). Named, pinned and hand-added companies are always searched. Shown on the plan (owner, 2026-10-26)."""
+    from maindscout import activity
+    from maindscout.api.company_lines import stems
+
+    p = plan(session, org_id, job_id, actor)
+    text = " ".join((words or "").split())[:80]
+    lens = {k: v for k, v in (p.lens or {}).items() if k != "focus"}
+    if text:
+        if not stems(text):
+            raise SourcingEngineError("a focus needs a word that describes companies (e.g. luxury apparel)")
+        lens["focus"] = {"words": text, "stems": sorted(stems(text))}
+    new = update_plan(session, org_id, job_id, actor, lens=lens or {"focus": None})
+    activity.step(f"Search focused on “{text}”: only companies it describes are searched (named and pinned ones always)"
+                  if text else "Search widened again: every company on the list", org_id=org_id, job_id=job_id, actor=actor)
+    return new
 
 
 def add_target(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, name: str, actor: str) -> SourcingPlan:
@@ -407,6 +428,9 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
             from maindscout.api import evidence
 
             evidence.maybe_queue(session, pair, pair.triage_band)
+        from maindscout.api import work_reading
+
+        work_reading.maybe_queue(session, pair, pair.triage_band)  # found strong or possible: read against the role's work
         strong = pair.triage_band == "priority"
         row.strong += strong
         return True, strong
@@ -432,6 +456,27 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
             report["pool"]["strong"] += strong
     except sourcing.SourcingError:
         pass
+    # 1b. People in the pool never read (clearly out for the role that found them): those this role may want, by a
+    # recent title that says its specialist work or a job at one of its companies, are put on it and read now.
+    from maindscout.api import profiles as profiles_mod
+
+    from maindscout.db.models import CareerProfile
+
+    wanted = unread_wanted(session, org_id, job, p)
+    already_read = set(session.scalars(select(CareerProfile.candidate_id).where(CareerProfile.candidate_id.in_(wanted or [None]))))
+    read_now = 0
+    for cid in wanted:
+        added, strong = put_on(cid, "pool", None, new_to_desk=False)
+        report["pool"]["added"] += added
+        report["pool"]["strong"] += strong
+        if not added or cid in already_read:
+            continue  # already read: matched on its career profile, no new reading
+        reason = session.scalar(select(CandidateJob.triage_reason).where(CandidateJob.job_id == job.id, CandidateJob.candidate_id == cid))
+        if not (reason or "").startswith("match:unlikely:not read:"):
+            profiles_mod.queue(session, org_id, cid)
+            read_now += 1
+    report["pool"]["known_at_companies"] = len(wanted)
+    report["pool"]["unread_read_now"] = read_now
 
     # 2. The web, when there is an Exa client: only searches not made in the last 30 days.
     if caller is None:
@@ -447,7 +492,15 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
     searched_companies: dict[str, None] = {}
     reason = None
     stop: tuple[str, str] | None = None  # why the searches ended early; the people already added still get read
-    for q in strategy.next_searches(session, job, p, set(radar.live(session, org_id)), limits):
+    planned = strategy.next_searches(session, job, p, set(radar.live(session, org_id)), limits)
+    from maindscout import activity
+
+    activity.step(f"Search ({trigger}): {len(planned)} searches planned at "
+                  f"{len({q['target'] for q in planned if q.get('target')})} companies, in {', '.join(p.countries or []) or 'any country'}",
+                  {"searches": [f"{q['text']} [{q.get('tier')}, {q.get('country')}]" for q in planned[:60]],
+                   "titles": list(p.role_variants or []), "open_tiers": list(p.open_tiers or ["A", "B"])},
+                  org_id=org_id, job_id=job.id)
+    for q in planned:
         if strong_waiting(session, job.id) >= p.target:
             stop = ("done", "target")
             break
@@ -532,8 +585,20 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
             report["profiles"] = {"companies": len(done_ids), "people": len(added_people)}
         except exa.ExaError as error:
             row.error = str(error)[:500]
+    # Someone clearly out from their public profile alone is not read for this role (they stay in the pool, unread,
+    # and are read when another role's search wants them): 98% of Ferrari's ruled-out people had been read first.
+    skipped = set(session.scalars(select(CandidateJob.candidate_id).where(
+        CandidateJob.job_id == job.id, CandidateJob.candidate_id.in_(added_people or [None]),
+        CandidateJob.triage_reason.like("match:unlikely:not read:%"))))
     for cid in added_people:
-        profiles.queue(session, org_id, cid)
+        if cid not in skipped:
+            profiles.queue(session, org_id, cid)
+    report["not_read"] = len(skipped)
+    if added_people:
+        from maindscout import activity
+
+        activity.step(f"Career readings: {len(added_people) - len(skipped)} queued, {len(skipped)} not read (clearly out "
+                      "from their public profile)", org_id=org_id, job_id=job.id)
     # 3b. What the searched companies use, from their own job adverts (employer evidence, owner 2026-10-17): in the
     # background, once per company per 180 days; its people are matched again when it is read.
     from maindscout.api import practices
@@ -627,6 +692,47 @@ def _follow_up(session: Session, track: dict[str, Any]) -> dict[str, Any]:
             "sent_at": child.sent_at.isoformat() if child is not None and child.sent_at else track.get("followed_up_at")}
 
 
+UNREAD_LOOK = 300  # unread pool people looked at per run
+
+
+def unread_wanted(session: Session, org_id: uuid.UUID, job: Job, p: SourcingPlan) -> list[uuid.UUID]:
+    """People in the pool this role may want, not yet on it: anyone with a job, now or in the last 3 years, at one of
+    its listed companies (the company knowledge of earlier roles, reused for free: owner, 2026-10-26), and, among those
+    never read (another role passed on them unread), a title in the last 3 years that says its specialist work."""
+    from datetime import timedelta
+
+    from maindscout.api.process import client_context
+    from maindscout.db.models import CareerProfile
+    from maindscout.domain import specialism
+
+    spec = client_context(session, job)["specialism"]
+    targets = {t["company_id"] for t in p.targets if t.get("company_id") and not t.get("removed")}
+    if not spec and not targets:
+        return []
+    since = _now().date() - timedelta(days=3 * 365)
+    read = set(session.scalars(select(CareerProfile.candidate_id).where(CareerProfile.org_id == org_id)))
+    on_role = select(CandidateJob.candidate_id).where(CandidateJob.job_id == job.id)
+    out: dict[uuid.UUID, None] = {}
+    for c in session.scalars(select(Claim).join(Candidate, Candidate.id == Claim.subject_id).where(
+            Claim.org_id == org_id, Claim.claim_type == "CareerStepClaim", Claim.status.in_(("proposed", "approved")),
+            Candidate.archived_at.is_(None), Candidate.merged_into_id.is_(None), Candidate.do_not_contact_at.is_(None),
+            Claim.subject_id.not_in(on_role),
+            (Claim.valid_to.is_(None)) | (Claim.valid_to >= since)).limit(UNREAD_LOOK * 4)):
+        pl = c.approved_view or c.payload
+        at_target = (pl.get("company") or {}).get("company_id") in targets
+        if at_target or (c.subject_id not in read and specialism.title_says(spec, pl.get("title_raw"))):
+            out[c.subject_id] = None
+        if len(out) >= UNREAD_LOOK:
+            break
+    return list(out)
+
+
+def list_built(session: Session, job_id: uuid.UUID) -> bool:
+    """Has this role's company list ever been built (the strategy, with its competitor research)?"""
+    return session.scalar(select(func.count()).select_from(Task).where(
+        Task.kind == "sourcing_strategy", Task.dedupe_key == f"strategy:{job_id}", Task.status == "done")) > 0
+
+
 def _research(session: Session, job_id: uuid.UUID) -> dict[str, Any] | None:
     """What the last strategy build's competitor research found (step D): found, kept, left out and why."""
     t = session.scalar(select(Task).where(Task.kind == "sourcing_strategy", Task.dedupe_key == f"strategy:{job_id}",
@@ -698,39 +804,61 @@ def _page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "
     profiles_by_id = {str(c.id): c for c in session.scalars(select(Company).where(
         Company.id.in_([uuid.UUID(t["company_id"]) for t in p.targets if t.get("company_id")] or [None])))}
     strategy.prefetch_closed(session, list(profiles_by_id.values()))  # one query for every target, not one each
+    from maindscout.api import company_lines
+
+    company_lines.prefetch(session, list(profiles_by_id.values()))  # the same: their lines, not two queries each
     targets = [{**t, "group": strategy.group_of(t), "off_limits": limits.get(t.get("company_id") or ""),
                 "release": signals.get(t.get("company_id") or ""),
                 "progress": {k: v for k, v in (state.get(t.get("company_id") or "") or {}).items() if k not in ("texts", "recent")} or None,
                 "fit": ({"searched": False, "why": "the hiring profile says not to recruit from here"}
                         if (t.get("company_id") or "") in avoid_ids else
-                        strategy.fit(session, profiles_by_id.get(t.get("company_id") or ""), set(p.countries or []), avoid_kinds, lux,
+                        {"searched": False, "why": f"outside the focus “{(p.lens or {})['focus']['words']}” (widen to search it)"}
+                        if (p.lens or {}).get("focus") and t.get("tier") not in ("named", "manual") and not t.get("pinned")
+                        and not company_lines.in_focus(session, profiles_by_id.get(t.get("company_id") or ""), p.lens["focus"]) else
+                        strategy.fit(session, profiles_by_id.get(t.get("company_id") or ""), set(p.countries or []), avoid_kinds,
+                                     lux and t.get("tier") not in strategy.RESEARCHED,
                                      None if t.get("tier") in ("named", "manual") else client_staff, "C" in (p.open_tiers or []))),
-                "profile": company_profiles.summary(profiles_by_id.get(t.get("company_id") or ""))}
+                "profile": company_profiles.summary(profiles_by_id.get(t.get("company_id") or "")),
+                "lines": company_lines.of_company(session, uuid.UUID(t["company_id"]))[:2] if t.get("company_id") else []}
                for t in p.targets]
     hits = {h.candidate_id: h for h in session.scalars(select(SourcingHit).where(SourcingHit.job_id == job.id))}
     from maindscout.api import memo
 
-    memo.prefetch_places_and_steps(session, org_id, list(hits))  # one query, not three per person
+    # Their match (2.7 KB each) is read further down, for the people the lists can show only.
     pairs = [x for x in session.scalars(select(CandidateJob).where(CandidateJob.job_id == job.id,
-                                                                   CandidateJob.candidate_id.in_(list(hits) or [None])))]
+                                                                   CandidateJob.candidate_id.in_(list(hits) or [None]))
+                                        .options(defer(CandidateJob.match)))]
     stopped = set(session.scalars(select(Candidate.id).where(Candidate.id.in_(list(hits) or [None]),
                                                              Candidate.do_not_contact_at.is_not(None))))
     countries = set(p.countries or [])
     # Phase 1c: the owner's workflow. Suggestions to review (nobody decided yet), then the people the owner chose to
     # reach out to, maybe later, contacted, replied, call booked. The machine's band is only a hint until then.
+    # Only those the lists can show are looked at closely: a suggestion that is neither strong nor possible, or no longer
+    # waiting, is left out before any of its facts are read (61 people of 1,684 on Ferrari's CRM role, 2026-10-28).
+    looked = [x for x in pairs if x.candidate_id not in stopped and (
+        outreach.stage(x) != "to_review" or (x.pair_state in WAITING and x.triage_band in ("priority", "review_later")))]
+    memo.prefetch_places_and_steps(session, org_id, [x.candidate_id for x in looked])  # one query, not three per person
+    memo.prefetch_employers(session, org_id, [x.candidate_id for x in looked])  # and one for where they work
+    by_pair = {x.id: x for x in looked}
+    for pair_id, match in session.execute(select(CandidateJob.id, CandidateJob.match).where(
+            CandidateJob.id.in_(list(by_pair) or [None]))):
+        set_committed_value(by_pair[pair_id], "match", match)
     by_stage: dict[str, list[CandidateJob]] = {}
-    for x in pairs:
-        if x.candidate_id in stopped:
-            continue
+    for x in looked:
         st = outreach.stage(x)
-        if st == "to_review" and (x.pair_state not in WAITING or x.triage_band not in ("priority", "review_later")
-                                  or strategy.outside_countries(session, org_id, x.candidate_id, countries)
+        if st == "to_review" and (strategy.outside_countries(session, org_id, x.candidate_id, countries)
                                   or current_employers(session, org_id, x.candidate_id) & avoid_ids):
             continue
         by_stage.setdefault(st, []).append(x)
     waiting = by_stage.get("to_review", [])
-    # Within a band, those who meet more of the role's strong-plus items first (each card says which); never a score.
-    waiting.sort(key=lambda x: (x.triage_band != "priority", -_plus(x)["met"], -(hits[x.candidate_id].created_at.timestamp())))
+    from maindscout.api import work_reading
+
+    # The core-work reader's readings (owner, 2026-10-27): what their own words show of the role's confirmed work.
+    readings = work_reading.summaries(session, job.id, [x.candidate_id for rows_ in by_stage.values() for x in rows_])
+    # Within a band, those whose own words show the role's work first and those whose main work is a look-alike last,
+    # then those who meet more of the role's strong-plus items (each card says which); never a score.
+    waiting.sort(key=lambda x: (x.triage_band != "priority", work_reading.order_key(readings.get(x.candidate_id)),
+                                -_plus(x)["met"], -(hits[x.candidate_id].created_at.timestamp())))
     for st, rows_ in by_stage.items():
         if st == "passed":  # the latest first, so a pass made by mistake is easy to undo
             rows_.sort(key=lambda x: (x.contact or {}).get("decided_at") or "", reverse=True)
@@ -792,6 +920,7 @@ def _page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "
                           "follow_up_due": bool(st == "contacted" and follow["due"] and follow["due"] <= now and not follow["drafted"]),
                           **facts[x.candidate_id],
                           "evidence": checks.get(x.candidate_id), "checkable": h.channel == "exa_people",
+                          "work": readings.get(x.candidate_id),
                           "plus": _plus(x)["rows"],
                           "found_by": {"channel": h.channel, "target": h.target, "tier": h.tier, "query": q.text if q else None,
                                        "at_target": at,
@@ -803,7 +932,7 @@ def _page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "
         "job_id": str(job.id), "title": job.title, "state": job.state,
         "plan": {"version": p.version, "mode": p.mode, "target": p.target, "monthly_budget_usd": float(p.monthly_budget_usd),
                  "role_variants": p.role_variants, "countries": p.countries, "targets": targets,
-                 "dna": p.dna, "rules": strategy.rules(p), "open_tiers": p.open_tiers,
+                 "dna": p.dna, "rules": strategy.rules(p), "open_tiers": p.open_tiers, "lens": p.lens or {},
                  "changed_by": p.created_by, "changed_at": p.created_at.isoformat() if p.created_at else None},
         "hiring": hiring.company_summary(session, session.get(Company, job.hiring_company_id) if job.hiring_company_id else None),
         "budget": {"role_spent_usd": round(costs.sourcing_spent(session, org_id, job.id), 4),

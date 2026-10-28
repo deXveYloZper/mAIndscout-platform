@@ -79,15 +79,20 @@ def learn_keys(session: Session, company: Company, *, exa_id: str | None = None,
     for key, value in found.items():
         if not value or getattr(company, key) == value:
             continue
-        other = canonical(session, session.scalar(select(Company).where(getattr(Company, key) == value,
-                                                                        Company.id != company.id).limit(1)))
-        if other is not None and other.id != company.id:
-            clash = other
+        holder = session.scalar(select(Company).where(getattr(Company, key) == value, Company.id != company.id).limit(1))
+        if holder is not None:
+            other = canonical(session, holder)
+            if other is not None and other.id != company.id:
+                clash = other
+            # Either another company holds it, or a record merged into this one does (it already leads here through
+            # the redirect): never a second copy of one key (a search failed on that, 2026-10-22, after the desk's merges).
             continue
         if getattr(company, key) is None:
             setattr(company, key, value)
     for name in aliases:
         parsed = names.normalize(name)
+        if not alias_fits(company.normalized, parsed.normalized):
+            continue  # a profile's loose "other names" ("toro", "virginia", "university of oxford" for a college)
         if parsed.kind == "company" and parsed.normalized and session.get(CompanyAlias, parsed.normalized) is None:
             session.add(CompanyAlias(normalized=parsed.normalized, company_id=company.id, source="profile"))
             session.flush()
@@ -97,17 +102,31 @@ def learn_keys(session: Session, company: Company, *, exa_id: str | None = None,
     return clash
 
 
+def alias_fits(name: str, alias: str) -> bool:
+    """Another name from a profile is kept only when it starts as the company's own name does ("telespazio vega uk"
+    for Telespazio UK, "the university of cambridge" for the University of Cambridge): a profile's other names also
+    hold places, nicknames and parent bodies, and an alias decides which company every later CV is filed under."""
+    def first(text: str) -> str | None:
+        words = [w for w in text.split() if w != "the"]
+        return words[0] if words else None
+    return bool(alias) and first(alias) is not None and first(alias) == first(name or "")
+
+
 def _same_card(session: Session, company: Company, other: Company, org_id: uuid.UUID, subject_id: uuid.UUID | None,
                why: str | None = None) -> None:
     if session.scalar(select(Decision.id).where(Decision.org_id == org_id, Decision.type == "company_same",
                                                 Decision.sealed_at.is_(None), Decision.subject_id == company.id,
                                                 Decision.context["existing"]["id"].astext == str(other.id)).limit(1)):
         return
-    session.add(Decision(org_id=org_id, type="company_same", priority=30, subject_type="company", subject_id=company.id,
-                         context={"question": "same company?", "new": {"id": str(company.id), "name": company.name},
-                                  "existing": {"id": str(other.id), "name": other.name},
-                                  "candidate_id": str(subject_id) if subject_id else None, **({"why": why} if why else {})}))
+    card = Decision(org_id=org_id, type="company_same", priority=30, subject_type="company", subject_id=company.id,
+                    context={"question": "same company?", "new": {"id": str(company.id), "name": company.name},
+                             "existing": {"id": str(other.id), "name": other.name},
+                             "candidate_id": str(subject_id) if subject_id else None, **({"why": why} if why else {})})
+    session.add(card)
     session.flush()
+    from maindscout.api import settle
+
+    settle.settle(session, card)  # an easy one is settled by the desk, never asked (owner, 2026-10-22)
 
 
 def resolve(session: Session, raw_name: str, source: str, org_id: uuid.UUID | None = None,
@@ -164,13 +183,17 @@ def _suggest_duplicates(session: Session, company: Company, org_id: uuid.UUID, s
             other = canonical(session, session.get(Company, alias.company_id))
             if other is None or other.id == company.id:
                 continue
-            session.add(Decision(org_id=org_id, type="company_same", priority=30, subject_type="company",
-                                 subject_id=company.id, context={
-                                     "question": "same company?",
-                                     "new": {"id": str(company.id), "name": company.name},
-                                     "existing": {"id": str(other.id), "name": other.name},
-                                     "candidate_id": str(subject_id)}))
+            card = Decision(org_id=org_id, type="company_same", priority=30, subject_type="company",
+                            subject_id=company.id, context={
+                                "question": "same company?",
+                                "new": {"id": str(company.id), "name": company.name},
+                                "existing": {"id": str(other.id), "name": other.name},
+                                "candidate_id": str(subject_id)})
+            session.add(card)
             session.flush()
+            from maindscout.api import settle
+
+            settle.settle(session, card)
             return
 
 
@@ -207,6 +230,30 @@ def _merged_ids(session: Session, company: Company) -> list[str]:
     return [str(i) for i in ids]
 
 
+def prefetch_ids(session: Session, companies_: list[Company]) -> None:
+    """Inside a page's memo: `_ids_for` of every company given, one query per level of merging for all of them instead
+    of one per company (a role's map lists some 170)."""
+    from maindscout.api import memo
+
+    if session.info.get("memo") is None or not companies_:
+        return
+    children: dict[uuid.UUID, list[uuid.UUID]] = {}
+    seen = {c.id for c in companies_}
+    frontier = list(seen)
+    while frontier:
+        rows = session.execute(select(Company.id, Company.merged_into_id).where(Company.merged_into_id.in_(frontier))).all()
+        frontier = [child for child, _ in rows if child not in seen]
+        seen.update(frontier)
+        for child, parent in rows:
+            children.setdefault(parent, []).append(child)
+    for company in companies_:
+        ids, frontier = {company.id}, [company.id]
+        while frontier:
+            frontier = [c for i in frontier for c in children.get(i, []) if c not in ids]
+            ids.update(frontier)
+        memo.put(session, ("company_ids", company.id), [str(i) for i in ids])
+
+
 def people_at(session: Session, org_id: uuid.UUID, company_id: uuid.UUID) -> list[dict[str, Any]]:
     """Who this desk knows at a company: people with a live career step there, with title and period."""
     company = canonical(session, session.get(Company, company_id))
@@ -227,6 +274,7 @@ def people_at(session: Session, org_id: uuid.UUID, company_id: uuid.UUID) -> lis
 
 
 def company_page(session: Session, org_id: uuid.UUID, company_id: uuid.UUID) -> dict[str, Any]:
+    from maindscout.api import company_lines, segments
     from maindscout.api import practices as company_practices
 
     company = canonical(session, session.get(Company, company_id))
@@ -261,6 +309,9 @@ def company_page(session: Session, org_id: uuid.UUID, company_id: uuid.UUID) -> 
             "research_status": company.research_status,
             "researched_at": company.researched_at.isoformat() if company.researched_at else None,
             "facts": research.facts(session, company),
+            # The segments of the market it belongs to, from talent-map research (shared by every role, 2026-10-26).
+            "segments": segments.summary(session, company.id),
+            "lines": company_lines.of_company(session, company.id),
             # What it uses in its own work, from its job adverts (employer evidence, owner 2026-10-17).
             "practices": company_practices.of_company(session, company),
             "practices_at": company.practices_at.isoformat() if company.practices_at else None,
