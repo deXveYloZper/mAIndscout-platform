@@ -384,7 +384,9 @@ def me(session: Session, p: Principal) -> dict[str, Any]:
     desks = [{"id": str(m.org_id), "name": session.get(Org, m.org_id).name, "role": m.role}
              for m in _memberships(session, p.user_id)]
     return {"id": str(p.user_id), "email": p.email, "name": p.name, "desk": str(p.org_id), "role": p.role,
-            "desks": desks, "two_step": p.totp_enabled, "needs_two_step": p.needs_two_step}
+            "desks": desks, "two_step": p.totp_enabled, "needs_two_step": p.needs_two_step,
+            # codes can be turned off unless the user owns a desk while OWNER_TWO_STEP=required (as `disable_totp` says)
+            "two_step_required": owners_need_two_step() and any(d["role"] == "owner" for d in desks)}
 
 
 def change_password(session: Session, p: Principal, current: str, new: str) -> None:

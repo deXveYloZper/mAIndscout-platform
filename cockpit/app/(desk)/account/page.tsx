@@ -1,5 +1,5 @@
-import { changePassword, confirmTwoStep, endOtherSessions, signOut, startTwoStep } from "@/app/actions";
-import { PasswordForm, TwoStepSetup } from "@/components/AccessForms";
+import { changePassword, confirmTwoStep, disableTwoStep, endOtherSessions, signOut, startTwoStep } from "@/app/actions";
+import { PasswordForm, TwoStepOff, TwoStepSetup } from "@/components/AccessForms";
 import { api, type Me } from "@/lib/api";
 
 export const metadata = { title: "Account" };
@@ -15,12 +15,18 @@ export default async function Account({ searchParams }: { searchParams: Promise<
         <div className="warn">Owners need two-step verification. Set it up below; the rest of the desk opens once it is on.</div>
       )}
       {params.two_step === "on" && <p className="ok" role="status">Two-step verification is on.</p>}
+      {params.two_step === "off" && <p className="ok" role="status">Two-step verification is off: you sign in with your password only.</p>}
 
       <section className="panel">
         <h3>Two-step verification</h3>
-        {me.two_step
-          ? <p>On. Each sign-in asks for a code from your authenticator app. Lost your phone? Ask an owner for a new sign-in link.</p>
-          : <TwoStepSetup start={startTwoStep} confirm={confirmTwoStep} />}
+        {me.two_step ? (
+          <>
+            <p>On. Each sign-in asks for a code from your authenticator app. Lost your phone? Ask an owner for a new sign-in link.</p>
+            {me.two_step_required
+              ? <p className="sub">Owners keep it on (this desk requires it).</p>
+              : <TwoStepOff action={disableTwoStep} />}
+          </>
+        ) : <TwoStepSetup start={startTwoStep} confirm={confirmTwoStep} />}
       </section>
 
       <section className="panel">

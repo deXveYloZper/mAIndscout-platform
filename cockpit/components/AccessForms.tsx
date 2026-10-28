@@ -92,6 +92,17 @@ export function TwoStepSetup({ start, confirm }: { start: (s: TwoStepState) => P
   );
 }
 
+export function TwoStepOff({ action }: { action: Act }) {
+  const [state, formAction, pending] = useActionState(action, {});
+  return (
+    <form action={formAction} className="row">
+      <input name="password" type="password" autoComplete="current-password" required aria-label="Your password" placeholder="Your password" />
+      <button className="btn" disabled={pending}>{pending ? "Turning off…" : "Turn off"}</button>
+      <Message state={state} />
+    </form>
+  );
+}
+
 function Link({ state }: { state: LinkState }) {
   const [copied, setCopied] = useState(false);
   if (!state.link) return <Message state={state} />;

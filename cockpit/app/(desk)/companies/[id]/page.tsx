@@ -111,7 +111,7 @@ export default async function Company({ params }: { params: Promise<{ id: string
                   {" "}· last contacted {k.last_contacted ? new Date(k.last_contacted).toISOString().slice(0, 10) : "never"}
                 </span>
                 <ActForm action={removeContact.bind(null, k.id, `/companies/${c.id}`)} className="inline">
-                  <button className="btn small ghost" aria-label={`Forget contact ${k.name}`}>forget</button>
+                  <button className="btn small ghost" aria-label={`Forget contact ${k.name}`}>Forget</button>
                 </ActForm>
               </li>
             ))}
