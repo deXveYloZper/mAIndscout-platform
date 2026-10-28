@@ -6,6 +6,7 @@ import { Snippet } from "@/components/Claim";
 import { CountriesForm } from "@/components/CountriesForm";
 import { HiringCompanyForm } from "@/components/HiringCompanyForm";
 import { OneClick } from "@/components/SourcingForms";
+import { WorkLines } from "@/components/WorkLines";
 import type { BriefLine, ClaimView, JobPage, RequirementGroup } from "@/lib/api";
 import { countryName, EMPLOYER_KIND_LABEL, FAMILY_LABEL } from "@/lib/format";
 import { ActForm } from "@/components/ActForm";
@@ -241,6 +242,7 @@ export function HiringProfile({ job }: { job: JobPage }) {
       )}
 
       <Brief job={job} lines={lines} />
+      <WorkLines job={job} />
       <TellMore job={job} lines={lines} />
 
       <section className="panel searchby">

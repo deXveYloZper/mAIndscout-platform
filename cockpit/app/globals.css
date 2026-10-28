@@ -566,6 +566,14 @@ table.gaps tr.conflict td:first-child { box-shadow: inset 2px 0 0 var(--red); }
 .srcchip.research { background: var(--green-soft); color: var(--green); }
 .srcchip.reading { border: 1px dashed var(--cream-faint); color: var(--cream-dim); }
 .srcchip.you { background: var(--amber); color: #15120c; }
+/* The core-work reader (2026-10-27): the role's work line by line, its look-alikes, and what a person's words show */
+.worklines .notwork { margin: 12px 0 0; font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; }
+.worklines .fold { margin-top: 10px; }
+.addlines { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 8px; }
+.editreq.workline .check { font-size: 12.5px; color: var(--cream-dim); }
+.personcard p.workline .num { font-family: var(--mono); font-size: 12px; color: var(--cream-faint); }
+.personcard p.workline.shows .linetag { color: var(--green); }
+.personcard p.workline.looks .linetag { color: var(--red); }
 .questions .question { border: 1px solid var(--amber-line); background: var(--amber-soft); border-radius: var(--r); padding: 12px 14px; margin-top: 8px; }
 .question .qtext { font-weight: 500; margin: 0; }
 .question .qwhy { color: var(--cream-dim); font-size: 12.5px; margin: 2px 0 8px; }

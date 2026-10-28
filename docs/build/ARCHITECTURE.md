@@ -62,6 +62,7 @@ Local setup: [core/README.md](../../core/README.md).
 | Golden eval (Milestone G) | built | [golden-eval.md](components/golden-eval.md) |
 | Match eval: what a rule change does to the desk's verdicts, before it goes live (free, rolled back) | built | [match-eval.md](components/match-eval.md) |
 | Role brief: what the hire will really do (ad, notes, research; quoted or our reading, with questions), and requirements in three groups | built (on request) | [role-brief.md](components/role-brief.md) |
+| Core-work reader: the role's work line by line and its look-alikes, confirmed by a person; each strong or possible person's own words quoted against them; orders people within a band, never rates (2026-10-28) | built | [core-work-reader.md](components/core-work-reader.md) |
 | Erasure + suppression | built | [erasure.md](components/erasure.md) |
 | Cockpit (recruiter UI) | built | [cockpit.md](components/cockpit.md) |
 | HTTP API `/v1` | built | [http-api.md](components/http-api.md) |

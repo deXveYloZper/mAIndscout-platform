@@ -1180,12 +1180,13 @@ def read_role_brief(job_id: uuid.UUID, reread_notes: bool = False, org_id: uuid.
                     session: Session = Depends(get_session), llm: LLMClient = Depends(get_llm)):
     """Read the role brief (what the hire will really do, from the ad, the notes and research; about a cent), and with
     `reread_notes` read the notes again first with today's reader."""
-    from maindscout.api import hiring, role_brief
+    from maindscout.api import hiring, role_brief, work_lines
 
     notes = hiring.reread_intakes(session, org_id, job_id, llm) if reread_notes else None
     result = role_brief.read(session, org_id, job_id, llm)
+    work = work_lines.read_unless_confirmed(session, org_id, job_id, llm) if "skipped" not in result else None
     session.commit()
-    return {**result, "notes": notes, "brief": role_brief.view(session, job_id)}
+    return {**result, "notes": notes, "brief": role_brief.view(session, job_id), "work_lines": work}
 
 
 class BriefAnswerBody(BaseModel):
@@ -1197,9 +1198,10 @@ class BriefAnswerBody(BaseModel):
 def answer_role_brief(job_id: uuid.UUID, body: BriefAnswerBody, org_id: uuid.UUID = Depends(get_org),
                       session: Session = Depends(get_session), actor: str = Depends(get_actor), llm: LLMClient = Depends(get_llm)):
     """Answer one of the brief's questions: read like notes from the hiring manager, then the brief again (two cents)."""
-    from maindscout.api import role_brief
+    from maindscout.api import role_brief, work_lines
 
     result = role_brief.answer(session, org_id, job_id, body.facet, body.answer, actor, llm)
+    work_lines.read_unless_confirmed(session, org_id, job_id, llm)
     session.commit()
     return {**result, "brief": role_brief.view(session, job_id)}
 
@@ -1212,11 +1214,82 @@ class TellBody(BaseModel):
 def tell_desk(job_id: uuid.UUID, body: TellBody, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
               actor: str = Depends(get_actor), llm: LLMClient = Depends(get_llm)):
     """Anything about the role in your own words: read like notes, then the brief again."""
-    from maindscout.api import role_brief
+    from maindscout.api import role_brief, work_lines
 
     result = role_brief.tell(session, org_id, job_id, body.text, actor, llm)
+    if result.get("lines"):  # the brief was read again: so are the work lines, while none is confirmed
+        work_lines.read_unless_confirmed(session, org_id, job_id, llm)
     session.commit()
     return result
+
+
+# --- the core-work reader (owner, 2026-10-27: "yes build the reader") ------------------------------------------------
+
+
+@app.post("/v1/jobs/{job_id}/work-lines")
+def read_work_lines(job_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+                    llm: LLMClient = Depends(get_llm)):
+    """Read the role's work, line by line, and its look-alikes (about a fifth of a cent). A line a person confirmed
+    or typed stays; the desk's other proposals are replaced."""
+    from maindscout.api import work_lines
+
+    result = work_lines.read(session, org_id, job_id, llm)
+    session.commit()
+    return {**result, "work_lines": work_lines.view(session, job_id)}
+
+
+class WorkConfirmBody(BaseModel):
+    ids: list[str] | None = None
+
+
+@app.post("/v1/jobs/{job_id}/work-lines/confirm")
+def confirm_work_lines(job_id: uuid.UUID, body: WorkConfirmBody, org_id: uuid.UUID = Depends(get_org),
+                       session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """Confirm the desk's lines (all, or the ids given); everyone strong or possible is then read against them in the
+    background. Nobody is re-rated."""
+    from maindscout.api import work_lines
+
+    result = work_lines.confirm(session, org_id, job_id, body.ids, actor)
+    session.commit()
+    return result
+
+
+class WorkLineBody(BaseModel):
+    kind: str = "work"
+    words: str
+    central: bool | None = None
+
+
+@app.post("/v1/jobs/{job_id}/work-lines/add")
+def add_work_line(job_id: uuid.UUID, body: WorkLineBody, org_id: uuid.UUID = Depends(get_org),
+                  session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """A line in your own words: one thing the hire will do, or a look-alike job that is not this work."""
+    from maindscout.api import work_lines
+
+    claim = work_lines.add(session, org_id, job_id, body.kind, body.words, body.central, actor)
+    session.commit()
+    return {"id": str(claim.id), **(claim.approved_view or claim.payload)}
+
+
+@app.post("/v1/work-lines/{claim_id}/edit")
+def edit_work_line(claim_id: uuid.UUID, body: WorkLineBody, org_id: uuid.UUID = Depends(get_org),
+                   session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+    """A line in your own words, replacing the desk's (or your earlier) wording."""
+    from maindscout.api import work_lines
+
+    claim = work_lines.edit(session, org_id, claim_id, body.words, body.central, actor)
+    session.commit()
+    return {"id": str(claim.id), **(claim.approved_view or claim.payload)}
+
+
+@app.post("/v1/jobs/{job_id}/work-readings")
+def read_people_again(job_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session)):
+    """After the lines changed: read again everyone strong or possible whose reading is against earlier lines."""
+    from maindscout.api import work_reading
+
+    queued = work_reading.read_again(session, org_id, job_id)
+    session.commit()
+    return {"queued": queued}
 
 
 class EditBody(BaseModel):

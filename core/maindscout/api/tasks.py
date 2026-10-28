@@ -144,8 +144,9 @@ LABEL = {"sourcing_run": "Search", "sourcing_strategy": "Build the company list"
          "profile_candidate": "Career reading", "profile_company": "Company profile", "research_company": "Company research",
          "read_practices": "Read a company's job adverts", "evidence_check": "Deeper public check",
          "read_transcript": "Read a call", "process_document": "Read an upload", "rematch_job": "Re-rate the role",
-         "mailbox_sync": "Mailbox check"}
-QUIET = {"profile_candidate", "profile_company", "evidence_check", "mailbox_sync"}
+         "mailbox_sync": "Mailbox check", "work_reading": "Read their work against the role"}
+# Their results hold a person's words or are routine: noted only when they fail.
+QUIET = {"profile_candidate", "profile_company", "evidence_check", "mailbox_sync", "work_reading"}
 
 
 def _said(result: Any) -> str:

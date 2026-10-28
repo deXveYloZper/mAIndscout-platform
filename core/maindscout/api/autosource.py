@@ -427,6 +427,9 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
             from maindscout.api import evidence
 
             evidence.maybe_queue(session, pair, pair.triage_band)
+        from maindscout.api import work_reading
+
+        work_reading.maybe_queue(session, pair, pair.triage_band)  # found strong or possible: read against the role's work
         strong = pair.triage_band == "priority"
         row.strong += strong
         return True, strong
@@ -838,8 +841,14 @@ def _page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "
             continue
         by_stage.setdefault(st, []).append(x)
     waiting = by_stage.get("to_review", [])
-    # Within a band, those who meet more of the role's strong-plus items first (each card says which); never a score.
-    waiting.sort(key=lambda x: (x.triage_band != "priority", -_plus(x)["met"], -(hits[x.candidate_id].created_at.timestamp())))
+    from maindscout.api import work_reading
+
+    # The core-work reader's readings (owner, 2026-10-27): what their own words show of the role's confirmed work.
+    readings = work_reading.summaries(session, job.id, [x.candidate_id for rows_ in by_stage.values() for x in rows_])
+    # Within a band, those whose own words show the role's work first and those whose main work is a look-alike last,
+    # then those who meet more of the role's strong-plus items (each card says which); never a score.
+    waiting.sort(key=lambda x: (x.triage_band != "priority", work_reading.order_key(readings.get(x.candidate_id)),
+                                -_plus(x)["met"], -(hits[x.candidate_id].created_at.timestamp())))
     for st, rows_ in by_stage.items():
         if st == "passed":  # the latest first, so a pass made by mistake is easy to undo
             rows_.sort(key=lambda x: (x.contact or {}).get("decided_at") or "", reverse=True)
@@ -901,6 +910,7 @@ def _page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "
                           "follow_up_due": bool(st == "contacted" and follow["due"] and follow["due"] <= now and not follow["drafted"]),
                           **facts[x.candidate_id],
                           "evidence": checks.get(x.candidate_id), "checkable": h.channel == "exa_people",
+                          "work": readings.get(x.candidate_id),
                           "plus": _plus(x)["rows"],
                           "found_by": {"channel": h.channel, "target": h.target, "tier": h.tier, "query": q.text if q else None,
                                        "at_target": at,

@@ -240,6 +240,16 @@ def evidence_check(session: Session, task: Task) -> dict[str, Any]:
                         llm_factory(), task_id=task.id)
 
 
+@handler("work_reading")
+def work_reading(session: Session, task: Task) -> dict[str, Any]:
+    """A strong or possible person's own words against the role's confirmed work lines (orders, never rates)."""
+    from maindscout.api import work_reading as reader
+
+    p = task.payload
+    return reader.run(session, task.org_id, uuid.UUID(p["job_id"]), uuid.UUID(p["candidate_id"]), llm_factory(),
+                      task_id=task.id)
+
+
 @handler("mailbox_sync")
 def mailbox_sync(session: Session, task: Task) -> dict[str, Any]:
     return messages.sync(session, task.org_id)

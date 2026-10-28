@@ -118,7 +118,24 @@ export type PersonOnJob = {
   gaps?: { evidence: number; likely?: number; missing: number; conflict: number; question: number };
   state?: string;
   coverage?: { applicable: number; official: number; needed: number; met: boolean; words: string };
+  work?: WorkReading | null;
 };
+
+/** One line of a role's work (the core-work reader, owner 2026-10-27): something the hire will do, or a look-alike job
+    that is not this work. Only lines a person confirmed or typed are used. */
+export type WorkLine = { id: string; kind: "work" | "not"; words: string; central: boolean | null; status: "proposed" | "approved";
+  by: string | null };
+
+export type WorkLines = { lines: WorkLine[]; version: string | null; read_at: string | null;
+  people: { people: number; read: number; waiting: number; stale: number; not_read: number; skipped: number } };
+
+/** What a person's own words show of a role's confirmed work, each line with their exact words. It orders people within
+    a band and never rates anyone. */
+export type WorkReading = { status: "queued" | "running" | "done" | "failed" | "skipped" | "stale";
+  group: "shows" | "nothing" | "looks_like" | null;
+  work: { line: string; central: boolean; verdict: "shown" | "partly"; quote: string }[];
+  not: { line: string; verdict: "main" | "some"; quote: string }[];
+  lines: number | null; source: "cv" | "web_profile" | null; reason: string | null; at: string | null; error: string | null };
 
 export type JobPage = JobSummary & {
   source_document_id: string | null;
@@ -134,6 +151,7 @@ export type JobPage = JobSummary & {
   requirement_groups?: Record<string, [RequirementGroup, string]>;
   role_brief?: BriefLine[];
   role_brief_read_at?: string | null;
+  work_lines?: WorkLines;
   stages: Record<string, number>;
   hiring: {
     company: { id: string; name: string; kind?: string | null; stage?: string | null; team?: string | null; founded?: string | null;
@@ -412,7 +430,8 @@ export type Suggestion = { candidate_id: string; name: string | null; band: Band
   found_by: { channel: string; target: string | null; tier: string | null; query: string | null; at: string | null; new_to_desk: boolean;
     at_target?: "now" | "before" | null };
   evidence?: EvidenceCheck | null; checkable?: boolean;
-  plus?: { requirement: string; verdict: string }[] };
+  plus?: { requirement: string; verdict: string }[];
+  work?: WorkReading | null };
 
 /** What a card's buttons and quick links need of a suggestion, and no more: a list of a hundred cards does not copy
     every card's facts into the page again for its client parts (2026-10-20: the marketing tab was 1.25 MB). */

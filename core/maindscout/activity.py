@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 KEEP_DAYS = 30
 TEXT = 6000  # characters of a prompt or an answer kept
 # Model calls whose input is a person's own text: only its size is kept.
-PERSONAL = {"cv_extraction", "call_findings", "step_classification", "evidence_check", "draft_message"}
+PERSONAL = {"cv_extraction", "call_findings", "step_classification", "evidence_check", "draft_message", "core_work_check"}
 
 _context: contextvars.ContextVar[dict[str, Any]] = contextvars.ContextVar("activity", default={})
 

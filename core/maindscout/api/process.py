@@ -117,6 +117,8 @@ def natural_key(subject_id, claim_type: str, p: dict, valid_from: str | None = N
         return f"{sid}|pref|{p['facet']}"
     if claim_type == "RoleScopeClaim":
         return f"{sid}|scope|{p['facet']}"  # the same key the brief reader writes (api/role_brief.py)
+    if claim_type == "WorkLineClaim":
+        return f"{sid}|work|{p['kind']}|{_norm_name(p['words'])[:160]}"  # the same key the lines reader writes
     raise ValueError(f"No natural key for {claim_type}")
 
 
@@ -518,10 +520,11 @@ def retriage_pair(session: Session, pair: CandidateJob, cause: dict, actor: str 
     coarse = _triage_now(session, pair.org_id, pair.candidate_id, job, inputs)
     m = _match_now(session, pair.org_id, pair.candidate_id, job, rows, coarse, inputs)
     pair.match_tier, pair.match = m.tier, m.as_dict()  # kept up to date even when a person set the band
-    from maindscout.api import evidence
+    from maindscout.api import evidence, work_reading
 
     if pair.band_overridden_by:
         evidence.maybe_queue(session, pair, pair.triage_band)  # the owner chose them: a strong match too
+        work_reading.maybe_queue(session, pair, pair.triage_band)
         session.flush()
         return None
     if m.band is None:  # unclear: the coarse band stands
@@ -532,6 +535,7 @@ def retriage_pair(session: Session, pair: CandidateJob, cause: dict, actor: str 
         # Nothing could be read (an image of a page): no evidence is not evidence of a miss. A person opens the file.
         result = triage.Triage("review_later", "cv_unreadable")
     evidence.maybe_queue(session, pair, result.band)  # a strong match found on the web: look at their public work
+    work_reading.maybe_queue(session, pair, result.band)  # strong or possible: their own words against the role's work
     if (pair.triage_band, pair.triage_reason) == (result.band, result.reason):
         session.flush()
         return None

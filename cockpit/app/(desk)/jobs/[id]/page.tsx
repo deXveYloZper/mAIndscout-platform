@@ -5,6 +5,7 @@ import { HiringProfile } from "@/components/HiringProfile";
 import { MultiUpload } from "@/components/MultiUpload";
 import { RoleControls } from "@/components/RoleControls";
 import { SourcingTab } from "@/components/Sourcing";
+import { WorkDetails, WorkTag } from "@/components/WorkReading";
 import { api, apiOr404, type Band, type InboxItem, type JobPage, type PersonOnJob, type SourcingPage, type SourcingStats } from "@/lib/api";
 import { BAND_LABEL, PIPELINE, reasonWords, STATE_LABEL, TIER_WORDS } from "@/lib/format";
 import { ActForm } from "@/components/ActForm";
@@ -49,7 +50,11 @@ function People({ jobId, people }: { jobId: string; people: PersonOnJob[] }) {
               {p.open_decisions > 0 && <span className="pill">{p.open_decisions} to review</span>}
             </div>
             <p className="reason">{reasonWords(p.reason)}</p>
+            <WorkTag w={p.work} />
             {p.gaps && <GapBar g={p.gaps} />}
+            {p.work && p.work.status === "done" && (p.work.work.length > 0 || p.work.not.length > 0) && (
+              <details className="pc-details"><summary>Their words</summary><div className="pc-more"><WorkDetails w={p.work} /></div></details>
+            )}
           </div>
           <div className="pc-side">
             <Link className="btn small" href={`/jobs/${jobId}/people/${p.candidate_id}/brief${p.band === "priority" ? "" : "?force=1"}`}>

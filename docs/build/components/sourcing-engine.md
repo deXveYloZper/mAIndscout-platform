@@ -72,7 +72,9 @@ How the build follows those rules (the CV path for found profiles, separate budg
 - **Searches name roles, companies and places, never a person.**
 
 **Since 2026-10-19:** suggestions to review are ordered strong first, then by how many of the role's strong-plus items
-they meet, then newest; each card shows those items as tags (met, partly, missing, to ask).
+they meet, then newest; each card shows those items as tags (met, partly, missing, to ask). **Since 2026-10-28**, once
+the role has confirmed work lines, the [core-work reader](core-work-reader.md) comes before the strong-plus count:
+within a band, those whose own words show the work first, those whose main work is a look-alike last.
 
 **Since 2026-10-17** ([decision](../../decisions/2026-10-17-evidence-for-strong-matches.md)): after the searches, each target company searched gets its job adverts read in the background ([employer evidence](employer-evidence.md)), and a person the run finds on the web who is a strong match gets an [evidence check](evidence-checks.md). The suggestion card shows the check, with "Check deeper" for the others.
 

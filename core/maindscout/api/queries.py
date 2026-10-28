@@ -143,6 +143,9 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
     pairs = [p for p in pairs if p.candidate_id not in suggested]
     gap_rows = _gap_rows_many(session, org_id, job, [p.candidate_id for p in pairs if p.candidate_id not in gone],
                               with_snippets=False)  # the page shows counts, never the quotes
+    from maindscout.api import work_lines, work_reading
+
+    readings = work_reading.summaries(session, job.id, [p.candidate_id for p in pairs if p.candidate_id not in gone])
     for p in pairs:
         if p.candidate_id in gone:
             archived.append({"candidate_id": str(p.candidate_id), "name": who.get(p.candidate_id),
@@ -153,8 +156,10 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
             "reason": p.triage_reason, "overridden_by": p.band_overridden_by, "open_decisions": open_counts.get(p.candidate_id, 0),
             **_gap_summary(gap_rows[p.candidate_id]),
             "state": p.pair_state, "outcome": p.outcome, "match_tier": p.match_tier, "blocked": p.candidate_id in blocked,
-            "stopped": p.candidate_id in stopped,
+            "stopped": p.candidate_id in stopped, "work": readings.get(p.candidate_id),
         })
+    for rows in people.values():  # within a band: own words showing the role's work first, look-alikes last (stable)
+        rows.sort(key=lambda r: work_reading.order_key(r.get("work")))
     return {
         "id": str(job.id), "title": job.title, "hiring_company": job.hiring_company, "state": job.state,
         "source_document_id": str(job.source_document_id) if job.source_document_id else None,
@@ -163,6 +168,7 @@ def job_page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> dict[str
         "requirement_groups": {str(c.id): list(groups.group(c.approved_view or c.payload)) for c in reqs},
         "role_brief": role_brief.view(session, job.id),
         "role_brief_read_at": role_brief.read_at(session, job.id),
+        "work_lines": work_lines.view(session, job.id),
         "process_stale": any(c.flags.get("job_process_stale") for c in reqs),
         "rematching": _rematching(session, job.id),
         "people": people,

@@ -82,6 +82,20 @@ types:
       each line names its basis, a quoted one has its quote as evidence, a reading of ours may carry one question
       for whoever uploaded the job. Proposed until a person approves or corrects it; never personality or names.
 
+  WorkLineClaim:
+    class: inferred
+    subject_types: [job]
+    natural_key: "job_id + kind + words"
+    volatility: volatile
+    default_review: individual
+    payload_schema: schemas/work_line_claim.schema.json
+    notes: >
+      2026-10-27 (owner: "yes build the reader, test on Ferrari and Bonaventura"). One line of the role's work for the
+      core-work reader: one thing the hire will actually do (marked central when it makes the job what it is), or one
+      job that shares the role's words but is a different job ("not this work"). Proposed by the desk from the role's
+      own material; only lines a person confirmed or typed are used. They order people within a band and never
+      change a rating, so confirming one re-rates nobody.
+
   SameAsClaim:
     class: inferred
     subject_types: [candidate, company]

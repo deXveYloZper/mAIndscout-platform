@@ -57,8 +57,13 @@ def _seal(decision: Decision, resolution: dict[str, Any], actor: str) -> None:
     decision.resolution = {**resolution, "by": actor, "at": _now().isoformat()}
 
 
+NOT_RATED = {"WorkLineClaim"}  # facts that order people within a band and rate nobody: a change re-rates no one
+
+
 def retriage_after(session: Session, claim: Claim, act: str, actor: str) -> None:
     """A human changed a fact: bands that may depend on it are recomputed, and each change is recorded."""
+    if claim.claim_type in NOT_RATED:
+        return
     cause = {"act": act, "claim_id": str(claim.id), "claim_type": claim.claim_type}
     from maindscout.api import coverage
 

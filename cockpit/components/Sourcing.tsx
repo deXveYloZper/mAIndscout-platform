@@ -5,6 +5,7 @@ import { addSourcingTarget, buildStrategy, changeSourcingTarget, checkDeeper, dr
 import { Refresh } from "@/components/CallsClient";
 import { QuickLinks, Triage } from "@/components/Outreach";
 import { AddTarget, FocusForm, OneClick, PlanSettings, PlanWords } from "@/components/SourcingForms";
+import { WorkDetails, WorkTag } from "@/components/WorkReading";
 import type { CardKeys, CompanyProfile, EvidenceCheck, SourcingMode, SourcingPage, SourcingStats, SourcingTarget, Suggestion, TalentDna,
   Widening } from "@/lib/api";
 import { MODE_LABEL, reasonWords } from "@/lib/format";
@@ -173,6 +174,7 @@ function SuggestionCard({ jobId, s, since }: { jobId: string; s: Suggestion; sin
         </div>
         <MainLine s={s} />
         {s.why && s.why.length > 0 && <p className="why">{s.why.join(" · ")}</p>}
+        <WorkTag w={s.work} />
         {open && !strong && s.short_of && s.short_of.length > 0 && <p className="shortof"><span className="linetag">short of</span>{s.short_of.join(" · ")}</p>}
         {open && s.settle?.map((x, i) => <p key={i} className="settle"><span className="linetag" title="Only the call can settle it">to settle on the call</span>{x}</p>)}
         {track && <p className="reason">{track}</p>}
@@ -196,6 +198,7 @@ function SuggestionCard({ jobId, s, since }: { jobId: string; s: Suggestion; sin
                 ))}
               </p>
             )}
+            <WorkDetails w={s.work} />
             <EvidenceLine jobId={jobId} s={s} deciding={deciding} />
             <p className="hint"><Link href={`/jobs/${jobId}/people/${s.candidate_id}`}>Every requirement, with its evidence</Link></p>
           </div>
@@ -455,7 +458,8 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
   const since = lastRun?.status !== "running" ? lastRun?.started_at ?? null : null;
   return (
     <>
-      {(s.running || s.building || s.suggestions.some((x) => x.evidence?.status === "queued" || x.evidence?.status === "running"))
+      {(s.running || s.building || s.suggestions.some((x) => x.evidence?.status === "queued" || x.evidence?.status === "running"
+        || x.work?.status === "queued" || x.work?.status === "running"))
         && <Refresh every={5000} upTo={1800000} />}
       <section className="panel">
         <div className="row spread">

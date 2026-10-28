@@ -78,6 +78,10 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
 - **Hiring profile ([hiring-profiles.md](hiring-profiles.md)):** on the job page, since step E (2026-10-20):
   - the hiring company's facts;
   - the role brief, each line with its source, and its questions with an answer box ([role-brief.md](role-brief.md));
+  - the work, line by line, and "not this work" (2026-10-28): each line with "change" (its words, the heart of the
+    job, Remove), a line in your own words, Confirm all, and how many people are read against them; each card then
+    says "shows the work" or "main work looks like", with their words under Details
+    ([core-work-reader.md](core-work-reader.md));
   - what we search and rate by (where people must live first, its "change" holding the role's countries), each line
     with its strength, source and "change" (the line in your own words and its strength, Remove, the quote; the box
     closes with Escape or a click outside), and Confirm all;
