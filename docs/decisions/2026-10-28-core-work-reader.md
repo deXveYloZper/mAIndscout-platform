@@ -29,5 +29,22 @@ confirmation fixes them.
 6. **Who is read:** Priority and Review later, once the role has a confirmed line; again when the lines change or a CV
    arrives; never someone who said stop. About a fifth of a cent a person, inside the monthly model budget.
 
-## Measured on the live roles
-See below, written after the first readings on Ferrari's CRM role and Bonaventura's marketing role.
+## Measured on the live roles (2026-10-28: 152 readings, $0.36)
+The lines were confirmed by the owner ("make your suggested changes and confirm both"): Ferrari's as the desk read
+them, less one look-alike (reports and dashboards in Salesforce: reporting is part of a CRM data specialist's work);
+Bonaventura's as read, plus one look-alike from the owner's own labels ("CRM specialist, not the ad's all-round
+marketing job").
+
+- **Ferrari (61 read):** 15 show some of the work, 41 nothing either way, 5 a look-alike as their main work. The person
+  the recruiter found "potential but light" is last but one of the possibles (main work: configuring Salesforce); the
+  strong match whose main work is CRM campaigns is last of the strong; the people with campaign work end the possibles;
+  the roll-out and operations people lead both bands. The client's interviewee: her public profile lists titles only,
+  so it shows nothing either way and she keeps her place mid-band; her CV, read in the measurement, came first. A
+  public profile of titles cannot show the work; the title rules that found her stay the desk's way to find her.
+- **Bonaventura (91 read):** 31 show the work, 37 nothing either way, 23 a look-alike as their main work (digital or
+  performance only, global brand strategy at headquarters, CRM as a specialist). The three CRM specialists the owner
+  labelled sit below every possible whose words show the all-round work (42nd, 43rd and 49th of 71), though not as
+  look-alikes: their profiles list titles only. The person labelled for too hard a move stays possible (matching's
+  rule) and is high within it, on the work his words show: the reader orders within a band, it never overrides one.
+- **Both:** every quote is literally the person's words, no band or rating changed, and the Sourcing tab orders and
+  shows them (its own share of the page's time: 0.05 seconds for 1,684 people).
