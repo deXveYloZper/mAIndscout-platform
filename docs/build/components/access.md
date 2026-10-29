@@ -32,7 +32,8 @@ The [code review](../../decisions/2026-10-05-external-code-review.md) found one 
   - TOTP (RFC 6238; SHA-1, 6 digits, 30 s, ±1 step);
   - the secret is encrypted with a key derived from `AUTH_KEY`;
   - a code is never accepted twice;
-  - with `OWNER_TWO_STEP=required`: an owner without codes can reach only the account routes until they are set up, and owners can't switch them off.
+  - turned off on the Account page with the password (2026-10-28; before, only the API could);
+  - with `OWNER_TWO_STEP=required`: an owner without codes can reach only the account routes until they are set up, and owners can't switch them off (the Account page says so; `GET /v1/auth/me` returns `two_step_required`).
 - **Sessions:**
   - a random token; only its SHA-256 is stored;
   - web sessions end after 12 hours idle or 14 days;

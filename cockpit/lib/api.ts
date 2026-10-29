@@ -341,6 +341,7 @@ export type Me = {
   desks: { id: string; name: string; role: string }[];
   two_step: boolean;
   needs_two_step: boolean;
+  two_step_required?: boolean;
 };
 
 export type Member = { id: string | null; email: string; name: string | null; role: string; two_step?: boolean;

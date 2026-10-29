@@ -79,8 +79,8 @@ export function WorkLines({ job }: { job: JobPage }) {
           <>
             <span className="sub">{waiting.length} of these {lines.length} {waiting.length === 1 ? "was" : "were"} read by the desk
               and {waiting.length === 1 ? "waits" : "wait"} for you: nobody is read until you confirm</span>
-            <OneClick action={confirmWorkLines.bind(null, job.id, waiting.map((l) => l.id))} label={`Confirm all ${waiting.length}`}
-              busy="Confirming…" primary />
+            <OneClick action={confirmWorkLines.bind(null, job.id, waiting.map((l) => l.id))}
+              label={waiting.length === 1 ? "Confirm this line" : `Confirm these ${waiting.length} lines`} busy="Confirming…" primary />
           </>
         ) : w?.version ? <Progress w={w} jobId={job.id} />
           : lines.length > 0 ? <span className="sub">Confirm or add one line of the work: nobody is read until then.</span> : null}

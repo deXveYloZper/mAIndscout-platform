@@ -7,7 +7,10 @@ xAI".
 ## What it records
 One line per thing that happened, in plain words, with its detail one click away:
 - **button**: every action a page sends (`api/buttons.py` names them as the buttons do: "Search now", "Build the company
-  list", "Confirmed the requirements"), who pressed it, how long it took, and a refusal (4xx) as a warning.
+  list", "Confirmed the requirements"; every write route has its words, and a test fails on one without), who pressed
+  it, how long it took, and a refusal (4xx) as a warning that says why ("refused: 402: …" with the error's words, the
+  whole reason in its detail). A change to a requirement or a line of the work, whose route names only the line, is
+  logged under its role.
 - **step**: the desk's own logic, said plainly: "Search now: this role's company list was never built, so it is built
   first", "Search (manual): 11 searches planned at 5 companies, in IT" (with every search listed), "Competitor research
   for Ferrari: 42 kept of 43 found in 3 rounds" (with the business lines, kept, left out and refused), "The desk settled
@@ -18,8 +21,9 @@ One line per thing that happened, in plain words, with its detail one click away
 - **model**: each model call: what for, the instructions and the input, the answer, model, tokens, cost and time; the
   web research also lists the pages it opened. A call carrying a person's own text (a CV, a call, their career titles,
   an evidence check, a message draft) keeps only its size, never the text.
-- **error**: a failed task, a failed model or Exa call, a server error, and a page that crashed in the browser (the
-  desk's error screens report themselves), each with its trace.
+- **error**: a failed task, a failed model or Exa call, a server error, a page that crashed in the browser (the
+  desk's error screens report themselves), and a failing clock (sourcing or mailbox: once until the failure changes,
+  then "works again"), each with its trace.
 
 Lines carry the desk, the role, the task and the actor when known, so a role's story reads on its own.
 

@@ -24,6 +24,11 @@ const PURPOSE: Record<string, string> = {
   sourcing_company_profile: "Sourcing: company profiles (Exa)", sourcing_talent_dna: "Sourcing: talent DNA (Exa)",
   company_domains: "Reading companies' markets", read_transcript: "Reading call transcripts",
   research_company_exa: "Company profiles from CVs (Exa)",
+  role_brief: "Role briefs", process_dates: "Hiring process dates from your notes", company_lines: "Companies' lines of business",
+  work_lines: "The roles' work lines", work_reading: "Reading people's work against the role",
+  sourcing_competitors: "Sourcing: competitor research (web)", sourcing_talent_pools: "Sourcing: talent map (web)",
+  sourcing_evidence_check: "Sourcing: deeper public checks", sourcing_company_practices: "Sourcing: what companies use (their job ads)",
+  core_work_lines: "Core-work reader measurement: work lines", core_work_check: "Core-work reader measurement: readings",
 };
 
 export default async function CostsPage() {

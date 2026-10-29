@@ -25,7 +25,7 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
 - **Today (`/`):** the start of the day (`/v1/today`):
   - priority people, inbox waiting, people going stale and the pool, as split-flap counts;
   - priority people by job;
-  - recent activity.
+  - recent activity, with "Who to re-contact" beside it when people are going stale (the Refresh page).
 - **Uploads** use drop zones (`components/DropZone.tsx`): drag files on, or click to choose.
 - **Errors** inside the desk keep the navigation (`app/(desk)/error.tsx`). Search in your own words says when the model is unavailable, and keeps the filters.
 - **All data comes from the API, server-side.** `lib/api.ts` forwards the signed-in person's session (an httpOnly cookie) and their chosen desk; page scripts never see the session ([access](access.md)). Actions (`app/actions.ts`) are server actions that call the API and refresh the page.
@@ -79,7 +79,7 @@ The vision's working day: open a job, drop CVs on it, work the priority pile, an
   - the hiring company's facts;
   - the role brief, each line with its source, and its questions with an answer box ([role-brief.md](role-brief.md));
   - the work, line by line, and "not this work" (2026-10-28): each line with "change" (its words, the heart of the
-    job, Remove), a line in your own words, Confirm all, and how many people are read against them; each card then
+    job, Remove), a line in your own words, "Confirm these N lines", and how many people are read against them; each card then
     says "shows the work" or "main work looks like", with their words under Details
     ([core-work-reader.md](core-work-reader.md));
   - what we search and rate by (where people must live first, its "change" holding the role's countries), each line

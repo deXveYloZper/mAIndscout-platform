@@ -22,7 +22,9 @@ The intelligence track adds many model and search calls per CV (plan section 4.8
 - **`work_reading`** (2026-10-28) reads one strong or possible person's own words against the role's confirmed work
   lines (one per person and role, deduplicated; quiet in the activity log; purposes `work_lines` and `work_reading`,
   inside the monthly model budget, a spent budget skips the reading) ([core-work reader](core-work-reader.md)).
-- **The sourcing clock** queues `sourcing_run` tasks (one per role at a time, no retries) every 10 minutes for plans that are due; `SOURCING_AUTO=false` turns it off.
+- **The sourcing clock** queues `sourcing_run` tasks (one per role at a time, no retries) every 10 minutes for plans that are due; `SOURCING_AUTO=false` turns it off. A tick that fails is written to the activity log once until the failure changes, and so is the recovery (2026-10-28; the sourcing and mailbox clocks used to fail silently).
+- **The Costs page names every purpose in the ledger** (2026-10-28: 11 had shown as raw keys, from role briefs to the talent map).
+- **Dedupe is a check before the insert**, with no lock: two callers in the same instant could queue the same key twice. It never happened (2,730 tasks, 2026-10-28), and a unique index would refuse "Search now"'s next round, which is queued under the same key while its batch still runs ([decision](../../decisions/2026-10-28-architecture-review.md)).
 
 ## Depends on
 [process.md](process.md), [persistence.md](persistence.md), [intelligence.md](intelligence.md) (the model client reports cost).

@@ -791,6 +791,17 @@ export async function confirmTwoStep(_: FormState, form: FormData): Promise<Form
   redirect("/account?two_step=on");
 }
 
+export async function disableTwoStep(_: FormState, form: FormData): Promise<FormState> {
+  try {
+    await apiRaw("/v1/auth/two-step/disable", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: String(form.get("password") || "") }) });
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath("/account");
+  redirect("/account?two_step=off");
+}
+
 export async function endOtherSessions(): Promise<void> {
   await apiJson("/v1/auth/sessions/end-others", {});
   revalidatePath("/account");

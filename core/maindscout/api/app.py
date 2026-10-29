@@ -49,6 +49,9 @@ async def activity_log(request: Request, call_next):
 
     action = buttons.describe(request.method, request.url.path) if request.method in ("POST", "PUT", "PATCH", "DELETE") else None
     job_id = buttons.job_of(request.url.path)
+    line = buttons.line_of(request.url.path) if action and job_id is None else None
+    if line:  # a requirement or a line of the work: its role, so the role's own log shows the change
+        job_id = await run_in_threadpool(_role_of_line, line)
     started = time.monotonic()
     with activity.about(job_id=job_id):
         try:
@@ -63,12 +66,35 @@ async def activity_log(request: Request, call_next):
     who = getattr(request.state, "principal", None)
     if action or response.status_code >= 500:
         level = "error" if response.status_code >= 500 else "warn" if response.status_code >= 400 else "info"
+        reason = getattr(request.state, "refused", None) if response.status_code >= 400 else None  # what the error said
+        said = f"{response.status_code}: {reason[:120]}" if reason else str(response.status_code)
+        summary = f"{action or request.method + ' ' + request.url.path}{'' if response.status_code < 400 else f' (refused: {said})'}"
         await run_in_threadpool(
-            activity.note, "error" if level == "error" else "button",
-            f"{action or request.method + ' ' + request.url.path}{'' if response.status_code < 400 else f' (refused: {response.status_code})'}",
-            {"route": f"{request.method} {request.url.path}", "status": response.status_code, "ms": ms}, level,
+            activity.note, "error" if level == "error" else "button", summary,
+            {"route": f"{request.method} {request.url.path}", "status": response.status_code, "ms": ms,
+             **({"reason": reason} if reason else {})}, level,
             org_id=getattr(who, "org_id", None), actor=getattr(who, "email", None), job_id=job_id)
     return response
+
+
+def _role_of_line(claim_id: str, session: Session | None = None) -> str | None:
+    """The role a requirement or a line of its work belongs to (their routes name only the line). Never fails a
+    request: without an answer the line is logged without its role, as before."""
+    from maindscout.db.models import Claim
+
+    try:
+        own = session is None
+        s = _factory()() if own else session
+        try:
+            row = s.execute(select(Claim.subject_type, Claim.subject_id).where(Claim.id == uuid.UUID(claim_id))).first()
+        finally:
+            if own:
+                s.close()
+    except Exception:  # noqa: BLE001 - the log never stops a button
+        return None
+    return str(row[1]) if row is not None and row[0] == "job" else None
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=(env("COCKPIT_ORIGINS", "http://localhost:3001") or "").split(","),
@@ -177,18 +203,29 @@ ERRORS: list[tuple[type[Exception], int]] = [
     (auth.Forbidden, 403),
     (ValueError, 422),
 ]
+
+
+def _refused(request: Request, detail: Any, code: int, headers: dict[str, str] | None = None) -> JSONResponse:
+    """The answer to an error a route raised. What it said is kept for the activity log's line ("refused: 402: the
+    monthly budget is reached"), which otherwise sees only the status."""
+    request.state.refused = str(detail)[:300]
+    return JSONResponse({"detail": detail}, status_code=code, headers=headers)
+
+
 for _exc, _code in ERRORS:
-    app.add_exception_handler(_exc, lambda request, error, code=_code: JSONResponse({"detail": str(error)}, status_code=code))
-app.add_exception_handler(auth.Locked, lambda request, error: JSONResponse(
-    {"detail": str(error)}, status_code=429,
-    headers={"Retry-After": str(max(1, int((error.until - auth._now()).total_seconds())))}))
+    app.add_exception_handler(_exc, lambda request, error, code=_code: _refused(request, str(error), code))
+app.add_exception_handler(auth.Locked, lambda request, error: _refused(
+    request, str(error), 429, {"Retry-After": str(max(1, int((error.until - auth._now()).total_seconds())))}))
+app.add_exception_handler(HTTPException, lambda request, error: _refused(request, error.detail, error.status_code, error.headers))
 
 
 # --- helpers ------------------------------------------------------------------------------------
 
 
-async def _read(file: UploadFile) -> tuple[bytes, str]:
-    data = await file.read(MAX_UPLOAD + 1)
+def _read(file: UploadFile) -> tuple[bytes, str]:
+    """The uploaded bytes. Every route is a plain `def`, run in the thread pool: an `async def` route that went on to read
+    an ad with the model held up every other request for those seconds (architecture review, 2026-10-28)."""
+    data = file.file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, "File is larger than 20 MB")
     return data, _sniff(data)
@@ -239,9 +276,9 @@ def health() -> dict[str, str]:
 
 
 @app.post("/v1/documents", status_code=201)
-async def upload(file: UploadFile = File(...), doc_type_hint: str = Form("other"), org_id: uuid.UUID = Depends(get_org),
-                 session: Session = Depends(get_session), blobs: BlobStore = Depends(get_blobs)):
-    data, media = await _read(file)
+def upload(file: UploadFile = File(...), doc_type_hint: str = Form("other"), org_id: uuid.UUID = Depends(get_org),
+           session: Session = Depends(get_session), blobs: BlobStore = Depends(get_blobs)):
+    data, media = _read(file)
     doc, reused = documents.upload_document(session, blobs, org_id=org_id, data=data, filename=file.filename,
                                             media_type=media, doc_type_hint=doc_type_hint)
     session.commit()
@@ -312,10 +349,10 @@ def list_jobs(org_id: uuid.UUID = Depends(get_org), session: Session = Depends(g
 
 
 @app.post("/v1/jobs", status_code=201)
-async def create_job(file: UploadFile = File(...), org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
-                     blobs: BlobStore = Depends(get_blobs), llm: LLMClient = Depends(get_llm)):
+def create_job(file: UploadFile = File(...), org_id: uuid.UUID = Depends(get_org), session: Session = Depends(get_session),
+               blobs: BlobStore = Depends(get_blobs), llm: LLMClient = Depends(get_llm)):
     """Create a job from its advertisement."""
-    data, media = await _read(file)
+    data, media = _read(file)
     doc, _ = documents.upload_document(session, blobs, org_id=org_id, data=data, filename=file.filename,
                                        media_type=media, doc_type_hint="jd")
     if doc.doc_type != "jd":
@@ -331,12 +368,12 @@ def get_job(job_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), session: Se
 
 
 @app.post("/v1/jobs/{job_id}/documents", status_code=201)
-async def upload_onto_job(job_id: uuid.UUID, file: UploadFile = File(...), background: bool = Query(False),
-                          org_id: uuid.UUID = Depends(get_org),
-                          session: Session = Depends(get_session), blobs: BlobStore = Depends(get_blobs),
-                          llm: LLMClient = Depends(get_llm)):
+def upload_onto_job(job_id: uuid.UUID, file: UploadFile = File(...), background: bool = Query(False),
+                    org_id: uuid.UUID = Depends(get_org),
+                    session: Session = Depends(get_session), blobs: BlobStore = Depends(get_blobs),
+                    llm: LLMClient = Depends(get_llm)):
     """Drop a CV onto a job: store, read, extract, and band the person against this job."""
-    data, media = await _read(file)
+    data, media = _read(file)
     doc, _ = documents.upload_document(session, blobs, org_id=org_id, data=data, filename=file.filename,
                                        media_type=media, doc_type_hint="cv")
     if doc.doc_type != "cv":
@@ -519,11 +556,11 @@ def list_candidates(unassigned: bool = Query(False), tag: str | None = Query(Non
 
 
 @app.post("/v1/candidates", status_code=201)
-async def upload_to_pool(file: UploadFile = File(...), background: bool = Query(False), org_id: uuid.UUID = Depends(get_org),
-                         session: Session = Depends(get_session),
-                         blobs: BlobStore = Depends(get_blobs), llm: LLMClient = Depends(get_llm)):
+def upload_to_pool(file: UploadFile = File(...), background: bool = Query(False), org_id: uuid.UUID = Depends(get_org),
+                   session: Session = Depends(get_session),
+                   blobs: BlobStore = Depends(get_blobs), llm: LLMClient = Depends(get_llm)):
     """A CV with no job yet: read it into the unassigned pool. Put the person on a job later."""
-    data, media = await _read(file)
+    data, media = _read(file)
     doc, _ = documents.upload_document(session, blobs, org_id=org_id, data=data, filename=file.filename,
                                        media_type=media, doc_type_hint="cv")
     if doc.doc_type != "cv":
@@ -1467,15 +1504,15 @@ def undo_merge(merge_id: uuid.UUID, org_id: uuid.UUID = Depends(get_org), sessio
 
 
 @app.post("/v1/candidates/{candidate_id}/transcripts", status_code=201)
-async def add_transcript(candidate_id: uuid.UUID, file: UploadFile | None = File(None), text: str | None = Form(None),
-                         job_id: uuid.UUID | None = Form(None), org_id: uuid.UUID = Depends(get_org),
-                         session: Session = Depends(get_session), blobs: BlobStore = Depends(get_blobs),
-                         actor: str = Depends(get_actor)):
+def add_transcript(candidate_id: uuid.UUID, file: UploadFile | None = File(None), text: str | None = Form(None),
+                   job_id: uuid.UUID | None = Form(None), org_id: uuid.UUID = Depends(get_org),
+                   session: Session = Depends(get_session), blobs: BlobStore = Depends(get_blobs),
+                   actor: str = Depends(get_actor)):
     """A call transcript, as a file (.txt, .vtt, .srt, .docx) or pasted text. Read in the background into a Call review."""
     from maindscout.api import calls
 
     if file is not None and file.filename:
-        data, _ = await _read(file)
+        data, _ = _read(file)
         filename = file.filename
     elif text and text.strip():
         data, filename = text.encode("utf-8"), "pasted call transcript.txt"
@@ -1749,12 +1786,12 @@ def list_imports(org_id: uuid.UUID = Depends(get_org), session: Session = Depend
 
 
 @app.post("/v1/imports", status_code=201)
-async def upload_import(file: UploadFile = File(...), kind: str = Form("candidates"), org_id: uuid.UUID = Depends(get_org),
-                        session: Session = Depends(get_session), actor: str = Depends(get_actor)):
+def upload_import(file: UploadFile = File(...), kind: str = Form("candidates"), org_id: uuid.UUID = Depends(get_org),
+                  session: Session = Depends(get_session), actor: str = Depends(get_actor)):
     """Upload a CSV of candidates or clients: a preview, nothing imported yet."""
     from maindscout.api import imports
 
-    raw = await file.read(10 * 1024 * 1024 + 1)  # never buffer more than the limit
+    raw = file.file.read(10 * 1024 * 1024 + 1)  # never buffer more than the limit
     if len(raw) > 10 * 1024 * 1024:
         raise HTTPException(413, "The file is over 10 MB")
     batch = imports.upload(session, org_id, kind, file.filename, raw, actor)

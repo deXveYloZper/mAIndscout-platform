@@ -108,6 +108,24 @@ def _seed() -> None:
         session.commit()
 
 
+def _tick(name: str, tick, failed: str | None) -> str | None:
+    """One tick of a clock. It never stops the clock, and it is never silent: a failure goes to the activity log (to the
+    console when the database itself is out), once until it changes, and so does the recovery (architecture review,
+    2026-10-28: both clocks swallowed every error). Returns the failure, or None."""
+    from maindscout import activity
+
+    try:
+        tick()
+    except Exception as exc:  # noqa: BLE001 - the clock must keep ticking
+        said = f"{type(exc).__name__}: {exc}"[:300]
+        if said != failed:
+            activity.error(f"The {name} failed: it tries again at its next tick", exc)
+        return said
+    if failed is not None:
+        activity.step(f"The {name} works again")
+    return None
+
+
 def _start_mailbox_clock(factory, every: int = 300) -> None:
     """Every few minutes, queue a look at each connected mailbox (sent drafts, replies, follow-ups due), and at every
     desk with a follow-up due even without a mailbox: a LinkedIn follow-up is a draft to copy (x-ray, 2026-10-13: with
@@ -119,19 +137,20 @@ def _start_mailbox_clock(factory, every: int = 300) -> None:
     from maindscout.api import tasks
     from maindscout.db.models import Mailbox, Message
 
+    def tick() -> None:
+        with factory() as session:
+            orgs = set(session.scalars(select(Mailbox.org_id).where(Mailbox.status == "connected")))
+            orgs |= set(session.scalars(select(Message.org_id).where(
+                Message.status == "sent", Message.follow_up_due.is_not(None),
+                Message.follow_up_due <= datetime.now(timezone.utc)).distinct()))
+            for org_id in orgs:
+                tasks.enqueue(session, org_id, "mailbox_sync", {}, priority=60, dedupe_key=f"mailsync:{org_id}")
+            session.commit()
+
     def loop() -> None:
+        failed = None
         while True:
-            try:
-                with factory() as session:
-                    orgs = set(session.scalars(select(Mailbox.org_id).where(Mailbox.status == "connected")))
-                    orgs |= set(session.scalars(select(Message.org_id).where(
-                        Message.status == "sent", Message.follow_up_due.is_not(None),
-                        Message.follow_up_due <= datetime.now(timezone.utc)).distinct()))
-                    for org_id in orgs:
-                        tasks.enqueue(session, org_id, "mailbox_sync", {}, priority=60, dedupe_key=f"mailsync:{org_id}")
-                    session.commit()
-            except Exception:  # noqa: BLE001 - the clock must keep ticking
-                pass
+            failed = _tick("mailbox clock", tick, failed)
             time.sleep(every)
 
     threading.Thread(target=loop, name="mailbox-clock", daemon=True).start()
@@ -149,16 +168,17 @@ def _start_sourcing_clock(factory, every: int = 600) -> None:
     if (env("SOURCING_AUTO", "true") or "").lower() in ("0", "false", "no", "off"):
         return
 
+    def tick() -> None:
+        with factory() as session:
+            for org_id, job_id in autosource.due(session):
+                tasks.enqueue(session, org_id, "sourcing_run", {"job_id": str(job_id), "trigger": "schedule"},
+                              priority=140, dedupe_key=f"sourcing:{job_id}", max_attempts=1)
+            session.commit()
+
     def loop() -> None:
+        failed = None
         while True:
-            try:
-                with factory() as session:
-                    for org_id, job_id in autosource.due(session):
-                        tasks.enqueue(session, org_id, "sourcing_run", {"job_id": str(job_id), "trigger": "schedule"},
-                                      priority=140, dedupe_key=f"sourcing:{job_id}", max_attempts=1)
-                    session.commit()
-            except Exception:  # noqa: BLE001 - the clock must keep ticking
-                pass
+            failed = _tick("sourcing clock", tick, failed)
             time.sleep(every)
 
     threading.Thread(target=loop, name="sourcing-clock", daemon=True).start()

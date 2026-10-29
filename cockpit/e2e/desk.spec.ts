@@ -433,6 +433,16 @@ test("the Refresh page lists who to re-contact and which clients to reconnect wi
   await expect(page.getByText("Nobody is stale.")).toBeVisible();
 });
 
+test("two-step codes can be turned off on the Account page, only with the password", async ({ page }) => {
+  await page.goto("/account");
+  const twoStep = page.locator("section.panel", { hasText: "Two-step verification" });
+  await expect(twoStep.getByText(/^On\. Each sign-in asks for a code/)).toBeVisible();
+  await twoStep.getByLabel("Your password").fill("not the password");
+  await twoStep.getByRole("button", { name: "Turn off" }).click();
+  await expect(twoStep.getByRole("alert")).toHaveText("Wrong password");
+  await expect(twoStep.getByRole("button", { name: "Turn off" })).toBeVisible(); // still on: the other tests sign in with codes
+});
+
 test("import from a CSV: preview, tick what you vouch for, approved facts; export is free", async ({ page }) => {
   await page.goto("/import");
   await expect(page.getByRole("heading", { name: "Import and export" })).toBeVisible();

@@ -115,7 +115,7 @@ export default async function TodayPage() {
         <section className="panel">
           <div className="panel-head">
             <h3>Recent activity</h3>
-            {t.stale > 0 && <Link href="/refresh" className="btn ghost small"><RefreshCw aria-hidden="true" />Refresh list</Link>}
+            {t.stale > 0 && <Link href="/refresh" className="btn ghost small"><RefreshCw aria-hidden="true" />Who to re-contact</Link>}
           </div>
           {t.recent.length === 0 ? (
             <p className="empty">Nothing yet. Activity on people and jobs shows up here.</p>
