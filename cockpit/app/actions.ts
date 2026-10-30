@@ -933,6 +933,7 @@ export async function setSourcingPlan(jobId: string, _: FormState, form: FormDat
   if (form.has("mode")) body.mode = String(form.get("mode"));
   if (form.get("target")) body.target = Number(form.get("target"));
   if (form.get("budget")) body.monthly_budget_usd = Number(form.get("budget"));
+  if (form.get("per_company") !== null && form.get("per_company") !== "") body.rules = { per_company: Number(form.get("per_company")) };
   if (form.has("variants")) body.role_variants = words(form.get("variants"));
   if (form.has("countries")) body.countries = words(form.get("countries")); // names or codes; written to the hiring profile
   try {

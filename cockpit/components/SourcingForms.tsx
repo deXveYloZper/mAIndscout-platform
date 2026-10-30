@@ -19,7 +19,8 @@ function Said({ state }: { state: FormState }) {
 
 
 /** How often the role searches, how many strong suggestions to keep waiting, and its monthly budget. */
-export function PlanSettings({ action, mode, target, budget }: { action: Act; mode: SourcingMode; target: number; budget: number }) {
+export function PlanSettings({ action, mode, target, budget, perCompany }: { action: Act; mode: SourcingMode; target: number; budget: number;
+  perCompany: number }) {
   const [state, formAction, pending] = useActionState(action, {});
   return (
     <form action={formAction} className="logact">
@@ -31,6 +32,9 @@ export function PlanSettings({ action, mode, target, budget }: { action: Act; mo
         </label>
         <label className="field">Strong suggestions to keep waiting
           <input name="target" type="number" min={1} max={200} defaultValue={target} aria-label="Target" />
+        </label>
+        <label className="field">At most from one company (0: no limit)
+          <input name="per_company" type="number" min={0} max={50} defaultValue={perCompany} aria-label="Strong suggestions from one company at a time" />
         </label>
         <label className="field">Monthly budget ($)
           <input name="budget" type="number" min={0} max={1000} step="0.5" defaultValue={budget} aria-label="Monthly budget in dollars" />

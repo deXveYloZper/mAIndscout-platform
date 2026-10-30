@@ -238,6 +238,13 @@ function Workflow({ jobId, s, since }: { jobId: string; s: SourcingPage; since: 
       {s.suggestions.length === 0 ? <p className="empty">Nothing to review. Choose how often to search, or search now.</p> : (
         <>
           {strong.length > 0 && <Cards jobId={jobId} rows={strong} since={since} />}
+          {(s.held_back ?? []).map((g) => (
+            <details key={g.company_id} className="held">
+              <summary className="sub">{g.count} more strong at {g.name ?? "the same company"}, held back so the list stays varied
+                (at most {s.plan.rules.per_company} from one company at a time; the next moves up as you decide)</summary>
+              <Cards jobId={jobId} rows={g.people} since={since} />
+            </details>
+          ))}
           {weaker.length > 0 && (
             <details open={strong.length === 0}>
               <summary className="sub">{weaker.length} possible matches (weaker: they miss some of what the role asks for)</summary>
@@ -472,7 +479,9 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
           </div>
         </div>
         <p className="sub">
-          {s.strong_waiting} of {p.target} strong suggestions waiting (to review or to contact) ·
+          {s.strong_waiting} of {p.target} strong suggestions waiting (to review or to contact)
+          {s.strong_waiting_all !== undefined && s.strong_waiting_all > s.strong_waiting
+            ? ` (${s.strong_waiting_all} in all: at most ${p.rules.per_company} from one company count)` : ""} ·
           this month {usd(s.budget.role_spent_usd)} of {usd(s.budget.role_budget_usd)} for this role
           (desk {usd(s.budget.desk_spent_usd)} of {usd(s.budget.desk_budget_usd)})
           {p.mode === "paused" && !s.running && !s.building ? " · searches only when you press Search now, or choose a schedule" : ""}
@@ -498,7 +507,8 @@ export function SourcingTab({ s, stats }: { s: SourcingPage; stats: SourcingStat
           kept in its <Link href={`/jobs/${jobId}?tab=profile`}>hiring profile</Link> (&ldquo;where people must live&rdquo;).</p>}
         <details>
           <summary className="sub">Frequency, target and budget</summary>
-          <PlanSettings action={setSourcingPlan.bind(null, jobId)} mode={p.mode} target={p.target} budget={p.monthly_budget_usd} />
+          <PlanSettings action={setSourcingPlan.bind(null, jobId)} mode={p.mode} target={p.target} budget={p.monthly_budget_usd}
+            perCompany={p.rules.per_company ?? 5} />
         </details>
         <p className="hint">Each run goes cheapest first: people already on the desk (free), then a web search (about $0.007 each, never the
           same search twice in 30 days). It stops at the target or the budget. Everyone found goes through the same checks as an uploaded

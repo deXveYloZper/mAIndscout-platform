@@ -50,7 +50,7 @@ How the build follows those rules (the CV path for found profiles, separate budg
   4. The [talent-release radar](talent-release-radar.md): up to 3 news searches about the role's companies and market. A company releasing talent is searched first on the next run (after pinned ones), and one found by market news joins the plan.
 
   A run stops when:
-  - the role has its target of strong suggestions waiting (a strong suggestion is priority, not yet contacted, and not stopped);
+  - the role has its target of strong suggestions waiting (a strong suggestion is priority, not yet contacted, and not stopped; at most the plan's `per_company`, 5, from one company where they work now count, 2026-10-30, [sourcing strategy](sourcing-strategy.md));
   - a budget is reached;
   - it hits its search limit;
   - or the plan has no searches left.
@@ -99,7 +99,7 @@ within a band, those whose own words show the work first, those whose main work 
 
 ## Contracts
 - `GET /v1/jobs/{id}/sourcing`: the plan, budgets, the last 10 runs, and up to 100 suggestions waiting, each with who found them.
-- `PATCH /v1/jobs/{id}/sourcing/plan {mode?, target?, monthly_budget_usd?, role_variants?, countries?}`
+- `PATCH /v1/jobs/{id}/sourcing/plan {mode?, target?, monthly_budget_usd?, role_variants?, countries?, rules?}` (a rule changed is merged into the plan's rules); `GET /v1/jobs/{id}/sourcing` adds `held_back [{company_id, name, count, people}]` and `strong_waiting_all`
 - `POST /v1/jobs/{id}/sourcing/targets {name}`
 - `PATCH /v1/jobs/{id}/sourcing/targets/{company_id} {pinned?, removed?}`
 - `POST /v1/jobs/{id}/sourcing/peers`

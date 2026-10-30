@@ -453,13 +453,16 @@ export type SourcingPage = {
     lens?: { role_line?: (Partial<CompanyLine> & { line?: string }) | null; focus?: { words: string; stems: string[] } | null } };
   hiring: { name: string; stage?: string | null; domains?: string[]; kind?: string | null; team?: string; hq?: string } | null;
   budget: { role_spent_usd: number; role_budget_usd: number; desk_spent_usd: number; desk_budget_usd: number };
-  strong_waiting: number; web_ready: boolean; running: boolean; building: boolean; widening: Widening | null;
+  /** Counted toward the target with at most `rules.per_company` from one company; `strong_waiting_all`: everyone. */
+  strong_waiting: number; strong_waiting_all?: number; web_ready: boolean; running: boolean; building: boolean; widening: Widening | null;
   strategy_note: { level: "error" | "info"; text: string; at: string | null } | null;
   /** Step D: the competitor research (Grok, web) of the last strategy build, and a search going on by itself. */
   competitor_research?: { found: number; kept: number; much_bigger: string[]; refused: { company: string; reason: string }[];
     pages: number; usd: number; rounds?: number; lines?: string[]; role?: string } | null;
   search_round?: { round: number; waiting: boolean } | null;
   runs: SourcingRunView[]; suggestions: Suggestion[]; suggestions_total: number;
+  /** Strong people beyond `rules.per_company` at one company, held back so the list stays varied (never lost). */
+  held_back?: { company_id: string; name: string | null; count: number; people: Suggestion[] }[];
   lists: Record<Exclude<OutreachStage, "to_review">, Suggestion[]>; counts: Record<OutreachStage, number>; follow_ups_due: number;
 };
 

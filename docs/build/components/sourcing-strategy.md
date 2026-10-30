@@ -218,3 +218,15 @@ searches). Plan rule `adaptive` (1 by default, 0 keeps the loop as it was), with
 
 Tests: `core/tests/test_adaptive_search.py` (titles ordered and retired, never used by `next_searches` once retired;
 deep where it gives; the peer search at two; off → the plan's order and wide first, as before).
+
+## A varied list: at most five from one company (2026-10-30)
+[Decision](../../decisions/2026-10-30-varied-strong-list.md). Plan rule `per_company` (5; 0 for no limit). At most that
+many strong suggestions from one company where they work now are shown at a time (`autosource.vary`, by
+`main_employer`: the current job started last, never a board seat, merged companies as one); the others are held
+back under their company on the Sourcing tab ("14 more strong at Omnea"), never lost, and move up as those shown are
+decided. The target counts at most that many from one company (`strong_waiting`; `every=True` counts all), so the
+search goes on to other companies; in the adaptive order, a company whose searches gave that many strong people gets
+its remaining titles after every other company. Possible matches are never held back; nobody's rating changes.
+Procure AI on the live desk: 5 of Omnea's 19 shown, the target counts 9 of 23.
+
+Tests: `core/tests/test_company_variety.py`.
