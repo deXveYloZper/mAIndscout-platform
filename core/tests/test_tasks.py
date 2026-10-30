@@ -143,3 +143,34 @@ def test_a_paid_call_stays_in_the_ledger_when_its_task_fails_afterwards(factory)
         assert s.get(Task, tid).status == "failed"
         s.execute(delete(CostEntry).where(CostEntry.task_id == tid))
         s.commit()
+
+
+def test_an_idle_worker_looks_less_often_and_new_work_wakes_it_at_once(factory, monkeypatch):
+    """Two workers looking every second made ~170,000 queries a day on an idle desk (2026-10-29)."""
+    import threading
+    import time
+
+    monkeypatch.setattr(tasks, "IDLE_MAX", 0.4)
+    tasks._wake.clear()
+    waits = [tasks.IDLE_MIN / 10]
+    for _ in range(5):
+        waits.append(tasks.idle_wait(waits[-1]))
+    assert waits[1:] == [0.2, 0.4, 0.4, 0.4, 0.4], "twice as long each time, up to the longest wait"
+
+    with factory() as s:
+        tasks.enqueue(s, None, "test_ok", {})
+        assert not tasks._wake.is_set(), "not before the task is committed: a worker would find nothing"
+        s.commit()
+    assert tasks._wake.is_set()
+    assert tasks.idle_wait(10.0) == tasks.IDLE_MIN, "woken, it looks again at once"
+
+    seen = {}
+    worker = threading.Thread(target=lambda: seen.setdefault("next", tasks.idle_wait(10.0)))
+    started = time.monotonic()
+    worker.start()
+    tasks._wake_workers()
+    worker.join(2)
+    assert seen["next"] == tasks.IDLE_MIN and time.monotonic() - started < 2, "a sleeping worker wakes up"
+    with factory() as s:
+        s.execute(delete(Task).where(Task.kind == "test_ok"))
+        s.commit()
