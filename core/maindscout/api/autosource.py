@@ -103,7 +103,8 @@ def update_plan(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: s
         if key not in fields:
             raise SourcingEngineError(f"Unknown plan field {key!r}")
         if value is not None:
-            fields[key] = value
+            # a rule changed is merged into the plan's own rules: changing one never resets the others
+            fields[key] = {**(fields["rules"] or {}), **value} if key == "rules" else value
     if fields["mode"] not in ("daily", "weekly", "continuous", "paused"):
         raise SourcingEngineError("mode must be daily, weekly, continuous or paused")
     if not 1 <= int(fields["target"]) <= 200:
@@ -265,6 +266,52 @@ def current_employers(session: Session, org_id: uuid.UUID, candidate_id: uuid.UU
     return out
 
 
+def main_employer(session: Session, org_id: uuid.UUID, candidate_id: uuid.UUID) -> str | None:
+    """Where the person mainly works now: of their current jobs (a board seat or volunteering is not one), the one they
+    started last, as the company's kept record (a merged one leads to it). None: no current job at a known company."""
+    from maindscout.api import companies, memo
+    from maindscout.domain.profile import side_role
+
+    best: tuple[date, str] | None = None
+    for c in memo.places_and_steps(session, org_id, candidate_id):
+        if c.claim_type != "CareerStepClaim" or c.valid_to is not None:
+            continue
+        step = c.approved_view or c.payload
+        company_id = (step.get("company") or {}).get("company_id")
+        if not company_id or side_role(step.get("title_raw")):
+            continue
+        started = c.valid_from or date.min
+        if best is None or started > best[0]:
+            best = (started, company_id)
+    if best is None:
+        return None
+    try:
+        kept = companies.canonical(session, session.get(Company, uuid.UUID(best[1])))
+    except ValueError:
+        return None
+    return str(kept.id) if kept is not None else best[1]
+
+
+def vary(session: Session, org_id: uuid.UUID, rows: list, cap: int) -> tuple[list, dict[str, list]]:
+    """A varied list (owner, 2026-10-29): in the list's own order, at most `cap` strong people per company where they
+    work now; the others are held back by company, never lost, and move up as those shown are decided. Possible
+    matches are never held back. `rows` have `candidate_id` and `triage_band`."""
+    if cap <= 0:
+        return rows, {}
+    kept: list = []
+    held: dict[str, list] = {}
+    shown: dict[str, int] = {}
+    for x in rows:
+        company = main_employer(session, org_id, x.candidate_id) if x.triage_band == "priority" else None
+        if company is not None and shown.get(company, 0) >= cap:
+            held.setdefault(company, []).append(x)
+            continue
+        if company is not None:
+            shown[company] = shown.get(company, 0) + 1
+        kept.append(x)
+    return kept, held
+
+
 def refusal(session: Session, org_id: uuid.UUID, job: Job, candidate_id: uuid.UUID, limits: dict[str, str],
             not_wanted: set[uuid.UUID] | None = None, countries: set[str] | None = None) -> str | None:
     """Why this person is not suggested for this role, or None. `countries`: the role's countries (the plan's, in
@@ -344,16 +391,36 @@ def _job(session: Session, org_id: uuid.UUID, job_id: uuid.UUID) -> Job:
     return job
 
 
-def strong_waiting(session: Session, job_id: uuid.UUID) -> int:
+def strong_waiting(session: Session, job_id: uuid.UUID, every: bool = False) -> int:
     """Strong suggestions found by sourcing that nobody has contacted yet: never someone who said stop, nor someone
     living outside the role's countries (they are not shown, so they never hold the search back), nor a reach the
-    owner has not chosen (a head of engineering for a developer role, phase 1c)."""
+    owner has not chosen (a head of engineering for a developer role, phase 1c). Counted toward the target with at
+    most the plan's `per_company` from one company where they work now (2026-10-29: Omnea's 21 alone met Procure AI's
+    target and stopped its search); `every`: all of them."""
     from maindscout.api import memo
 
-    return memo.cached(session, ("strong_waiting", job_id), lambda: _strong_waiting(session, job_id))
+    rows = memo.cached(session, ("strong_waiting", job_id), lambda: _strong_waiting(session, job_id))
+    if every or not rows:
+        return len(rows)
+    from maindscout.api import strategy
+
+    p = current_plan(session, job_id)
+    cap = int(strategy.rules(p).get("per_company") or 0) if p is not None else 0
+    if cap <= 0:
+        return len(rows)
+    per: dict[str, int] = {}
+    counted = 0
+    for cid, org_id in rows:
+        company = main_employer(session, org_id, cid)
+        if company is not None:
+            per[company] = per.get(company, 0) + 1
+            if per[company] > cap:
+                continue
+        counted += 1
+    return counted
 
 
-def _strong_waiting(session: Session, job_id: uuid.UUID) -> int:
+def _strong_waiting(session: Session, job_id: uuid.UUID) -> list[tuple[uuid.UUID, uuid.UUID]]:
     from maindscout.api import outreach
 
     rows = session.execute(select(CandidateJob.candidate_id, CandidateJob.org_id, CandidateJob.band_overridden_by).join(
@@ -362,7 +429,7 @@ def _strong_waiting(session: Session, job_id: uuid.UUID) -> int:
         CandidateJob.job_id == job_id, CandidateJob.triage_band == "priority", CandidateJob.pair_state.in_(WAITING),
         Candidate.do_not_contact_at.is_(None))).all()
     if not rows:
-        return 0
+        return []
     job = session.get(Job, job_id)
     from maindscout.api.strategy import not_from
 
@@ -372,10 +439,10 @@ def _strong_waiting(session: Session, job_id: uuid.UUID) -> int:
     p = current_plan(session, job_id)
     countries = set(p.countries or []) if p is not None else set()
     if not countries:
-        return len(rows)
+        return rows
     from maindscout.api.strategy import outside_countries
 
-    return sum(1 for cid, org_id in rows if not outside_countries(session, org_id, cid, countries))
+    return [(cid, org_id) for cid, org_id in rows if not outside_countries(session, org_id, cid, countries)]
 
 
 def _key(channel: str, text: str, country: str | None) -> str:
@@ -495,10 +562,14 @@ def run(session: Session, blobs: BlobStore, org_id: uuid.UUID, job_id: uuid.UUID
     planned = strategy.next_searches(session, job, p, set(radar.live(session, org_id)), limits)
     from maindscout import activity
 
+    counted, every = strong_waiting(session, job.id), strong_waiting(session, job.id, every=True)
     activity.step(f"Search ({trigger}): {len(planned)} searches planned at "
-                  f"{len({q['target'] for q in planned if q.get('target')})} companies, in {', '.join(p.countries or []) or 'any country'}",
+                  f"{len({q['target'] for q in planned if q.get('target')})} companies, in {', '.join(p.countries or []) or 'any country'}"
+                  + (f"; {counted} of the target's {p.target} strong counted ({every} waiting, at most "
+                     f"{strategy.rules(p)['per_company']} per company)" if counted != every else ""),
                   {"searches": [f"{q['text']} [{q.get('tier')}, {q.get('country')}]" for q in planned[:60]],
-                   "titles": list(p.role_variants or []), "open_tiers": list(p.open_tiers or ["A", "B"])},
+                   "titles": list(p.role_variants or []), "open_tiers": list(p.open_tiers or ["A", "B"]),
+                   "strong_waiting": {"counted": counted, "all": every}},
                   org_id=org_id, job_id=job.id)
     for q in planned:
         if strong_waiting(session, job.id) >= p.target:
@@ -859,12 +930,18 @@ def _page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "
     # then those who meet more of the role's strong-plus items (each card says which); never a score.
     waiting.sort(key=lambda x: (x.triage_band != "priority", work_reading.order_key(readings.get(x.candidate_id)),
                                 -_plus(x)["met"], -(hits[x.candidate_id].created_at.timestamp())))
+    # A varied list (owner, 2026-10-29): at most `per_company` strong suggestions from one company at a time, the best
+    # first; the others are held back under their company and move up as those shown are decided.
+    waiting, held = vary(session, org_id, waiting, int(strategy.rules(p).get("per_company") or 0))
+    if waiting or held:
+        by_stage["to_review"] = waiting
+    held_rows = [x for rows_ in held.values() for x in rows_]
     for st, rows_ in by_stage.items():
         if st == "passed":  # the latest first, so a pass made by mistake is easy to undo
             rows_.sort(key=lambda x: (x.contact or {}).get("decided_at") or "", reverse=True)
         elif st != "to_review":
             rows_.sort(key=lambda x: (x.contact or {}).get("follow_up_due") or (x.contact or {}).get("decided_at") or "")
-    shown = [x for st in LISTS for x in by_stage.get(st, [])[:100]]
+    shown = [x for st in LISTS for x in by_stage.get(st, [])[:100]] + held_rows[:100]
     ids = [x.candidate_id for x in shown]
     who, facts = names(session, ids), _people_facts(session, org_id, ids)
     from maindscout.api import evidence as evidence_checks
@@ -925,7 +1002,12 @@ def _page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "
                           "found_by": {"channel": h.channel, "target": h.target, "tier": h.tier, "query": q.text if q else None,
                                        "at_target": at,
                                        "at": h.created_at.isoformat() if h.created_at else None, "new_to_desk": h.new_to_desk}})
-    suggestions = lists["to_review"]
+    held_ids = {str(x.candidate_id) for x in held_rows}
+    cards = {c["candidate_id"]: c for c in lists["to_review"]}
+    suggestions = [c for c in lists["to_review"] if c["candidate_id"] not in held_ids]
+    held_back = sorted(({"company_id": company, "name": getattr(session.get(Company, uuid.UUID(company)), "name", None),
+                         "count": len(rows_), "people": [cards[str(x.candidate_id)] for x in rows_ if str(x.candidate_id) in cards]}
+                        for company, rows_ in held.items()), key=lambda g: -g["count"])
     runs = list(session.scalars(select(SourcingRun).where(SourcingRun.job_id == job.id).order_by(SourcingRun.started_at.desc()).limit(10)))
     strong_by_run = strong_now(session, [r.id for r in runs])
     return {
@@ -939,6 +1021,7 @@ def _page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "
                    "role_budget_usd": float(p.monthly_budget_usd),
                    "desk_spent_usd": round(costs.sourcing_spent(session, org_id), 4), "desk_budget_usd": desk_budget(session, org_id)},
         "strong_waiting": strong_waiting(session, job.id),
+        "strong_waiting_all": strong_waiting(session, job.id, every=True),
         "widening": strategy.widening(session, org_id, job, p),
         "building": session.scalar(select(func.count()).select_from(Task).where(
             Task.kind == "sourcing_strategy", Task.dedupe_key == f"strategy:{job.id}", Task.status.in_(("queued", "running")))) > 0,
@@ -956,6 +1039,7 @@ def _page(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, actor: str = "
                   "ended_at": r.ended_at.isoformat() if r.ended_at else None} for r in runs],
         "suggestions": suggestions,
         "suggestions_total": len(waiting),
+        "held_back": held_back,
         "lists": {st: v for st, v in lists.items() if st != "to_review"},
         "counts": {st: len(by_stage.get(st, [])) for st in LISTS},
         "follow_ups_due": sum(1 for x in lists["contacted"] if x["follow_up_due"]),

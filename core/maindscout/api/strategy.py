@@ -42,7 +42,11 @@ RULES = {"batch": 5, "exhausted_after": 2, "known_share": 0.8, "low_yield": 0.2,
          "max_results": 50,
          # The search that learns from its own results (2026-10-28, measured: a title that found nobody strong in
          # `retire_after` searches retires; a company that gave `deep_from` strong people gets its next title first).
-         "adaptive": 1, "retire_after": 6, "deep_from": 2}
+         "adaptive": 1, "retire_after": 6, "deep_from": 2,
+         # A varied list (owner, 2026-10-29: 21 of Procure AI's 25 strong were at Omnea): at most `per_company` strong
+         # suggestions shown and counted toward the target per company where they work now, the rest held back; a
+         # company that gave that many is searched again only after every other company. 0 turns it off.
+         "per_company": 5}
 MARKET_RESULTS = 25
 NOT_THE_ROLE = re.compile(r"\b(sales|account|ceo|cfo|coo|founder|co-founder|recruit|talent|hr|people|marketing|finance|"
                           r"legal|office|operations|intern|student)\b", re.I)
@@ -1031,10 +1035,12 @@ def next_searches(session: Session, job: Job, p: SourcingPlan, releasing: set[st
         # search per company per run, so each run's results shape the next.
         limit = autosource.MAX_WEB_QUERIES_PER_RUN
         rel = lambda q: (state.get(q[0]["company_id"]) or {}).get("relevant", 0)  # noqa: E731
-        deep = sorted((q for q in queue if not q[3] and rel(q) >= int(r["deep_from"])), key=lambda q: -rel(q))
+        cap = int(r.get("per_company") or 0)
+        full = lambda q: bool(cap) and rel(q) >= cap  # noqa: E731 - it gave its share: other companies first
+        deep = sorted((q for q in queue if not q[3] and not full(q) and rel(q) >= int(r["deep_from"])), key=lambda q: -rel(q))
         fresh = [q for q in queue if q[3]]
-        rest = [q for q in queue if not q[3] and rel(q) < int(r["deep_from"])]
-        picked = deep[: limit // 2] + fresh + deep[limit // 2:] + rest
+        rest = [q for q in queue if not q[3] and not full(q) and rel(q) < int(r["deep_from"])]
+        picked = deep[: limit // 2] + fresh + deep[limit // 2:] + rest + [q for q in queue if not q[3] and full(q)]
         for t, company, pending, _ in picked[:limit]:
             out.append({"text": pending[0], "target": t["name"], "company_id": t["company_id"], "tier": t.get("tier"),
                         "group": group_of(t), "country": t.get("country") or (p.countries[0] if p.countries else None),
