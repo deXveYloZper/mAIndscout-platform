@@ -15,13 +15,18 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
-from sqlalchemy import select, text
+from sqlalchemy import event, select, text
 from sqlalchemy.orm import Session
 
 from maindscout.db.models import Task
 
 log = logging.getLogger("maindscout.tasks")
 HANDLERS: dict[str, Callable[[Session, Task], dict[str, Any]]] = {}
+# An idle worker looks at the queue less and less often, up to IDLE_MAX seconds apart; a task queued in this process
+# wakes the workers as soon as it is committed, so a button's work still starts at once (2026-10-29: two workers
+# idling at one look a second each made ~170,000 queries a day on a desk with nothing to do).
+IDLE_MIN, IDLE_MAX = 1.0, 15.0
+_wake = threading.Event()
 
 
 def handler(kind: str):
@@ -42,7 +47,14 @@ def enqueue(session: Session, org_id: uuid.UUID | None, kind: str, payload: dict
     task = Task(org_id=org_id, kind=kind, payload=payload, priority=priority, dedupe_key=dedupe_key, max_attempts=max_attempts)
     session.add(task)
     session.flush()
+    if not event.contains(session, "after_commit", _wake_workers):
+        event.listen(session, "after_commit", _wake_workers)  # a session lives for one request or task
     return task
+
+
+def _wake_workers(_session=None) -> None:
+    """New work is committed: idle workers look at the queue now instead of at their next look."""
+    _wake.set()
 
 
 STALE_AFTER = timedelta(minutes=30)  # far longer than any task takes; only a crashed process leaves one this old
@@ -164,15 +176,28 @@ def drain(factory, limit: int = 1000) -> int:
     return done
 
 
-def work_forever(factory, name: str, idle_seconds: float = 1.0, stop: threading.Event | None = None) -> None:
+def idle_wait(idle: float) -> float:
+    """Wait while the queue is empty: until new work is committed, or `idle` seconds. Returns the next wait: back to the
+    shortest after a wake, otherwise twice as long, up to IDLE_MAX (work queued for later, or by another process, is
+    therefore seen within IDLE_MAX seconds)."""
+    if _wake.wait(idle):
+        _wake.clear()
+        return IDLE_MIN
+    return min(idle * 2, IDLE_MAX)
+
+
+def work_forever(factory, name: str, stop: threading.Event | None = None) -> None:
     log.info("worker %s started", name)
+    idle = IDLE_MIN
     while stop is None or not stop.is_set():
         try:
-            if not run_one(factory, name):
-                time.sleep(idle_seconds)
+            if run_one(factory, name):
+                idle = IDLE_MIN
+            else:
+                idle = idle_wait(idle)
         except Exception:  # never let one bad loop kill the worker
             log.exception("worker %s loop error", name)
-            time.sleep(idle_seconds)
+            idle = idle_wait(idle)
 
 
 def start_threads(factory, count: int) -> list[threading.Thread]:
