@@ -349,10 +349,18 @@ def extract_pdf(data: bytes) -> ExtractionResult:
     )
 
 
+# A glyph with no character behind it (the emoji bullets of a job ad, 2026-10-30) is read as NUL, which Postgres text
+# cannot hold: storing the ad failed with a server error. Nothing readable is lost without it.
+NUL = "\x00"
+
+
 def extract(data: bytes, media_type: str) -> ExtractionResult:
     if media_type == "application/pdf":
-        return extract_pdf(data)
-    if media_type.startswith("text/plain"):
+        result = extract_pdf(data)
+    elif media_type.startswith("text/plain"):
         text = data.decode("utf-8", errors="replace")
-        return ExtractionResult(text=text, pages=1, extractor={"name": "plain", "version": "1"})
-    raise UnsupportedMedia(f"Unsupported media type: {media_type}")
+        result = ExtractionResult(text=text, pages=1, extractor={"name": "plain", "version": "1"})
+    else:
+        raise UnsupportedMedia(f"Unsupported media type: {media_type}")
+    result.text = result.text.replace(NUL, "")
+    return result

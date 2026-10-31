@@ -39,6 +39,7 @@ CHANNEL_LABEL = {"pool": "our own pool", "exa_people": "web people search", "exa
 TIER_LABEL = {"named": "companies the hiring manager named", "known": "companies our people worked at", "peer": "peer companies",
               "adjacent": "adjacent industries", "release": "companies releasing talent", "manual": "companies you added",
               "market": "market-wide searches", "feeder": "where the hiring company's people came from",
+              "feeder_one": "where one of the hiring company's people came from",
               "feeder_large": "large companies the hiring company's people came from", "snowball": "where strong candidates worked before"}
 
 

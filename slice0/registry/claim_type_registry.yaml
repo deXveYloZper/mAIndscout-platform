@@ -94,7 +94,9 @@ types:
       core-work reader: one thing the hire will actually do (marked central when it makes the job what it is), or one
       job that shares the role's words but is a different job ("not this work"). Proposed by the desk from the role's
       own material; only lines a person confirmed or typed are used. They order people within a band and never
-      change a rating, so confirming one re-rates nobody.
+      change a rating, so confirming one re-rates nobody. Since 2026-10-30 (owner: "why our platform doesn't generate
+      this itself") also the role's own titles, its look-alikes' titles and the work in a word (kinds title, not_title,
+      word): the searches use them in place of the family table's titles; never read against, never rated.
 
   SameAsClaim:
     class: inferred

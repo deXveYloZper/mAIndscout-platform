@@ -118,9 +118,41 @@ def run_one(factory, worker: str = "worker") -> bool:
     return True
 
 
+# Long sourcing work adds shared companies inside a transaction of several minutes, so two such tasks at once wait for
+# each other's new rows (2026-10-30: three roles' company lists built at once; two of them added "Skyrora" and
+# "Kongsberg" in opposite order and Postgres ended both as a deadlock). They take turns across the desk: a task whose
+# turn has not come waits in the queue, its attempt not spent, and the worker moves on to other work.
+ONE_AT_A_TIME = frozenset({"sourcing_strategy", "sourcing_run"})
+TURN_KEY = "maindscout:long sourcing work"
+TURN_WAIT = timedelta(seconds=15)
+_waiting_noted: set[uuid.UUID] = set()
+
+
+def _my_turn(session, task: Task) -> bool:
+    """True for every other kind; for long sourcing work, the desk-wide turn, held until this task's transaction ends."""
+    if task.kind not in ONE_AT_A_TIME:
+        return True
+    return bool(session.scalar(text("SELECT pg_try_advisory_xact_lock(hashtext(:k))"), {"k": TURN_KEY}))
+
+
+def _deadlock(error: Exception) -> bool:
+    from psycopg import errors
+
+    return isinstance(getattr(error, "orig", None), errors.DeadlockDetected)
+
+
 def _run(session, task: Task, task_id, activity) -> None:
-    started = datetime.now(timezone.utc)
     kind = task.kind
+    if not _my_turn(session, task):
+        task.status, task.locked_by, task.attempts = "queued", None, task.attempts - 1
+        task.run_after = datetime.now(timezone.utc) + TURN_WAIT
+        session.commit()
+        if task_id not in _waiting_noted:  # said once, not every 15 seconds
+            _waiting_noted.add(task_id)
+            activity.step(f"{LABEL.get(kind, kind)} waits its turn: another role's search or company list is running")
+        return
+    _waiting_noted.discard(task_id)
+    started = datetime.now(timezone.utc)
     try:
         result = execute(session, task)
         task = session.get(Task, task_id)
@@ -141,7 +173,9 @@ def _run(session, task: Task, task_id, activity) -> None:
         task.error = f"{type(error).__name__}: {error}"[:2000]
         log.warning("task %s %s failed: %s", task.kind, task.id, task.error)
         log.debug(traceback.format_exc())
-        if task.attempts >= task.max_attempts or getattr(error, "permanent", False):
+        # A deadlock is another task's timing, not this task's fault: one more try, even for paid work run only once.
+        again = _deadlock(error) and task.attempts <= task.max_attempts
+        if (task.attempts >= task.max_attempts and not again) or getattr(error, "permanent", False):
             task.status, task.finished_at = "failed", datetime.now(timezone.utc)
         else:
             task.status = "queued"

@@ -2,17 +2,21 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://maindscout.local/schemas/work_line_claim.schema.json",
   "title": "WorkLineClaim payload",
-  "description": "One line of a role's work, as the core-work reader uses it (owner, 2026-10-27: 'yes build the reader'): either one thing the hire will actually do, or one job that shares the role's words but is a different job ('not this work': CRM email campaigns for a CRM platform role). Proposed by the desk from the role's own material; only the lines a person confirmed or typed are used. They order people within a band, never change a rating. Never a personal quality, a requirement such as years or a degree, or a person's name.",
+  "description": "One line of a role's work, as the core-work reader uses it (owner, 2026-10-27: 'yes build the reader'): either one thing the hire will actually do, or one job that shares the role's words but is a different job ('not this work': CRM email campaigns for a CRM platform role). Proposed by the desk from the role's own material; only the lines a person confirmed or typed are used. They order people within a band, never change a rating. Never a personal quality, a requirement such as years or a degree, or a person's name. Since 2026-10-30 the same claims also hold the role's own titles (owner: 'we cannot hard code every job family there is ... why our platform doesn't generate this itself'): a title people doing this work carry, the title of a look-alike job, or the work in a word for one broad search at a small company. The searches use them in place of the shared family table's titles; they never change who is read or how anyone is rated.",
   "type": "object",
   "additionalProperties": false,
   "required": ["kind", "words"],
   "properties": {
     "kind": {
       "type": "string",
-      "enum": ["work", "not"],
-      "description": "work: one thing the hire will actually do; not: work that looks like this job to a keyword search but is a different job."
+      "enum": ["work", "not", "title", "not_title", "word"],
+      "description": "work: one thing the hire will actually do; not: work that looks like this job to a keyword search but is a different job; title: a job title people doing this work carry, without seniority words; not_title: the title of a look-alike job; word: the work in one to three words, for one broad search at a small company."
     },
-    "words": { "type": "string", "minLength": 3, "maxLength": 240, "description": "The line in plain words." },
+    "words": { "type": "string", "minLength": 2, "maxLength": 240, "description": "The line, title or word in plain words." },
+    "rank": {
+      "type": ["integer", "null"],
+      "description": "For a title read by the desk: its place in the reading, the most common first. Null for a line, or for a title a person typed."
+    },
     "central": {
       "type": ["boolean", "null"],
       "description": "For a work line: true when it makes this job what it is, as opposed to work any similar job has. Null for a not line."

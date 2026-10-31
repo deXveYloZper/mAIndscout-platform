@@ -3,7 +3,7 @@
 import uuid
 
 import pytest
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import sessionmaker
 
 from maindscout.api import tasks, task_handlers
@@ -171,6 +171,64 @@ def test_an_idle_worker_looks_less_often_and_new_work_wakes_it_at_once(factory, 
     tasks._wake_workers()
     worker.join(2)
     assert seen["next"] == tasks.IDLE_MIN and time.monotonic() - started < 2, "a sleeping worker wakes up"
+
+
+@tasks.handler("test_long")
+def _long(session, task):
+    calls["long"] = calls.get("long", 0) + 1
+    return {}
+
+
+@tasks.handler("test_deadlocked")
+def _deadlocked(session, task):
+    from psycopg import errors
+    from sqlalchemy.exc import OperationalError
+
+    raise OperationalError("INSERT INTO company ...", {}, errors.DeadlockDetected("deadlock detected"))
+
+
+def test_long_sourcing_work_takes_turns_and_a_waiting_task_spends_no_attempt(factory, monkeypatch):
+    """2026-10-30: three roles' company lists built at once; two added the same new companies in opposite order and
+    Postgres ended both as a deadlock. The second now waits its turn in the queue."""
+    monkeypatch.setattr(tasks, "ONE_AT_A_TIME", tasks.ONE_AT_A_TIME | {"test_long"})
+    assert {"sourcing_strategy", "sourcing_run"} <= tasks.ONE_AT_A_TIME
+    with factory() as s:
+        t = tasks.enqueue(s, None, "test_long", {}, max_attempts=1)
+        s.commit()
+        tid = t.id
+    before = calls.get("long", 0)
+    with factory() as holder:  # another role's long work has the turn
+        holder.execute(text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": tasks.TURN_KEY})
+        tasks.run_one(factory)
+        with factory() as s:
+            t = s.get(Task, tid)
+            assert (t.status, t.attempts, calls.get("long", 0)) == ("queued", 0, before), "waits, its one attempt kept"
+            assert t.run_after > t.created_at
+            t.run_after = t.created_at
+            s.commit()
+        holder.rollback()  # that work ends: the turn is free
+    tasks.run_one(factory)
+    with factory() as s:
+        t = s.get(Task, tid)
+        assert (t.status, t.attempts) == ("done", 1)
+    assert calls["long"] == before + 1
+
+
+def test_a_task_ended_by_a_deadlock_gets_one_more_try_even_when_it_runs_once(factory):
+    with factory() as s:
+        t = tasks.enqueue(s, None, "test_deadlocked", {}, max_attempts=1)
+        s.commit()
+        tid = t.id
+    tasks.run_one(factory)
+    with factory() as s:
+        t = s.get(Task, tid)
+        assert (t.status, t.attempts) == ("queued", 1) and "deadlock" in t.error
+        t.run_after = t.created_at  # skip the backoff wait
+        s.commit()
+    tasks.run_one(factory)
+    with factory() as s:
+        t = s.get(Task, tid)
+        assert (t.status, t.attempts) == ("failed", 2), "one more try, not endless ones"
     with factory() as s:
         s.execute(delete(Task).where(Task.kind == "test_ok"))
         s.commit()

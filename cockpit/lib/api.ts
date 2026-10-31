@@ -122,8 +122,10 @@ export type PersonOnJob = {
 };
 
 /** One line of a role's work (the core-work reader, owner 2026-10-27): something the hire will do, or a look-alike job
-    that is not this work. Only lines a person confirmed or typed are used. */
-export type WorkLine = { id: string; kind: "work" | "not"; words: string; central: boolean | null; status: "proposed" | "approved";
+    that is not this work. Only lines a person confirmed or typed are used. Since 2026-10-30 also the role's own titles
+    (`title`), its look-alikes' titles (`not_title`) and the work in a word (`word`), which searches use. */
+export type WorkLineKind = "work" | "not" | "title" | "not_title" | "word";
+export type WorkLine = { id: string; kind: WorkLineKind; words: string; central: boolean | null; status: "proposed" | "approved";
   by: string | null };
 
 export type WorkLines = { lines: WorkLine[]; version: string | null; read_at: string | null;

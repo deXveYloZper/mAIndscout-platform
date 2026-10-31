@@ -17,7 +17,8 @@ import { ActForm } from "@/components/ActForm";
 export const TARGET_TIER: Record<string, string> = {
   named: "named by the hiring manager", known: "our people worked there", peer: "peer company",
   adjacent: "adjacent industry", release: "releasing talent", manual: "added by you",
-  feeder: "their people came from here", feeder_large: "large feeder", snowball: "strong candidates worked here",
+  feeder: "their people came from here", feeder_one: "one of their people came from here", feeder_large: "large feeder",
+  snowball: "strong candidates worked here",
   large_peer: "in the client's market, much bigger", competitor: "competitor (researched)",
 };
 const STOP: Record<string, string> = {

@@ -33,7 +33,22 @@ def text_pdf(lines=BODY, mailto: str | None = None, photo: bool = False, pages: 
     return buf.getvalue()
 
 
-SIDEBAR = ["Contact", "jane.example@example.com", "Skills", "Salesforce", "SQL", "Languages", "Italian", "English"]
+def bare_glyph_pdf(lines=BODY, after: str = "The thrill of the future") -> bytes:
+    """`lines`, then a line starting with a glyph that has no character behind it (an emoji bullet in a job ad): pypdf
+    reads it as a NUL."""
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf)
+    y = 800
+    for line in lines:
+        c.drawString(40, y, line)
+        y -= 16
+    c._code.append(f"BT /F1 12 Tf 40 {y} Td (\\000 {after}) Tj ET")
+    c.showPage()
+    c.save()
+    return buf.getvalue()
+
+
+SIDEBAR =["Contact", "jane.example@example.com", "Skills", "Salesforce", "SQL", "Languages", "Italian", "English"]
 MAIN = ["Experience", "CRM Operations Specialist, Example Motors, 2021 - today",
         "Trained users in every market on how the new CRM",
         "platform works, and turned their requests into",
