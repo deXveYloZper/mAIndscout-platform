@@ -19,6 +19,15 @@ The intelligence track adds many model and search calls per CV (plan section 4.8
 - **Erasure:** cost rows keep their numbers (accounting) but lose their link to the person and their documents; verify checks no link remains.
 - **Sourcing has its own budget** (next build, phase 1). Purposes starting `sourcing_` (`sourcing_exa_people`, `sourcing_company_search`, `sourcing_exa_news`, `sourcing_company_profile`, `sourcing_talent_dna`) are left out of the monthly model budget, so a busy search month never stops the desk reading CVs. They are checked against the role's and the desk's sourcing budgets instead (`costs.sourcing_spent`, [sourcing engine](sourcing-engine.md)). `GET /v1/costs` adds `sourcing_usd` and `sourcing_budget_usd`. The Costs page shows them as one line and labels the sourcing rows.
 - **`sourcing_strategy`** builds a role's strategy in the background (one per role at a time, no retries).
+- **Long sourcing work takes turns across the desk** (2026-10-30): `sourcing_strategy` and `sourcing_run` add shared
+  companies inside a transaction of up to ten minutes, so two at once waited for each other's new rows. Three roles'
+  company lists built at once: two added "Skyrora" and "Kongsberg Defence & Aerospace" in opposite order, and Postgres
+  ended both as a deadlock (both failed, paid work never retried). Such a task now takes a desk-wide turn (a Postgres
+  advisory lock held until its transaction ends); one whose turn has not come goes back to the queue for 15 seconds,
+  its attempt not spent, and the worker moves on to other work. The activity log says once that it "waits its turn".
+  Three roles' lists and searches now run one after another instead of side by side.
+- **A deadlock gets one more try** (2026-10-30), even for work queued to run once: it is another task's timing, not the
+  task's fault. Its paid calls stay in the ledger, so the second try spends them again.
 - **`work_reading`** (2026-10-28) reads one strong or possible person's own words against the role's confirmed work
   lines (one per person and role, deduplicated; quiet in the activity log; purposes `work_lines` and `work_reading`,
   inside the monthly model budget, a spent budget skips the reading) ([core-work reader](core-work-reader.md)).
@@ -33,7 +42,7 @@ The intelligence track adds many model and search calls per CV (plan section 4.8
 [http-api.md](http-api.md), [cockpit.md](cockpit.md), every later intelligence task (I2-I6), [sourcing-engine.md](sourcing-engine.md) and [sourcing-results.md](sourcing-results.md).
 
 ## Tests
-`core/tests/test_tasks.py` (9): runs once and keeps its result; retries with backoff then stops with the error; dedupe; two workers never take the same task; a background upload is read by a task; every read is in the ledger; the budget stops paid work; erasure unlinks cost rows; a paid call stays in the ledger when its task fails. e2e: uploads progress in the background; Costs page.
+`core/tests/test_tasks.py` (12): runs once and keeps its result; retries with backoff then stops with the error; dedupe; two workers never take the same task; a background upload is read by a task; every read is in the ledger; the budget stops paid work; erasure unlinks cost rows; a paid call stays in the ledger when its task fails; an idle worker looks less often and new work wakes it; long sourcing work takes turns and a waiting task spends no attempt; a deadlock gets one more try, not endless ones. e2e: uploads progress in the background; Costs page.
 
 Since I3: a paid call stays in the ledger even if its task fails afterwards (the runner writes the cost rows again after the rollback); `serve` and `worker` seed the claim and flag registries at start.
 

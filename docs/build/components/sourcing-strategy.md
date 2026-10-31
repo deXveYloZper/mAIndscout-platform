@@ -187,6 +187,12 @@ examples. Each pool gets its own research round; a pool that gave three or more 
 (smaller, less obvious names). At most 16 rounds per build (about $2). Each company keeps its pool; the tab and the
 activity log show the pools. Without a map (no answer), the old rounds run as before.
 
+A pool the model itself calls not applicable is left out (2026-10-30): told the desk's known segments and asked for six
+to ten pools, the map for Destinus's rocket-motor role listed "global luxury groups crm centers of excellence" and
+"italian luxury fashion and leather goods" with "Not applicable; ..." as their why, and their known companies (144 and
+more) joined the role's map. A pool whose why starts "not applicable", "not relevant", "irrelevant", "no overlap" or
+"no relevance" is no pool.
+
 **Exa confirms, never judges, a researched company.** A company the research or a person placed is never left out by
 Exa's own words: Lamborghini, Pagani, McLaren and Dallara had been "not a luxury company" because Exa calls them "super
 sports cars" and "hypercars". Exa still supplies size and team; far bigger than the client, or no team in the role's
@@ -230,3 +236,21 @@ its remaining titles after every other company. Possible matches are never held 
 Procure AI on the live desk: 5 of Omnea's 19 shown, the target counts 9 of 23.
 
 Tests: `core/tests/test_company_variety.py`.
+
+## The role's own titles, its countries and one former colleague (2026-10-30)
+From the first end-to-end test on three hard-tech roles ([decision](../../decisions/2026-10-30-role-titles.md)):
+- **Titles.** Once a person confirms the role's own titles ([core-work reader](core-work-reader.md)), they replace
+  the family table's: the plan searches them in their order, the ad's own title after them, and a rebuild no longer
+  brings back a family default a person removed ("embedded software engineer" for an avionics role). A company of 150
+  people or fewer gets one search for the role's confirmed word ("GNC navigation at Tytan Technologies", not "embedded
+  hardware at …"). Without confirmed titles, everything works as before.
+- **Countries.** A company is searched in its home country only when the role takes people there; otherwise in the
+  role's country where Exa shows most of its people, else the role's first (`search_country`). MBDA had been searched
+  in France, RUAG in Switzerland and DigitalGlobe in the United States for roles taking people only in the UK,
+  Germany or the Nordics; 47 of one batch's people were then refused as living elsewhere.
+- **One former colleague.** A company where one of the client's own people worked before (`feeder_one`) joins the list
+  in tier A, ranked with the researched competitors (closeness to the role decides), never ahead of them; two or more
+  stay a feeder, searched first. ICEYE's engineers came from Bittium, Nokia and Etteplan, one each, and none had been
+  searched. Noise joins too (a feeder with nothing to do with the work), ordered behind the closer companies.
+
+Tests: `core/tests/test_role_titles.py`.

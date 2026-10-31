@@ -77,6 +77,21 @@ shows on the card and is erased with the person; changed lines make a reading st
 band outside Priority and Review later is never read; a typed line is confirmed at once and personality is refused.
 Measured on Ferrari and Bonaventura: see the decision.
 
+## The role's own titles (2026-10-30)
+The owner: "we cannot hard code every job family there is ... why our platform doesn't generate this itself, when it
+understands the company and the role?" After the lines, one more call (`role_titles`, about a fifth of a cent) reads
+the titles people doing this work carry (no seniority words; also in the languages of the role's countries), the
+titles of its look-alike jobs, and the work in a word. Once the strategy has found the client's own people, their
+titles go into the reading too. They are kept as `WorkLineClaim`s of kind `title`, `not_title` and `word`, in the
+reading's order (`rank`), shown under the lines on the hiring profile and confirmed with them ("Confirm these N
+titles"). Only confirmed ones are used, and only by the searches ([sourcing strategy](sourcing-strategy.md)): they are
+never read against and never change a rating, so they are left out of the lines' version. A reading of the lines
+replaces only the desk's proposed lines, a reading of the titles only its proposed titles; titles are read again only
+while none is confirmed. Read for all seven open roles on 2026-10-30 ($0.018): see the
+[decision](../../decisions/2026-10-30-role-titles.md).
+
+Tests: `core/tests/test_role_titles.py`.
+
 ## Known limits
 - Public profiles mostly list titles: about half of a role's people give it nothing to quote, so it orders the rest.
 - Call notes are not read yet (they hold the recruiter's words too).

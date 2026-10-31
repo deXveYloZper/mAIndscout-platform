@@ -6,6 +6,7 @@ from it that names the company. No people, ever. No database.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -127,6 +128,12 @@ POOLS_SYSTEM = (
     "research or name any person.")
 
 
+# A pool the model itself calls not applicable is no pool (2026-10-30: told the desk's known segments, it listed "global
+# luxury groups crm centers of excellence" for a rocket-motor role with "Not applicable; ..." as its why, and the
+# segment's 144 companies joined the role's map).
+NOT_A_POOL = re.compile(r"^\W*(not applicable|not relevant|irrelevant|no overlap|no relevance)", re.I)
+
+
 @dataclass
 class Pools:
     lines: list[str] = field(default_factory=list)
@@ -161,7 +168,7 @@ def pools(client_name: str, about: str, countries: list[str], client: SearchClie
     found = []
     for raw in (data.get("pools") or [])[:10]:
         name = (raw.get("name") or "").strip()
-        if name:
+        if name and not NOT_A_POOL.search(raw.get("why") or ""):
             found.append({"name": name[:80], "why": (raw.get("why") or "").strip()[:200],
                           "examples": [str(e)[:60] for e in (raw.get("examples") or [])][:6], **_clean_facets(raw)})
     line = data.get("role_line") or None

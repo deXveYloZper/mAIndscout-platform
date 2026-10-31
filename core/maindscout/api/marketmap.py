@@ -18,10 +18,11 @@ from maindscout.db.models import PUBLIC_ORG_ID, Claim, Company, Job
 from maindscout.domain import geo
 
 LIVE = ("proposed", "approved")
-TIERS = ("named", "known", "peer", "adjacent", "release", "manual", "feeder", "feeder_large", "snowball")
+TIERS = ("named", "known", "peer", "adjacent", "release", "manual", "feeder", "feeder_one", "feeder_large", "snowball")
 TIER_LABEL = {"named": "named by the hiring manager", "known": "our people worked there", "peer": "peer company",
               "adjacent": "adjacent industry", "release": "releasing talent", "manual": "added by you",
-              "feeder": "their people came from here", "feeder_large": "large feeder", "snowball": "strong candidates worked here"}
+              "feeder": "their people came from here", "feeder_one": "one of their people came from here",
+              "feeder_large": "large feeder", "snowball": "strong candidates worked here"}
 
 # Titles that mean the same work, per role family (the shared families of career profiles). The job's own title
 # comes first; these widen the search. Editable on the plan.
@@ -49,6 +50,14 @@ FAMILY_TITLES: dict[str, list[str]] = {
 _REGIONS = r"europe|emea|dach|nordics?|benelux|apac|americas|latam|global|international|worldwide|remote|hybrid"
 
 _GENDER_TAG = re.compile(r"\s*[\(\[](?:m|w|f|d|x|all genders?|gn)(?:\s*/\s*(?:m|w|f|d|x|div))*[\)\]]\s*", re.I)
+
+
+def role_titles(session: Session, job: Job) -> list[str]:
+    """The titles a person confirmed for this role (read from its own material with its work lines, 2026-10-30), in
+    place of the family table above: none until then."""
+    from maindscout.api import work_lines
+
+    return work_lines.titles(session, job.id, "title")
 
 
 def clean_title(title: str) -> str:
@@ -127,12 +136,16 @@ def initial(session: Session, job: Job) -> dict[str, Any]:
     from maindscout.domain import specialism
 
     title = clean_title(job.title)
-    # A specialist role searches its specialism's titles, not its broad family's ("CRM specialist", not "account
-    # manager" for a CRM role read as customer success; owner, 2026-10-22).
-    spec = client_context(session, job)["specialism"]
-    usual = specialism.titles(spec) or FAMILY_TITLES.get(filters.family or "", [])
-    variants = [title] + [t for t in usual if t.lower() != title.lower()]
+    own = role_titles(session, job)
+    if own:  # the role's own titles, confirmed by a person, the most common first; the ad's own title after them
+        variants = own + [t for t in [title] if t.lower() not in {o.lower() for o in own}]
+    else:
+        # A specialist role searches its specialism's titles, not its broad family's ("CRM specialist", not "account
+        # manager" for a CRM role read as customer success; owner, 2026-10-22).
+        spec = client_context(session, job)["specialism"]
+        usual = specialism.titles(spec) or FAMILY_TITLES.get(filters.family or "", [])
+        variants = [title] + [t for t in usual if t.lower() != title.lower()]
     countries = list(job.open_countries or []) or ([hiring_company.hq_country] if hiring_company and hiring_company.hq_country else [])
-    return {"targets": targets, "role_variants": variants[:4], "countries": countries[:5],
+    return {"targets": targets, "role_variants": variants[:6 if own else 4], "countries": countries[:5],
             "hiring": {"company": summary.get("name"), "stage": summary.get("stage"), "domains": summary.get("domains") or [],
                        "kind": summary.get("kind")}}

@@ -35,7 +35,7 @@ from maindscout.intelligence import company_profile, exa
 LIVE = ("proposed", "approved")
 DNA_SEARCHES = 3
 LARGE = 5000  # a feeder this big is a kind of employer (tier C), not a list of people to search one by one
-GROUP_OF_TIER = {"named": "A", "manual": "A", "feeder": "A", "competitor": "A", "known": "B", "peer": "B", "snowball": "B",
+GROUP_OF_TIER = {"named": "A", "manual": "A", "feeder": "A", "feeder_one": "A", "competitor": "A", "known": "B", "peer": "B", "snowball": "B",
                  "adjacent": "C", "release": "C", "feeder_large": "C", "large_peer": "C"}
 GROUPS = ("A", "B", "C")
 RULES = {"batch": 5, "exhausted_after": 2, "known_share": 0.8, "low_yield": 0.2, "recheck_days": 90, "yield_window": 15,
@@ -534,6 +534,49 @@ def _peers(session: Session, org_id: uuid.UUID, job: Job, of: Company | None, ca
     return out
 
 
+def feeder_targets(session: Session, dna: dict[str, Any] | None, company: Company, have: set) -> list[dict[str, Any]]:
+    """Where the hiring company's own people worked before: two or more of them make a feeder, searched before the
+    researched competitors; one makes a `feeder_one`, ordered with the competitors by how close it is to the role
+    (2026-10-30: ICEYE's engineers came from Bittium, Nokia, Etteplan, one each, and none was searched); a very large
+    one is a kind of employer (tier C). `have` gains every company added."""
+    out = []
+    for row in (dna or {}).get("feeders", []):
+        if row["company_id"] in have:
+            continue
+        large = (row.get("employees") or 0) > LARGE
+        c = session.get(Company, uuid.UUID(row["company_id"]))
+        why = [f"{row['n']} of {company.name}'s people came from here"]  # its facts show on their own line
+        tier = "feeder_large" if large else "feeder" if row["n"] >= 2 else "feeder_one"
+        out.append(_target(c, tier, why, "talent_dna"))
+        have.add(row["company_id"])
+    return out
+
+
+def search_titles(session: Session, job: Job, p: SourcingPlan, dna: dict[str, Any] | None) -> tuple[list[str], bool]:
+    """The plan's titles after a build, and whether the role has its own confirmed titles. With them, they lead in their
+    order; without, the ad's title cleaned of its places ("Marketing Manager Italy and Europe" -> "Marketing Manager")
+    and the usual titles for the kind of work. Either way the titles a person added stay, and the client's own people's
+    titles (two or more of them) join."""
+    from maindscout.api import marketmap
+
+    fresh = marketmap.initial(session, job)["role_variants"]
+    raw = " ".join((job.title or "").split()).lower()
+    # A title that was only a family's default and is no longer suggested goes ("account manager" once the role is read
+    # as CRM, 2026-10-22; "embedded software engineer" came back for an avionics role on every rebuild, 2026-10-30);
+    # one a person added stays.
+    defaults = {t.lower() for ts in marketmap.FAMILY_TITLES.values() for t in ts} - {f.lower() for f in fresh}
+    kept = [v for v in p.role_variants or [] if v.lower() != raw and v.lower() not in defaults]
+    own = bool(marketmap.role_titles(session, job))
+    variants = list(dict.fromkeys([*fresh, *kept] if own else [*fresh[:1], *kept, *fresh[1:]]))
+    words = {w for v in variants for w in re.findall(r"[a-z]+", v.lower())}
+    for title, n in (dna or {}).get("titles", []):
+        other_work = [w for w in NOT_THE_ROLE.findall(title.lower()) if w not in words]  # "marketing" is fine for a marketer
+        if (n >= 2 and title.lower() not in {v.lower() for v in variants} and not other_work
+                and words & set(re.findall(r"[a-z]+", title.lower()))):
+            variants.append(title)
+    return variants[:6 if own else 5], own
+
+
 def build(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, caller, actor: str, task_id=None, researcher=None,
           reader=None) -> dict[str, Any]:
     """Stages 1 and 2: the talent DNA and the tiered target list, as a new plan version (paid, under $0.50)."""
@@ -562,14 +605,7 @@ def build(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, caller, actor:
     targets = [dict(t, group=group_of(t)) for t in p.targets if not _stale(session, t, client_staff, avoid)]
     have = {t.get("company_id") for t in targets} | ({str(company.id)} if company is not None else set())
 
-    for row in (dna or {}).get("feeders", []):
-        if row["n"] < 2 or row["company_id"] in have:
-            continue
-        large = (row.get("employees") or 0) > LARGE
-        c = session.get(Company, uuid.UUID(row["company_id"]))
-        why = [f"{row['n']} of {company.name}'s people came from here"]  # its facts show on their own line
-        targets.append(_target(c, "feeder_large" if large else "feeder", why, "talent_dna"))
-        have.add(row["company_id"])
+    targets += feeder_targets(session, dna, company, have)
     if dna is not None:
         derived = not countries or countries == ([company.hq_country] if company.hq_country else [])
         team = [geo.country_in(c["country"]) for c in (dna["company"].get("team_countries") or []) if (c.get("pct") or 0) >= 15]
@@ -602,25 +638,17 @@ def build(session: Session, org_id: uuid.UUID, job_id: uuid.UUID, caller, actor:
 
     # Titles: the ad's title cleaned of its places ("Marketing Manager Italy and Europe" -> "Marketing Manager") and the
     # usual titles for the kind of work, before any the owner added.
-    fresh = marketmap.initial(session, job)["role_variants"]
-    raw = " ".join((job.title or "").split()).lower()
-    # A title that was only a family's default and is no longer suggested goes ("account manager" once the role is read
-    # as CRM, 2026-10-22); one a person added stays.
-    defaults = {t.lower() for ts in marketmap.FAMILY_TITLES.values() for t in ts} - {f.lower() for f in fresh}
-    kept = [v for v in p.role_variants if v.lower() != raw and v.lower() not in defaults]
-    variants = list(dict.fromkeys([*fresh[:1], *kept, *fresh[1:]]))
-    words = {w for v in variants for w in re.findall(r"[a-z]+", v.lower())}
-    for title, n in (dna or {}).get("titles", []):
-        other_work = [w for w in NOT_THE_ROLE.findall(title.lower()) if w not in words]  # "marketing" is fine for a marketer
-        if (n >= 2 and title.lower() not in {v.lower() for v in variants} and not other_work
-                and words & set(re.findall(r"[a-z]+", title.lower()))):
-            variants.append(title)
-    changes: dict[str, Any] = {"targets": targets, "role_variants": variants[:5], "countries": countries}
+    variants, own = search_titles(session, job, p, dna)
+    changes: dict[str, Any] = {"targets": targets, "role_variants": variants, "countries": countries}
     if research and research.get("role_line"):  # the role's own line of business orders its search
         changes["lens"] = {**(p.lens or {}), "role_line": research["role_line"]}
     if dna is not None:
         changes["dna"] = dna
     new = autosource.update_plan(session, org_id, job_id, actor, **changes)
+    if dna is not None and reader is not None and not own:  # the client's own people's titles inform the role's titles
+        from maindscout.api import work_lines
+
+        work_lines.read_titles_unless_confirmed(session, org_id, job.id, reader, task_id)
     if dna is None:
         return {"version": new.version, "people": 0, "feeders": 0, "note": f"No talent DNA: {skipped}. The list was built from the "
                 "hiring profile instead.",
@@ -710,6 +738,19 @@ def team_in(company: Company | None, countries: set[str]) -> bool | None:
         return True
     complete = len(rows) < EXA_TOP_COUNTRIES or not (rows[-1].get("n") or 0)
     return False if complete else None
+
+
+def search_country(company: Company | None, home: str | None, countries: list[str]) -> str | None:
+    """Where a search looks for a company's people: its home country when the role takes people there, else the role's
+    country where Exa shows most of its people, else the role's first (2026-10-30: MBDA was searched in France, RUAG
+    in Switzerland and DigitalGlobe in the United States for roles taking people only in the UK, Germany or the
+    Nordics, and everyone found there was refused)."""
+    if not countries or home in countries:
+        return home or (countries[0] if countries else None)
+    rows = ((company.exa_profile or {}).get("countries") or []) if company is not None else []
+    there = [(int(r.get("n") or 0), geo.country_in(r.get("country"))) for r in rows]
+    best = max(((n, c) for n, c in there if c in countries), default=None)
+    return best[1] if best else countries[0]
 
 
 def closed(session: Session, company: Company | None) -> bool:
@@ -881,10 +922,14 @@ SMALL = 150  # at a company this small, one broad search finds its few people; t
 def broad_word(session: Session, job: Job) -> str | None:
     """The role's kind of work as a search word ("marketing", "software engineering", "GIS remote sensing"; "CRM" for a
     CRM role)."""
+    from maindscout.api import work_lines
     from maindscout.api.process import client_context
     from maindscout.domain import specialism
     from maindscout.domain.profile import FAMILY_LABEL
 
+    own = work_lines.titles(session, job.id, "word")  # the role's own word, confirmed by a person (2026-10-30)
+    if own:
+        return own[0]
     word = specialism.broad_word(client_context(session, job)["specialism"])
     if word:
         return word
@@ -973,6 +1018,7 @@ def next_searches(session: Session, job: Job, p: SourcingPlan, releasing: set[st
     state = company_state(session, job.id, p)
     open_groups = set(p.open_tiers or ["A", "B"])
     order = {t: i for i, t in enumerate(("named", "manual", "feeder", "competitor", "release", "known", "peer", "snowball", "adjacent", "feeder_large"))}
+    order["feeder_one"] = order["competitor"]  # one former colleague: as close as a researched competitor, no closer
     from maindscout.api import company_lines
 
     countries_set = set(p.countries or [])
@@ -1043,7 +1089,7 @@ def next_searches(session: Session, job: Job, p: SourcingPlan, releasing: set[st
         picked = deep[: limit // 2] + fresh + deep[limit // 2:] + rest + [q for q in queue if not q[3] and full(q)]
         for t, company, pending, _ in picked[:limit]:
             out.append({"text": pending[0], "target": t["name"], "company_id": t["company_id"], "tier": t.get("tier"),
-                        "group": group_of(t), "country": t.get("country") or (p.countries[0] if p.countries else None),
+                        "group": group_of(t), "country": search_country(company, t.get("country"), list(p.countries or [])),
                         "results": results_for(company, r)})
         queue = []  # nothing more to add below
     # Wide before deep (2026-10-23: the budget went on four titles at a few houses and 13 researched competitors were
@@ -1057,7 +1103,7 @@ def next_searches(session: Session, job: Job, p: SourcingPlan, releasing: set[st
             break
         for text in (pending[:1] if wide_first else pending):
             out.append({"text": text, "target": t["name"], "company_id": t["company_id"], "tier": t.get("tier"),
-                        "group": group_of(t), "country": t.get("country") or (p.countries[0] if p.countries else None),
+                        "group": group_of(t), "country": search_country(company, t.get("country"), list(p.countries or [])),
                         "results": results_for(company, r)})
     if "market" in open_groups:
         for v in (p.role_variants or [])[:3]:

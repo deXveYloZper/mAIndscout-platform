@@ -14,6 +14,7 @@ as years or a degree, or a person's name.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -106,3 +107,88 @@ def read(title: str, company: str | None, brief: list[dict[str, Any]], requireme
             out.append(Line(kind, words, central))
     cost = {"model": result.model, "input_tokens": result.input_tokens, "output_tokens": result.output_tokens, "usd": result.usd}
     return Lines(out, rejected, cost)
+
+
+# --- the role's own titles (owner, 2026-10-30: "we cannot hard code every job family there is ... why our platform
+# doesn't generate this itself, when it understands the company and the role?") ------------------------------------
+# One more call after the lines: the titles people doing this work carry, the titles of its look-alikes, and the work
+# in a word for one broad search at a small company. They replace the shared family table's titles ("embedded software
+# engineer" for an avionics electronics role, 2026-10-30), and a person confirms them with the lines.
+TITLES_PROMPT_VERSION = "2026-10-30.1"
+MAX_TITLES, MAX_LOOK_ALIKES, MAX_TITLE_WORDS, MAX_WORD_WORDS = 8, 5, 8, 4
+SENIORITY = re.compile(r"^(senior|sr\.?|staff|junior|jr\.?|lead|principal)\s+", re.I)
+
+TITLES_SCHEMA = {
+    "type": "object", "additionalProperties": False, "required": ["titles", "look_alike_titles", "word"],
+    "properties": {"titles": {"type": "array", "items": {"type": "string"}},
+                   "look_alike_titles": {"type": "array", "items": {"type": "string"}},
+                   "word": {"type": "string"}},
+}
+
+TITLES_SYSTEM = (
+    "You write, for a recruiter, the job titles under which people who do this role's work appear on their public "
+    "profiles, so a search finds them and a person can be recognised by a title. From the role's own material: its ad, "
+    "brief, lines of work and, when given, the titles of the client's own people in this work. titles: four to eight "
+    "titles people doing exactly this work carry, the most common first, without seniority words (senior, staff, lead, "
+    "junior) and without company names; add the usual titles in the languages of the countries where people must live "
+    "when they differ from English. look_alike_titles: two to five titles of jobs that share this role's words but are "
+    "different work done by different people. word: the work itself in one to three words, as people write it on a "
+    "profile, for one broad search at a small company. Never a person's name.")
+
+
+@dataclass
+class Titles:
+    titles: list[str]
+    look_alikes: list[str]
+    word: str | None
+    rejected: list[dict[str, str]] = field(default_factory=list)
+    cost: dict[str, Any] = field(default_factory=dict)
+
+
+def clean_title(words: str) -> str:
+    """A title as a search sends it: one line, no seniority word in front ("Senior GNC Engineer" -> "GNC Engineer")."""
+    text = " ".join((words or "").split()).strip(" .;,")
+    while SENIORITY.match(text) and len(text.split()) > 2:
+        text = SENIORITY.sub("", text, count=1)
+    return text[:80]
+
+
+def titles_text(title: str, company: str | None, brief: list[dict[str, Any]], requirements: list[dict[str, Any]], ad: str,
+                lines: list[Line], countries: list[str], own_titles: list[str]) -> str:
+    out = [user_text(title, company, brief, requirements, ad)]
+    if lines:
+        out.append("Lines of work:\n" + "\n".join(f"- ({'not this work' if x.kind == 'not' else 'work'}) {x.words}" for x in lines))
+    if countries:
+        out.append("People must live in: " + ", ".join(countries))
+    if own_titles:
+        out.append("Titles of the client's own people in this work: " + "; ".join(own_titles[:12]))
+    return "\n\n".join(out)
+
+
+def read_titles(title: str, company: str | None, brief: list[dict[str, Any]], requirements: list[dict[str, Any]], ad: str,
+                lines: list[Line], countries: list[str], own_titles: list[str], client: LLMClient) -> Titles:
+    result = client.complete_json(TITLES_SYSTEM, titles_text(title, company, brief, requirements, ad, lines, countries, own_titles),
+                                  TITLES_SCHEMA, "role_titles")
+    rejected: list[dict[str, str]] = []
+
+    def keep(raw: Any, most: int, limit: int, seen: set[str]) -> list[str]:
+        out: list[str] = []
+        for x in raw if isinstance(raw, list) else []:
+            words = clean_title(x if isinstance(x, str) else "")
+            if not words or len(words.split()) > most:
+                rejected.append({"title": words, "reason": f"a title in one to {most} words"})
+            elif NOT_CRITERIA.search(words):
+                rejected.append({"title": words, "reason": "personality, culture or fit is never a title"})
+            elif words.lower() in seen:
+                continue
+            elif len(out) < limit:
+                seen.add(words.lower())
+                out.append(words)
+        return out
+
+    seen: set[str] = set()
+    titles = keep(result.data.get("titles"), MAX_TITLE_WORDS, MAX_TITLES, seen)
+    look_alikes = keep(result.data.get("look_alike_titles"), MAX_TITLE_WORDS, MAX_LOOK_ALIKES, seen)  # never one of its own
+    word = keep([result.data.get("word")], MAX_WORD_WORDS, 1, set())
+    cost = {"model": result.model, "input_tokens": result.input_tokens, "output_tokens": result.output_tokens, "usd": result.usd}
+    return Titles(titles, look_alikes, word[0] if word else None, rejected, cost)

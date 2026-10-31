@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect, unstable_rethrow } from "next/navigation";
-import { ApiError, DESK_COOKIE, SESSION_COOKIE, TICKET_COOKIE, api, apiJson, apiPublic, apiRaw, type ProcessResult } from "@/lib/api";
+import { ApiError, DESK_COOKIE, SESSION_COOKIE, TICKET_COOKIE, api, apiJson, apiPublic, apiRaw, type ProcessResult,
+  type WorkLineKind } from "@/lib/api";
 
 export type FormState = { error?: string; message?: string };
 
@@ -390,7 +391,7 @@ export async function confirmWorkLines(jobId: string, ids: string[]): Promise<Fo
 }
 
 /** A line of the work in your own words (confirmed at once), or a look-alike job that is not this work. */
-export async function addWorkLine(jobId: string, kind: "work" | "not", _: FormState, form: FormData): Promise<FormState> {
+export async function addWorkLine(jobId: string, kind: WorkLineKind, _: FormState, form: FormData): Promise<FormState> {
   const words = String(form.get("words") ?? "").trim();
   if (!words) return { error: "Write the line first." };
   try {

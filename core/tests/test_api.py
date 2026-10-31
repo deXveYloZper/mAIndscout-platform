@@ -9,7 +9,7 @@ from maindscout.api import auth, writer
 from maindscout.db.models import Claim, Decision
 from maindscout.intelligence.llm import LLMResult
 from maindscout.storage import LocalBlobStore
-from tests.pdfs import text_pdf
+from tests.pdfs import bare_glyph_pdf, text_pdf
 from tests.test_process import CV_LINES, JD_JSON, JD_LINES, cv_json
 
 from tests.conftest import OWNER, PASSWORD, TOTP  # noqa: E402,F401 (the owner fixture lives in conftest)
@@ -111,6 +111,14 @@ def test_job_from_an_ad_shows_requirements_and_a_stale_warning(client):
     assert page["process_stale"] is True
     assert any(r["payload"].get("distinctive") for r in page["requirements"])
     assert client.get("/v1/jobs").json()[0]["id"] == job_id
+
+
+def test_an_ad_with_emoji_bullets_makes_a_job(client):
+    """2026-10-30: the Destinus ad's emoji bullets read as NUL, and creating its job failed with a server error."""
+    lines = JD_LINES * 4 if len(JD_LINES) < 8 else JD_LINES
+    r = client.post("/v1/jobs", files={"file": ("ad.pdf", bare_glyph_pdf(lines), "application/pdf")})
+    assert r.status_code == 201, r.text
+    assert client.get(f"/v1/jobs/{r.json()['job_id']}").json()["title"] == "Radar Interferometry Specialist"
 
 
 def test_cv_dropped_on_a_job_is_banded_and_grouped(client):

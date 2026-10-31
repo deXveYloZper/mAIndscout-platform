@@ -147,3 +147,24 @@ def test_search_now_goes_on_batch_after_batch_and_waits_for_the_readings(session
             status="done", stop_reason=stop, found=3, new=3, strong=0, cost_usd=0.05))
         t = _task(session, job.org_id, {"job_id": str(job.id), "trigger": "manual"})
         assert task_handlers.sourcing_run(session, t)["next_round"] is more, f"a batch that ended on {stop}"
+
+
+def test_a_pool_the_model_calls_not_applicable_is_left_out():
+    """2026-10-30: told the desk's known segments, the talent map for a rocket-motor role listed two luxury pools with
+    "Not applicable; ..." as their why, and their 144 companies joined the role's map."""
+    def pool(name, why):
+        return {"name": name, "why": why, "examples": ["A", "B", "C"], "industry": "aerospace / defence", "market": "",
+                "positioning": "enterprise", "customers": "public sector"}
+
+    class Answers:
+        def search_json(self, system, user, schema, name):
+            assert "Pools we already know" in user
+            return {"business_lines": ["rocket motors"], "role_line": None, "pools": [
+                pool("european missile and guided weapons systems", "core propulsion engineers for solid rocket motors"),
+                pool("global luxury groups crm centers of excellence", "Not applicable; luxury CRM talent has no overlap"),
+                pool("italian luxury fashion and leather goods", "not relevant: fashion design has nothing to do with it"),
+            ]}, VISITED, {"usd": 0.06}
+
+    out = engine.pools("Destinus", "rocket motors for defence", ["Switzerland"], Answers(), "Senior Propulsion Engineer",
+                       known=[("global luxury groups crm centers of excellence", 144)])
+    assert [p["name"] for p in out.pools] == ["european missile and guided weapons systems"]

@@ -4,7 +4,7 @@ import pytest
 from pypdf import PdfReader
 
 from maindscout.ingestion import pdf
-from tests.pdfs import MAIN, SIDEBAR, blank_pdf, text_pdf, two_column_pdf
+from tests.pdfs import MAIN, SIDEBAR, bare_glyph_pdf, blank_pdf, text_pdf, two_column_pdf
 
 
 def test_text_is_read():
@@ -59,6 +59,13 @@ def test_unsupported_media_is_refused():
 
 def test_plain_text_is_accepted():
     assert pdf.extract("hello".encode(), "text/plain").text == "hello"
+
+
+def test_a_glyph_with_no_character_behind_it_is_dropped_not_stored_as_nul():
+    """2026-10-30: the emoji bullets of a job ad read as NUL, which Postgres text refuses: the ad failed to store."""
+    text = pdf.extract(bare_glyph_pdf(), "application/pdf").text
+    assert "\x00" not in text and text.rstrip().endswith(" The thrill of the future")
+    assert pdf.extract(b"a\x00b", "text/plain").text == "ab"
 
 
 def test_letter_spaced_text_is_rejoined_and_ordinary_text_left_alone():
